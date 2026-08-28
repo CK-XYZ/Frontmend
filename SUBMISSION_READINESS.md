@@ -24,6 +24,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Lighthouse result bounding is explicit: supported-rule check counts, the complete supported failure total, retained ten-detail queue, omitted count, and full supported rule-outcome record remain distinct across UI, JSON, and Markdown; hybrid totals omit overlapping document rules.
 - [x] Agents can stage a repair proposal without changing the target site.
 - [x] Coding agents can request a source-safe repository fix brief with measured evidence, bounded same-rule occurrences, every failing measured strategy, ownership hints, and cross-viewport acceptance criteria; the visible report exposes the same repair scope, while Frontmend does not receive repository source or absolute paths.
+- [x] Coding agents can attach a bounded pre-approval repository plan containing only relative target files and planned checks; it is visible to the person, revisioned, agent-readable, exported with the reviewed proposal, and frozen into final verification provenance. Human-authored metadata, absolute paths, source contents, credentials, and environment values are rejected or excluded.
 - [x] People can request bounded, visible changes; agents can revise only after that request, and each new proposal re-enters human review with a five-version history cap.
 - [x] Approval is absent from WebMCP and requires explicit confirmation in the visible UI.
 - [x] Verification remains blocked after approval until a person explicitly attests the reviewed change was deployed; WebMCP cannot grant or bypass that attestation.
@@ -48,7 +49,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 - [x] `bun test`: 94 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
-- [x] `bunx wrangler deploy --dry-run --strict`: five static assets plus both Durable Object bindings recognized; local Worker bundle 153.05 KiB raw / 34.70 KiB gzip.
+- [x] `bunx wrangler deploy --dry-run --strict`: five static assets plus both Durable Object bindings recognized; local Worker bundle 156.46 KiB raw / 35.36 KiB gzip.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
 - [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current fourteen-tool library, and completed reports still register only their applicable result, exploration, and repair capabilities.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.
@@ -100,7 +101,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Local application commit `2c1ff90` adds visible and agent-readable per-strategy repair proof but is newer than deployed application commit `b94e6cb`.
+2. Local application commit `a20e1ff` adds reviewed repository plans and visible, agent-readable per-strategy repair proof but is newer than deployed application commit `b94e6cb`.
 3. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
 4. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
 5. Video capture, narration, upload, and Devpost submission remain external deliverables.

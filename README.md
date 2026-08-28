@@ -23,6 +23,7 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Bounded repair drafts that may be proposed by a person or agent, but can only be approved through the visible human interface.
 - A bounded human-agent revision loop: people request specific changes in the visible UI, agents submit a new complete proposal through WebMCP, and the previous versions plus feedback remain attributable.
 - A source-safe repository fix brief that translates one measured finding into search hints, cross-viewport occurrences and acceptance criteria, and authority boundaries for a coding agent that already has repository access—without uploading or exposing source to Frontmend.
+- An agent-authored repository plan inside the repair proposal: up to eight repository-relative target files and eight planned checks become visible before human approval, survive revision history, and are frozen beside the eventual implementation receipt and verification proof. Absolute paths, source contents, credentials, and human-authored repository metadata remain outside the contract.
 - An optional repository implementation receipt after human approval: the coding agent may report only repository-relative filenames, check outcomes, a short summary, and an optional Git object ID. Passed checks complete the implementation step; failed or not-run checks remain an explicit attention state and prompt the agent to record a corrective receipt. Repeated reports retain a bounded five-receipt history, so a later pass cannot silently erase an earlier failure; the latest receipt is frozen into subsequent verification proof, while remaining explicitly agent-reported rather than source, check, deployment, or resolution evidence.
 - A shared repair-mission state machine that assigns measure, draft, review, implement, deploy, and verify steps to Frontmend, the coding agent/person, or the external site owner and exposes allowed next actions through WebMCP.
 - A human-only deployment-handoff gate: approval unlocks export, but a site-owner attestation is required before human or WebMCP verification can start.
@@ -78,7 +79,7 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 | `start_site_exploration` | Atomically start one to three observed page audits under one durable mission. |
 | `get_site_exploration` | Read mission progress and bounded recurring evidence across selected pages. |
 | `get_verification_receipt` | Return portable Markdown plus structured per-strategy outcomes for a completed verification. |
-| `stage_site_repair` | Create a visible draft and freeze its measured-rule scope without changing the target site. |
+| `stage_site_repair` | Create a visible draft, freeze its measured-rule scope, and optionally attach a source-safe repository plan without changing the target site. |
 | `revise_site_repair` | Submit a complete new version only after visible human feedback. |
 | `get_repair_workspace` | Inspect drafts, frozen rule scope, mission progress, ownership boundaries, and allowed next actions. |
 | `record_repository_implementation` | Attach bounded agent-reported filenames and check outcomes after human approval. |

@@ -9,7 +9,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Source provenance: standalone repository application commit `b94e6cb8fb9419145f7340c77de0882eb015d891`; push remains a separate action
-- Current local application: `2c1ff900c1b9be975d918ce4e0273c825b694735`; adds visible and agent-readable per-strategy repair proof and is not deployed
+- Current local application: `a20e1ff0edaa35538211129904c6ff746cf3525a`; adds pre-approval repository plans plus visible and agent-readable per-strategy repair proof and is not deployed
 - Worker name: `frontmend`
 - Cloudflare version: `59677b80-ed0d-4851-8f66-403a31cc1985`
 - Deployment created: `2026-08-28T20:55:12.233Z`
@@ -24,10 +24,10 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 94 passed, 0 failed on local application commit `2c1ff90` |
+| Tests | `bun test` | PASS — 94 passed, 0 failed on local application commit `a20e1ff` |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 153.05 KiB raw / 34.70 KiB gzip Worker upload; no upload performed |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 156.46 KiB raw / 35.36 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -98,12 +98,12 @@ This is the strongest end-to-end product demonstration because the coding agent 
    > Audit `CONTROLLED_TARGET_URL`, identify the highest-impact finding that can be fixed in this repository, and prepare a concrete repair plan. Use Frontmend’s site tools for live evidence and inspect the repository yourself to locate the owning code. Don’t edit anything until I approve the plan, and don’t deploy.
 
 4. Confirm the agent uses Frontmend for the public audit and `get_repository_fix_brief` for the selected finding, but uses Codex repository tools—not Frontmend—to inspect source. The brief must contain only public evidence, search hints, acceptance criteria, and authority boundaries; it must not contain absolute local paths or source uploads.
-5. Confirm `stage_site_repair` creates the same visible proposal the agent describes. If necessary, request one revision in the UI and verify `revise_site_repair` preserves the feedback and revision trail.
+5. Confirm `stage_site_repair` creates the same visible proposal the agent describes and includes only the exact repository-relative target files plus planned checks discovered by Codex. The visible **Coding-agent plan**, structured tool result, and reviewed-plan Markdown must match; no source contents, absolute paths, command output, credentials, or environment values may appear. If necessary, request one revision in the UI and verify `revise_site_repair` preserves the earlier plan in the revision trail while showing the new plan for review.
 6. Review the exact proposal and approve it manually in Frontmend. Then send:
 
    > Implement the approved repair in this repository, preserve unrelated work, and run the relevant tests and production build. When they finish, use Frontmend’s implementation-receipt tool to record only the short summary, repository-relative files, check outcomes, and current commit ID if one exists. Do not commit, push, deploy, or claim the public finding is fixed.
 
-7. Confirm Codex edits only the intended repository scope and runs allowed checks. The contextual WebMCP set should now include `record_repository_implementation`; its structured result and visible receipt must match the changed relative filenames and truthful check statuses.
+7. Confirm Codex edits only the reviewed repository scope and runs the planned checks. The contextual WebMCP set should now include `record_repository_implementation`; its structured result and visible receipt must match the changed relative filenames and truthful check statuses. The final verification receipt must retain both the reviewed repository plan and the implementation receipt as separate agent-reported provenance.
 8. Confirm the mission rail marks **Implement** complete while **Deploy** remains owned by the site owner and **Verify** remains blocked. Frontmend must still say it did not inspect or change source and has not verified the public result.
 9. Record `git status --short` and the diff after the demo. Save screenshots of the repository fix brief, visible human approval, repository diff/check output, implementation receipt, and still-locked deployment boundary.
 
@@ -144,4 +144,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC2 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `b94e6cb`; it has not been pushed to a public remote. Local application commit `2c1ff90` is newer, passes the fresh gates above, and is not part of the deployed Worker version.
+The deployed version may be labelled **RC2 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `b94e6cb`; it has not been pushed to a public remote. Local application commit `a20e1ff` is newer, passes the fresh gates above, and is not part of the deployed Worker version.
