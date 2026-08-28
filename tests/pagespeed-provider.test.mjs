@@ -99,6 +99,96 @@ test("builds bounded live Lighthouse evidence for mobile and desktop", async () 
   assert.equal("documentProfile" in output.report, false);
 });
 
+test("retains bounded actionable diagnostics for console, contrast, and long tasks", async () => {
+  const output = await runPageSpeedAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    fetchImpl: async (url) => {
+      const mobile = url.searchParams.get("strategy") === "mobile";
+      const failed = mobile ? 0 : 1;
+      return Response.json({
+        lighthouseResult: {
+          finalUrl: "https://example.com/",
+          lighthouseVersion: "13.4.1",
+          categories: {
+            performance: { score: mobile ? 0.8 : 1 },
+            accessibility: { score: mobile ? 0.9 : 1 },
+            "best-practices": { score: mobile ? 0.9 : 1 },
+            seo: { score: 1 },
+          },
+          audits: {
+            "errors-in-console": {
+              score: failed,
+              scoreDisplayMode: "binary",
+              displayValue: mobile ? "2 errors logged to the console" : undefined,
+              details: { items: mobile ? [
+                {
+                  source: "network",
+                  description: "Failed to load resource: the server responded with 404",
+                  sourceLocation: {
+                    url: "https://example.com/assets/missing.js?token=must-not-persist",
+                    line: 12,
+                    column: 4,
+                  },
+                },
+              ] : [] },
+            },
+            "color-contrast": {
+              score: failed,
+              scoreDisplayMode: "binary",
+              displayValue: mobile ? "1 element" : undefined,
+              details: { items: mobile ? [{
+                node: {
+                  selector: "button.muted",
+                  nodeLabel: "Continue",
+                  snippet: "<button class=\"muted\">Continue</button>",
+                  explanation: "Element has insufficient color contrast of 2.4 (foreground color: #777777, background color: #ffffff). Expected ratio of 4.5:1",
+                },
+              }] : [] },
+            },
+            "total-blocking-time": {
+              score: failed,
+              scoreDisplayMode: "numeric",
+              numericValue: mobile ? 280 : 0,
+              displayValue: mobile ? "280 ms" : "0 ms",
+            },
+            "long-tasks": {
+              score: 1,
+              scoreDisplayMode: "informative",
+              details: { items: mobile
+                ? Array.from({ length: 7 }, (_, index) => ({
+                    duration: 80 + index,
+                    startTime: 100 + index,
+                    url: `https://cdn.example.com/app.js?build=${index}`,
+                  }))
+                : [] },
+            },
+          },
+        },
+      });
+    },
+  });
+
+  const consoleFinding = output.report.findings.find((finding) => finding.id === "mobile-errors-in-console");
+  assert.equal(consoleFinding.diagnosticEvidence.kind, "console-errors");
+  assert.equal(consoleFinding.diagnosticEvidence.completeness, "actionable");
+  assert.equal(consoleFinding.diagnosticEvidence.entries[0].sourceUrl, "https://example.com/assets/missing.js");
+  assert.equal(JSON.stringify(consoleFinding.diagnosticEvidence).includes("must-not-persist"), false);
+  assert.equal(consoleFinding.diagnosticEvidence.entries[0].lineNumber, 12);
+
+  const contrastFinding = output.report.findings.find((finding) => finding.id === "mobile-color-contrast");
+  assert.equal(contrastFinding.diagnosticEvidence.nodes[0].selector, "button.muted");
+  assert.equal(contrastFinding.diagnosticEvidence.nodes[0].observedRatio, 2.4);
+  assert.equal(contrastFinding.diagnosticEvidence.nodes[0].expectedRatio, 4.5);
+  assert.match(contrastFinding.diagnosticEvidence.nodes[0].snippet, /Continue/);
+
+  const blockingFinding = output.report.findings.find((finding) => finding.id === "mobile-total-blocking-time");
+  assert.equal(blockingFinding.diagnosticEvidence.totalBlockingTimeMs, 280);
+  assert.equal(blockingFinding.diagnosticEvidence.longTasks.length, 5);
+  assert.equal(blockingFinding.diagnosticEvidence.omitted, 2);
+  assert.equal(blockingFinding.diagnosticEvidence.longTasks[0].sourceUrl, "https://cdn.example.com/app.js");
+});
+
 test("reports the full Lighthouse failure total while bounding detailed findings", async () => {
   const failingAuditIds = [
     "color-contrast",

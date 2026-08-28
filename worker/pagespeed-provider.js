@@ -153,6 +153,130 @@ function firstNode(audit) {
   return "Document";
 }
 
+function finiteMetric(value, { minimum = 0, maximum = 86_400_000 } = {}) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return null;
+  return Math.min(maximum, Math.max(minimum, Math.round(numeric * 100) / 100));
+}
+
+function publicResourceReference(value, maximum = 240) {
+  const reference = bounded(value, maximum);
+  if (!reference) return null;
+  try {
+    const url = new URL(reference);
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    return bounded(`${url.origin}${url.pathname}`, maximum);
+  } catch {
+    return reference.startsWith("/") ? reference : null;
+  }
+}
+
+function detailItems(audit, maximum = 5) {
+  const items = Array.isArray(audit?.details?.items) ? audit.details.items : [];
+  return { retained: items.slice(0, maximum), omitted: Math.max(0, items.length - maximum) };
+}
+
+function ratioFromExplanation(explanation) {
+  const text = bounded(explanation, 360);
+  const observed = text.match(/contrast(?: ratio)?(?: of|:)?\s*([0-9]+(?:\.[0-9]+)?)/i)?.[1];
+  const expected = text.match(/expected(?: ratio)?(?: of|:)?\s*([0-9]+(?:\.[0-9]+)?)/i)?.[1]
+    ?? text.match(/minimum required(?: ratio)?(?: is|:)?\s*([0-9]+(?:\.[0-9]+)?)/i)?.[1];
+  return {
+    observed: observed ? finiteMetric(observed, { maximum: 100 }) : null,
+    expected: expected ? finiteMetric(expected, { maximum: 100 }) : null,
+  };
+}
+
+function consoleDiagnosticEvidence(audit) {
+  const { retained, omitted } = detailItems(audit);
+  const entries = retained.flatMap((item) => {
+    const location = item?.sourceLocation ?? {};
+    const description = bounded(item?.description ?? item?.text ?? item?.message, 320);
+    const source = bounded(item?.source, 80);
+    const sourceUrl = publicResourceReference(location.url ?? item?.url);
+    if (!description && !source && !sourceUrl) return [];
+    return [{
+      description: description || "Console error detail unavailable",
+      source: source || null,
+      sourceUrl,
+      lineNumber: finiteMetric(location.line ?? location.lineNumber, { maximum: 10_000_000 }),
+      columnNumber: finiteMetric(location.column ?? location.columnNumber, { maximum: 10_000_000 }),
+    }];
+  });
+  return {
+    version: 1,
+    kind: "console-errors",
+    provenance: "measured-lighthouse",
+    completeness: entries.length ? "actionable" : "partial",
+    missing: entries.length ? [] : ["console-message-details"],
+    entries,
+    omitted,
+    caveat: "Console entries describe the audited load only; reproduce them before changing source.",
+  };
+}
+
+function contrastDiagnosticEvidence(audit) {
+  const { retained, omitted } = detailItems(audit);
+  const nodes = retained.flatMap((item) => {
+    const node = item?.node ?? item;
+    const selector = bounded(node?.selector ?? node?.nodeLabel, 160);
+    const explanation = bounded(node?.explanation ?? item?.explanation, 360);
+    const snippet = bounded(node?.snippet, 260);
+    const ratios = ratioFromExplanation(explanation);
+    if (!selector && !explanation && !snippet) return [];
+    return [{
+      selector: selector || "Measured node",
+      nodeLabel: bounded(node?.nodeLabel, 160) || null,
+      snippet: snippet || null,
+      explanation: explanation || null,
+      observedRatio: ratios.observed,
+      expectedRatio: ratios.expected,
+    }];
+  });
+  return {
+    version: 1,
+    kind: "contrast-nodes",
+    provenance: "measured-lighthouse",
+    completeness: nodes.length ? "actionable" : "partial",
+    missing: nodes.length ? [] : ["affected-node-details"],
+    nodes,
+    omitted,
+    caveat: "Measured nodes belong to Lighthouse's emulated load; interactive states still require targeted checks.",
+  };
+}
+
+function blockingDiagnosticEvidence(audit, audits) {
+  const longTaskAudit = audits?.["long-tasks"];
+  const { retained, omitted } = detailItems(longTaskAudit);
+  const longTasks = retained.flatMap((item) => {
+    const durationMs = finiteMetric(item?.duration);
+    if (durationMs === null) return [];
+    return [{
+      durationMs,
+      startTimeMs: finiteMetric(item?.startTime),
+      sourceUrl: publicResourceReference(item?.url),
+    }];
+  });
+  return {
+    version: 1,
+    kind: "main-thread-blocking",
+    provenance: "measured-lighthouse",
+    completeness: longTasks.length ? "actionable" : "partial",
+    missing: longTasks.length ? [] : ["long-task-attribution"],
+    totalBlockingTimeMs: finiteMetric(audit?.numericValue),
+    longTasks,
+    omitted,
+    caveat: "Long-task attribution describes the audited load and does not map bundled code to repository modules.",
+  };
+}
+
+function diagnosticEvidenceFor(id, audit, audits) {
+  if (id === "errors-in-console") return consoleDiagnosticEvidence(audit);
+  if (id === "color-contrast") return contrastDiagnosticEvidence(audit);
+  if (id === "total-blocking-time") return blockingDiagnosticEvidence(audit, audits);
+  return null;
+}
+
 function severityFor(id, audit) {
   const score = typeof audit?.score === "number" ? audit.score : 1;
   const numeric = Number(audit?.numericValue);
@@ -163,7 +287,7 @@ function severityFor(id, audit) {
   return score < 0.5 ? "medium" : "low";
 }
 
-function findingFromAudit(id, audit, strategy) {
+function findingFromAudit(id, audit, strategy, audits) {
   const rule = RULES[id];
   if (!rule || audit?.scoreDisplayMode === "notApplicable" || audit?.score === null) return null;
   if (typeof audit?.score !== "number" || audit.score >= 0.9) return null;
@@ -180,6 +304,7 @@ function findingFromAudit(id, audit, strategy) {
     evidence: selector === "Document" ? measured : `${measured} · ${selector}`,
     repair: rule.repair,
     source: { provider: "Lighthouse", auditId: id, strategy },
+    diagnosticEvidence: diagnosticEvidenceFor(id, audit, audits),
   };
 }
 
@@ -750,7 +875,7 @@ export async function runPageSpeedAudit({
     for (const [id, audit] of Object.entries(result.lighthouseResult.audits)) {
       const outcome = ruleOutcomeFromAudit(id, audit, strategy);
       if (outcome) ruleOutcomes.push(outcome);
-      const finding = findingFromAudit(id, audit, strategy);
+      const finding = findingFromAudit(id, audit, strategy, result.lighthouseResult.audits);
       if (finding) findings.push(finding);
     }
   }

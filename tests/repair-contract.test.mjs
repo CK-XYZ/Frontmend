@@ -58,6 +58,64 @@ test("creates a source-safe repository handoff from measured evidence", () => {
   assert.match(brief.authority.privacy, /absolute paths/);
 });
 
+test("repository handoffs retain bounded measured diagnostics without promoting agent evidence", () => {
+  const consoleFinding = {
+    ...finding,
+    id: "mobile-errors-in-console",
+    title: "The page reports browser errors",
+    category: "Reliability",
+    selector: "https://example.com/app.js",
+    evidence: "2 errors logged to the console",
+    source: { provider: "Lighthouse", auditId: "errors-in-console", strategy: "mobile" },
+    diagnosticEvidence: {
+      version: 1,
+      kind: "console-errors",
+      provenance: "measured-lighthouse",
+      completeness: "actionable",
+      missing: [],
+      entries: [{
+        description: "ReferenceError: widget is not defined",
+        source: "javascript",
+        sourceUrl: "https://example.com/app.js",
+        lineNumber: 42,
+        columnNumber: 7,
+        ignored: "must not cross the contract",
+      }],
+      omitted: 0,
+      caveat: "Reproduce before changing source.",
+    },
+  };
+  const report = {
+    schemaVersion: 5,
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 1_787_766_000_000,
+    score: 90,
+    scoreBasis: "measured-lighthouse-viewports",
+    viewportCount: 1,
+    viewports: [{ id: "mobile", label: "Mobile", detail: "Lighthouse" }],
+    viewportFailures: [],
+    findingCount: 1,
+    findingsOmitted: 0,
+    findings: [consoleFinding],
+    checks: { passed: 1, warnings: 0, failed: 1 },
+    ruleOutcomes: [{ source: consoleFinding.source, status: "failed" }],
+    engine: { mode: "live-lighthouse", provider: "PageSpeed Insights", ruleSetVersion: 1, lighthouseVersion: "13.4.1", notice: "Measured." },
+  };
+
+  const brief = createRepositoryFixBrief(report, consoleFinding.id);
+  assert.equal(brief.evidence.diagnostics.kind, "console-errors");
+  assert.equal(brief.evidence.diagnostics.entries[0].lineNumber, 42);
+  assert.equal("ignored" in brief.evidence.diagnostics.entries[0], false);
+  assert.equal(brief.evidence.occurrences[0].diagnostics.provenance, "measured-lighthouse");
+
+  const markdown = auditReportMarkdown(report);
+  assert.match(markdown, /Measured diagnostics: console-errors · actionable/);
+  assert.match(markdown, /ReferenceError: widget is not defined/);
+  assert.match(markdown, /https:\/\/example\.com\/app\.js:42:7/);
+});
+
 test("delegated auto mode consumes a bounded human grant only for eligible repository plans", () => {
   const policy = createRepairPolicy({ mode: "auto-low-risk" }, 100);
   assert.equal(policy.remainingAutoApprovals, 3);

@@ -1482,6 +1482,73 @@ function CspResourceInventory({ context }) {
   );
 }
 
+function DiagnosticEvidenceCard({ evidence }) {
+  if (!evidence?.kind || evidence.provenance !== "measured-lighthouse") return null;
+  const actionable = evidence.completeness === "actionable";
+  return (
+    <section className={`diagnostic-evidence ${actionable ? "actionable" : "partial"}`} aria-labelledby="diagnostic-evidence-title">
+      <div className="diagnostic-evidence-heading">
+        <span aria-hidden="true"><Pulse size={19} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Measured diagnostic evidence</p>
+          <strong id="diagnostic-evidence-title">
+            {evidence.kind === "console-errors"
+              ? "Console entries"
+              : evidence.kind === "contrast-nodes"
+                ? "Affected contrast nodes"
+                : "Main-thread attribution"}
+          </strong>
+        </div>
+        <em>{actionable ? "Actionable" : "Evidence gap"}</em>
+      </div>
+      {evidence.kind === "console-errors" ? (
+        <ol>
+          {(evidence.entries ?? []).map((entry, index) => (
+            <li key={`${entry.sourceUrl ?? entry.source ?? "console"}-${entry.lineNumber ?? index}`}>
+              <strong>{entry.description}</strong>
+              <code>{entry.sourceUrl ?? entry.source ?? "Source unavailable"}</code>
+              {Number.isFinite(entry.lineNumber) ? <small>Line {entry.lineNumber}{Number.isFinite(entry.columnNumber) ? `:${entry.columnNumber}` : ""}</small> : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {evidence.kind === "contrast-nodes" ? (
+        <ol>
+          {(evidence.nodes ?? []).map((node, index) => (
+            <li key={`${node.selector}-${index}`}>
+              <strong><code>{node.selector}</code></strong>
+              {Number.isFinite(node.observedRatio) ? (
+                <span>{node.observedRatio}:1 measured{Number.isFinite(node.expectedRatio) ? ` · ${node.expectedRatio}:1 required` : ""}</span>
+              ) : null}
+              {node.explanation ? <small>{node.explanation}</small> : null}
+              {node.snippet ? <code>{node.snippet}</code> : null}
+            </li>
+          ))}
+        </ol>
+      ) : null}
+      {evidence.kind === "main-thread-blocking" ? (
+        <>
+          <p className="diagnostic-metric"><strong>{evidence.totalBlockingTimeMs ?? "—"} ms</strong><span>Total blocking time</span></p>
+          <ol>
+            {(evidence.longTasks ?? []).map((task, index) => (
+              <li key={`${task.sourceUrl ?? "task"}-${task.startTimeMs ?? index}`}>
+                <strong>{task.durationMs} ms long task</strong>
+                <code>{task.sourceUrl ?? "Source unavailable"}</code>
+                {Number.isFinite(task.startTimeMs) ? <small>Started at {task.startTimeMs} ms</small> : null}
+              </li>
+            ))}
+          </ol>
+        </>
+      ) : null}
+      {evidence.missing?.length ? (
+        <p className="diagnostic-gap"><Warning size={15} weight="fill" aria-hidden="true" /> Missing: {evidence.missing.join(", ")}</p>
+      ) : null}
+      {evidence.omitted ? <small>{evidence.omitted} additional diagnostic item{evidence.omitted === 1 ? "" : "s"} omitted.</small> : null}
+      <p className="diagnostic-caveat">{evidence.caveat}</p>
+    </section>
+  );
+}
+
 function ObservedRoutes({ profile, onAuditRoute }) {
   const routes = Array.isArray(profile?.routes) ? profile.routes : [];
   const [busyPath, setBusyPath] = useState("");
@@ -2102,6 +2169,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
                   <dd>{selectedFinding.repair}</dd>
                 </div>
               </dl>
+              <DiagnosticEvidenceCard evidence={selectedFinding.diagnosticEvidence} />
               <CspResourceInventory context={selectedFinding.repairContext} />
             </article>
           ) : null}

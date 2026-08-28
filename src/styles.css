@@ -1992,6 +1992,7 @@ input:focus-visible,
   line-height: 1.45;
 }
 
+.finding-detail .diagnostic-evidence,
 .finding-detail .csp-inventory {
   margin-top: 4px;
   padding: 15px;
@@ -2000,6 +2001,129 @@ input:focus-visible,
   background:
     linear-gradient(135deg, rgb(126 153 76 / 8%), transparent 55%),
     #fafbf5;
+}
+
+.finding-detail .diagnostic-evidence.partial {
+  border-color: #ead6b1;
+  background: #fffaf0;
+}
+
+.diagnostic-evidence-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 9px;
+}
+
+.diagnostic-evidence-heading > span {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #cbdaca;
+  border-radius: 10px;
+  background: #eef7ef;
+  color: #4f7657;
+}
+
+.diagnostic-evidence-heading .kicker {
+  margin: 0 0 2px;
+}
+
+.diagnostic-evidence-heading strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.diagnostic-evidence-heading em {
+  padding: 4px 7px;
+  border-radius: 999px;
+  background: #e6f0e6;
+  color: #52705a;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 760;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.diagnostic-evidence.partial .diagnostic-evidence-heading em {
+  background: #f4e6cb;
+  color: #7d5c27;
+}
+
+.diagnostic-evidence ol {
+  display: grid;
+  gap: 7px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.diagnostic-evidence li {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #e0e5db;
+  border-radius: 9px;
+  background: rgb(255 255 252 / 86%);
+}
+
+.diagnostic-evidence li strong,
+.diagnostic-evidence li span {
+  color: #3f4942;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.diagnostic-evidence li code {
+  overflow: hidden;
+  color: #536158;
+  font-size: 8px;
+  line-height: 1.45;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnostic-evidence li small,
+.diagnostic-evidence > small,
+.diagnostic-caveat,
+.diagnostic-gap {
+  color: #727b74;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.diagnostic-metric {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+
+.diagnostic-metric strong {
+  color: var(--ink);
+  font-size: 18px;
+}
+
+.diagnostic-metric span {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.diagnostic-gap {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 11px 0 0;
+  color: #7d5c27;
+}
+
+.diagnostic-caveat {
+  margin: 10px 0 0;
+  padding-top: 10px;
+  border-top: 1px solid #e1e5d8;
 }
 
 .csp-inventory-heading {

@@ -345,6 +345,58 @@ function publicPathFromUrl(value) {
   }
 }
 
+function diagnosticEvidenceSnapshot(value) {
+  if (!value || value.provenance !== "measured-lighthouse") return null;
+  const base = {
+    version: 1,
+    kind: briefText(value.kind, 80),
+    provenance: "measured-lighthouse",
+    completeness: value.completeness === "actionable" ? "actionable" : "partial",
+    missing: Array.isArray(value.missing)
+      ? value.missing.slice(0, 5).map((item) => briefText(item, 100)).filter(Boolean)
+      : [],
+    omitted: Number.isFinite(value.omitted) ? Math.max(0, Math.min(1000, Math.round(value.omitted))) : 0,
+    caveat: briefText(value.caveat, 360),
+  };
+  if (base.kind === "console-errors") {
+    return {
+      ...base,
+      entries: (Array.isArray(value.entries) ? value.entries : []).slice(0, 5).map((entry) => ({
+        description: briefText(entry?.description, 320),
+        source: briefText(entry?.source, 80) || null,
+        sourceUrl: briefText(entry?.sourceUrl, 240) || null,
+        lineNumber: Number.isFinite(entry?.lineNumber) ? entry.lineNumber : null,
+        columnNumber: Number.isFinite(entry?.columnNumber) ? entry.columnNumber : null,
+      })),
+    };
+  }
+  if (base.kind === "contrast-nodes") {
+    return {
+      ...base,
+      nodes: (Array.isArray(value.nodes) ? value.nodes : []).slice(0, 5).map((node) => ({
+        selector: briefText(node?.selector, 160),
+        nodeLabel: briefText(node?.nodeLabel, 160) || null,
+        snippet: briefText(node?.snippet, 260) || null,
+        explanation: briefText(node?.explanation, 360) || null,
+        observedRatio: Number.isFinite(node?.observedRatio) ? node.observedRatio : null,
+        expectedRatio: Number.isFinite(node?.expectedRatio) ? node.expectedRatio : null,
+      })),
+    };
+  }
+  if (base.kind === "main-thread-blocking") {
+    return {
+      ...base,
+      totalBlockingTimeMs: Number.isFinite(value.totalBlockingTimeMs) ? value.totalBlockingTimeMs : null,
+      longTasks: (Array.isArray(value.longTasks) ? value.longTasks : []).slice(0, 5).map((task) => ({
+        durationMs: Number.isFinite(task?.durationMs) ? task.durationMs : null,
+        startTimeMs: Number.isFinite(task?.startTimeMs) ? task.startTimeMs : null,
+        sourceUrl: briefText(task?.sourceUrl, 240) || null,
+      })),
+    };
+  }
+  return null;
+}
+
 function repositorySourceHints(patchType) {
   const hints = {
     headers: [
@@ -403,6 +455,7 @@ export function createRepositoryFixBrief(report, findingId) {
     selector: briefText(candidate.selector, 160),
     measured: briefText(candidate.evidence, 300),
     severity: briefText(candidate.severity, 20),
+    diagnostics: diagnosticEvidenceSnapshot(candidate.diagnosticEvidence),
   }));
   const failedStrategies = [
     ...new Set([
@@ -438,6 +491,7 @@ export function createRepositoryFixBrief(report, findingId) {
       strategy: briefText(source.strategy, 40),
       engineMode: briefText(report.engine?.mode, 80),
       lighthouseVersion: briefText(report.engine?.lighthouseVersion, 40) || null,
+      diagnostics: diagnosticEvidenceSnapshot(finding.diagnosticEvidence),
       occurrenceCount: Math.max(matchingFindings.length, failedStrategies.length),
       occurrencesOmitted: Math.max(
         0,
@@ -1437,6 +1491,41 @@ function artifactMetric(value) {
   return Number.isFinite(value) ? value : "—";
 }
 
+function diagnosticMarkdownLines(diagnostics) {
+  if (!diagnostics) return [];
+  const lines = [
+    `Measured diagnostics: ${receiptText(diagnostics.kind, 80)} · ${receiptText(diagnostics.completeness, 40)}`,
+  ];
+  if (diagnostics.kind === "console-errors") {
+    for (const entry of diagnostics.entries ?? []) {
+      const location = [entry.sourceUrl, entry.lineNumber, entry.columnNumber]
+        .filter((value) => value !== null && value !== "")
+        .join(":");
+      lines.push(`- Console: ${receiptText(entry.description, 320)}${location ? ` — ${receiptText(location, 300)}` : ""}`);
+    }
+  }
+  if (diagnostics.kind === "contrast-nodes") {
+    for (const node of diagnostics.nodes ?? []) {
+      const ratio = Number.isFinite(node.observedRatio)
+        ? ` · ${node.observedRatio}:1 observed${Number.isFinite(node.expectedRatio) ? ` / ${node.expectedRatio}:1 expected` : ""}`
+        : "";
+      lines.push(`- Contrast: ${receiptText(node.selector, 160)}${ratio}${node.explanation ? ` — ${receiptText(node.explanation, 360)}` : ""}`);
+    }
+  }
+  if (diagnostics.kind === "main-thread-blocking") {
+    lines.push(`- Total blocking time: ${artifactMetric(diagnostics.totalBlockingTimeMs)} ms`);
+    for (const task of diagnostics.longTasks ?? []) {
+      lines.push(`- Long task: ${artifactMetric(task.durationMs)} ms${task.sourceUrl ? ` — ${receiptText(task.sourceUrl, 240)}` : " — source unavailable"}`);
+    }
+  }
+  if (diagnostics.missing?.length) {
+    lines.push(`- Missing evidence: ${diagnostics.missing.map((item) => receiptText(item, 100)).join(", ")}`);
+  }
+  if (diagnostics.omitted) lines.push(`- Diagnostic items omitted by bound: ${diagnostics.omitted}`);
+  if (diagnostics.caveat) lines.push(`- Boundary: ${receiptText(diagnostics.caveat, 360)}`);
+  return [...lines, ""];
+}
+
 function reportTimestamp(value) {
   if (!Number.isFinite(value)) return "—";
   const timestamp = new Date(value);
@@ -1632,6 +1721,7 @@ export function auditReportMarkdown(report) {
         "",
         `Evidence: ${receiptText(finding?.evidence ?? finding?.summary, 600)}`,
         "",
+        ...diagnosticMarkdownLines(diagnosticEvidenceSnapshot(finding?.diagnosticEvidence)),
         `Suggested repair: ${receiptText(finding?.repair, 700)}`,
         "",
       );
