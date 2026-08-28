@@ -1639,6 +1639,13 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   const viewport = viewports.find((item) => item.id === viewportId) ?? viewports[0];
   const selectedFinding =
     report.findings.find((finding) => finding.id === selectedFindingId) ?? report.findings[0];
+  const selectedFindingScope = selectedFinding
+    ? report.findings.filter(
+        (finding) =>
+          finding.source?.provider === selectedFinding.source?.provider &&
+          finding.source?.auditId === selectedFinding.source?.auditId,
+      )
+    : [];
   const selectedRepair = repairs.find((repair) => repair.findingId === selectedFinding?.id) ?? null;
   const omittedFindingCount = Math.max(
     0,
@@ -1849,6 +1856,23 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
               </div>
               <h2>{selectedFinding.title}</h2>
               <p>{selectedFinding.summary}</p>
+              {selectedFindingScope.length > 1 ? (
+                <section className="finding-scope" aria-label="Cross-viewport finding scope">
+                  <div>
+                    <span>Repair scope</span>
+                    <strong>{selectedFindingScope.length} measured occurrences</strong>
+                  </div>
+                  <ul>
+                    {selectedFindingScope.map((occurrence) => (
+                      <li key={occurrence.id}>
+                        <span>{occurrence.viewport}</span>
+                        <code title={occurrence.selector}>{occurrence.selector}</code>
+                      </li>
+                    ))}
+                  </ul>
+                  <p>One repository change may own several failures; verify every listed strategy.</p>
+                </section>
+              ) : null}
               <dl>
                 <div>
                   <dt>Evidence</dt>

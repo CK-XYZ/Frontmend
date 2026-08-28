@@ -64,6 +64,8 @@ test("repository fix brief gives a coding agent bounded evidence without claimin
 
   assert.equal(result.ok, true);
   assert.equal(result.data.findingId, finding.id);
+  assert.equal(result.data.schemaVersion, 2);
+  assert.equal(result.data.evidence.occurrenceCount, 1);
   assert.equal(result.data.repositoryHandoff.patchType, "headers");
   assert.equal(result.data.authority.sourceAccess, "coding-agent-only");
   assert.equal(result.data.authority.frontmendChangedTarget, false);

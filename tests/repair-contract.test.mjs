@@ -32,15 +32,17 @@ test("creates a source-safe repository handoff from measured evidence", () => {
     url: "https://removemyexif.com/",
     finalUrl: "https://removemyexif.com/",
     engine: { mode: "live-document", provider: "Frontmend document audit", ruleSetVersion: 1 },
-    findings: [{
-      ...finding,
-      category: "Security",
-      selector: "Document",
-      evidence: "The Content-Security-Policy response header was absent.",
-    }],
+    findings: [
+      {
+        ...finding,
+        category: "Security",
+        selector: "Document",
+        evidence: "The Content-Security-Policy response header was absent.",
+      },
+    ],
   }, finding.id);
 
-  assert.equal(brief.schemaVersion, 1);
+  assert.equal(brief.schemaVersion, 2);
   assert.equal(brief.findingId, finding.id);
   assert.equal(brief.target.publicPath, "/");
   assert.equal(brief.evidence.ruleId, "content-security-policy");
@@ -52,6 +54,48 @@ test("creates a source-safe repository handoff from measured evidence", () => {
   assert.equal(brief.authority.frontmendChangedTarget, false);
   assert.equal(brief.authority.sourceAccess, "coding-agent-only");
   assert.match(brief.authority.privacy, /absolute paths/);
+});
+
+test("repository handoff carries every failing strategy for the same measured rule", () => {
+  const mobile = {
+    id: "mobile-color-contrast",
+    title: "Text contrast is too low",
+    severity: "medium",
+    category: "Accessibility",
+    selector: "button.mobile-action",
+    evidence: "Lighthouse score 0 · button.mobile-action",
+    repair: "Adjust foreground or background color tokens.",
+    viewport: "Mobile · Lighthouse emulation",
+    source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+  };
+  const desktop = {
+    ...mobile,
+    id: "desktop-color-contrast",
+    selector: "a.desktop-action",
+    evidence: "Lighthouse score 0 · a.desktop-action",
+    viewport: "Desktop · Lighthouse emulation",
+    source: { ...mobile.source, strategy: "desktop" },
+  };
+  const brief = createRepositoryFixBrief({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    engine: { mode: "live-lighthouse", provider: "PageSpeed Insights", lighthouseVersion: "13.4.1" },
+    findings: [mobile, desktop],
+    ruleOutcomes: [
+      { source: mobile.source, status: "failed" },
+      { source: desktop.source, status: "failed" },
+    ],
+  }, mobile.id);
+
+  assert.equal(brief.evidence.occurrenceCount, 2);
+  assert.equal(brief.evidence.occurrencesOmitted, 0);
+  assert.deepEqual(brief.evidence.failingStrategies, ["mobile", "desktop"]);
+  assert.deepEqual(
+    brief.evidence.occurrences.map((occurrence) => occurrence.findingId),
+    [mobile.id, desktop.id],
+  );
+  assert.match(brief.repositoryHandoff.acceptanceCriteria[0], /mobile and desktop/);
 });
 
 test("creates a bounded source-attributed repair that requires human review", () => {

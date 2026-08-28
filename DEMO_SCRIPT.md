@@ -38,7 +38,7 @@ If only one Lighthouse strategy succeeds, say exactly: “Frontmend retained the
 
 Ask the agent to stage a repair for the selected finding. Show the draft appear immediately in the same visible workspace. For CSP, trace an observed origin from the evidence inventory into the Report-Only header, then point out the inline evidence, nonce-or-hash guidance, risk, and real-journey verification plan. Emphasize that the agent cannot approve it.
 
-Before staging, use `get_repository_fix_brief` for the finding. Show that Frontmend returns measured evidence, likely repository ownership points, and acceptance criteria—but no source content or absolute paths. This is the Codex-native handoff: the coding agent already has repository access; Frontmend contributes public evidence and a bounded contract.
+Before staging, use `get_repository_fix_brief` for the finding. Show that Frontmend returns measured evidence, likely repository ownership points, and acceptance criteria—but no source content or absolute paths. If the same rule failed in more than one measured strategy, point to the visible repair scope and the brief's bounded occurrence list: one repository change must be checked against every failing strategy, not only whichever viewport the agent selected first. This is the Codex-native handoff: the coding agent already has repository access; Frontmend contributes public evidence and a bounded contract.
 
 Write one specific change request and click **Request agent revision**. Show approval disappear, ask the agent to read `get_repair_workspace`, and then use `revise_site_repair`. Point to the incremented revision, reopened human review, and visible revision trail. This is collaboration over shared state, not an agent clicking its own approval.
 

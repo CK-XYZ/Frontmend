@@ -23,7 +23,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Evidence is bounded, versioned, source-attributed, and marked untrusted to agents.
 - [x] Lighthouse result bounding is explicit: supported-rule check counts, the complete supported failure total, retained ten-detail queue, omitted count, and full supported rule-outcome record remain distinct across UI, JSON, and Markdown; hybrid totals omit overlapping document rules.
 - [x] Agents can stage a repair proposal without changing the target site.
-- [x] Coding agents can request a source-safe repository fix brief with measured evidence, ownership hints, and acceptance criteria; Frontmend does not receive repository source or absolute paths.
+- [x] Coding agents can request a source-safe repository fix brief with measured evidence, bounded same-rule occurrences, every failing measured strategy, ownership hints, and cross-viewport acceptance criteria; the visible report exposes the same repair scope, while Frontmend does not receive repository source or absolute paths.
 - [x] People can request bounded, visible changes; agents can revise only after that request, and each new proposal re-enters human review with a five-version history cap.
 - [x] Approval is absent from WebMCP and requires explicit confirmation in the visible UI.
 - [x] Verification remains blocked after approval until a person explicitly attests the reviewed change was deployed; WebMCP cannot grant or bypass that attestation.
@@ -78,6 +78,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Production security/WebMCP headers: `Origin-Agent-Cluster: ?1`, `Permissions-Policy: tools=(self)`, CSP, `nosniff`, frame denial, and strict-origin referrer policy are present on the public origin.
 - [x] Production PageSpeed API-key path: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `67b15094-2878-488b-b134-9088c60ce208` returned Lighthouse 13.4.1 mobile and desktop evidence, score 97, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
 - [x] Final production Chrome smoke receipt: exact assets `index-BJ5D1pIW.css` and `index-Ba57YJQT.js`, intended security/WebMCP headers, and zero console errors or warnings.
+- [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
 
 ## Competition delivery
 

@@ -254,9 +254,34 @@ export function createRepositoryFixBrief(report, findingId) {
   const template = templateForFinding(finding);
   const source = finding.source ?? {};
   const finalUrl = briefText(report.finalUrl ?? report.url, 2_048);
+  const sameRule = (candidate) =>
+    candidate?.source?.provider === source.provider &&
+    candidate?.source?.auditId === source.auditId;
+  const matchingFindings = report.findings.filter(sameRule);
+  const occurrences = matchingFindings.slice(0, 4).map((candidate) => ({
+    findingId: briefText(candidate.id, 160),
+    strategy: briefText(candidate.source?.strategy, 40),
+    viewport: briefText(candidate.viewport, 100),
+    selector: briefText(candidate.selector, 160),
+    measured: briefText(candidate.evidence, 300),
+    severity: briefText(candidate.severity, 20),
+  }));
+  const failedStrategies = [
+    ...new Set([
+      ...(Array.isArray(report.ruleOutcomes)
+        ? report.ruleOutcomes
+            .filter((outcome) => outcome?.status === "failed" && sameRule(outcome))
+            .map((outcome) => briefText(outcome.source?.strategy, 40))
+        : []),
+      ...occurrences.map((occurrence) => occurrence.strategy),
+    ].filter(Boolean)),
+  ].slice(0, 4);
+  const strategyAcceptance = failedStrategies.length > 1
+    ? `The exact ${briefText(source.auditId || finding.id, 160)} rule must no longer fail for every failing measured strategy: ${failedStrategies.join(" and ")}.`
+    : `The exact ${briefText(source.auditId || finding.id, 160)} rule must no longer fail for ${briefText(failedStrategies[0] || source.strategy || "the measured evidence mode", 80)}.`;
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     auditId: briefText(report.auditId, 80),
     findingId: briefText(finding.id, 160),
     target: {
@@ -275,6 +300,13 @@ export function createRepositoryFixBrief(report, findingId) {
       strategy: briefText(source.strategy, 40),
       engineMode: briefText(report.engine?.mode, 80),
       lighthouseVersion: briefText(report.engine?.lighthouseVersion, 40) || null,
+      occurrenceCount: Math.max(matchingFindings.length, failedStrategies.length),
+      occurrencesOmitted: Math.max(
+        0,
+        Math.max(matchingFindings.length, failedStrategies.length) - occurrences.length,
+      ),
+      failingStrategies: failedStrategies,
+      occurrences,
     },
     repositoryHandoff: {
       patchType: template.patchType,
@@ -283,7 +315,7 @@ export function createRepositoryFixBrief(report, findingId) {
       suggestedChange: briefText(template.patch, 1_200),
       verificationPlan: briefText(template.verificationPlan, 700),
       acceptanceCriteria: [
-        `The exact ${briefText(source.auditId || finding.id, 160)} rule must no longer fail for ${briefText(source.strategy || "the measured evidence mode", 80)}.`,
+        strategyAcceptance,
         "Repository tests and the production build must pass without weakening unrelated checks.",
         "A fresh Frontmend audit must observe the public deployment before resolution is claimed.",
       ],
