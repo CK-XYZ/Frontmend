@@ -11,6 +11,8 @@ export const PATCH_TYPES = Object.freeze([
 export const REPAIR_RISKS = Object.freeze(["low", "medium", "high"]);
 const MAX_LINEAGE_ENTRIES = 8;
 const MAX_REPAIR_REVISIONS = 5;
+const MAX_IMPLEMENTATION_RECEIPTS = 5;
+const IMPLEMENTATION_CHECK_STATUSES = Object.freeze(["passed", "failed", "not-run"]);
 
 function boundedString(value, field, maximum, { required = true } = {}) {
   if (typeof value !== "string") {
@@ -23,6 +25,38 @@ function boundedString(value, field, maximum, { required = true } = {}) {
       "INVALID_REPAIR",
       `${field} must contain ${required ? `1 to ${maximum}` : `at most ${maximum}`} characters.`,
     );
+  }
+  return result;
+}
+
+function repositoryRelativePath(value) {
+  const path = boundedString(value, "file path", 200).replace(/\\/g, "/");
+  const segments = path.split("/");
+  if (
+    path.startsWith("/") ||
+    /^[a-z]:\//i.test(path) ||
+    path.includes(":") ||
+    segments.some((segment) => !segment || segment === "." || segment === "..") ||
+    /[\u0000-\u001f\u007f]/.test(path)
+  ) {
+    throw new AuditError(
+      "INVALID_IMPLEMENTATION_RECEIPT",
+      "files must contain repository-relative paths without parent traversal.",
+    );
+  }
+  return path;
+}
+
+function boundedUniqueList(value, field, maximum, normalize) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > maximum) {
+    throw new AuditError(
+      "INVALID_IMPLEMENTATION_RECEIPT",
+      `${field} must contain between 1 and ${maximum} items.`,
+    );
+  }
+  const result = value.map(normalize);
+  if (new Set(result.map((item) => JSON.stringify(item))).size !== result.length) {
+    throw new AuditError("INVALID_IMPLEMENTATION_RECEIPT", `${field} must not contain duplicates.`);
   }
   return result;
 }
@@ -159,6 +193,112 @@ function templateForFinding(finding) {
   };
 }
 
+function briefText(value, maximum = 300) {
+  return typeof value === "string" ? value.replace(/\s+/g, " ").trim().slice(0, maximum) : "";
+}
+
+function publicPathFromUrl(value) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return ["http:", "https:"].includes(parsed.protocol) ? parsed.pathname : null;
+  } catch {
+    return null;
+  }
+}
+
+function repositorySourceHints(patchType) {
+  const hints = {
+    headers: [
+      "Framework or edge response-header configuration",
+      "Middleware that owns document responses",
+      "Hosting configuration applied to the audited route",
+    ],
+    configuration: [
+      "Framework configuration",
+      "Build or deployment configuration",
+      "Environment-specific configuration affecting the public route",
+    ],
+    html: [
+      "Root document or application shell",
+      "Route-level layout or metadata component",
+      "Shared template that renders the measured element",
+    ],
+    css: [
+      "Component styles for the measured selector",
+      "Shared design tokens or theme variables",
+      "Responsive styles active for the measured viewport",
+    ],
+    javascript: [
+      "Component or route logic that owns the measured interaction",
+      "Client initialization and error handling",
+      "Third-party integration boundary involved in the evidence",
+    ],
+    guidance: [
+      "Repository code that owns the measured public behaviour",
+      "Existing tests for the affected route or rule",
+      "Deployment configuration needed to expose the change publicly",
+    ],
+  };
+  return hints[patchType] ?? hints.guidance;
+}
+
+export function createRepositoryFixBrief(report, findingId) {
+  if (!report || typeof report !== "object") {
+    throw new AuditError("AUDIT_REPORT_UNAVAILABLE", "A completed audit report is required.");
+  }
+  const finding = Array.isArray(report.findings)
+    ? report.findings.find((candidate) => candidate?.id === findingId)
+    : null;
+  if (!finding) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
+  const template = templateForFinding(finding);
+  const source = finding.source ?? {};
+  const finalUrl = briefText(report.finalUrl ?? report.url, 2_048);
+
+  return {
+    schemaVersion: 1,
+    auditId: briefText(report.auditId, 80),
+    findingId: briefText(finding.id, 160),
+    target: {
+      url: briefText(report.url, 2_048),
+      finalUrl,
+      publicPath: publicPathFromUrl(finalUrl),
+    },
+    evidence: {
+      title: briefText(finding.title, 240),
+      severity: briefText(finding.severity, 20),
+      category: briefText(finding.category, 80),
+      selector: briefText(finding.selector, 160),
+      measured: briefText(finding.evidence, 300),
+      provider: briefText(source.provider, 120),
+      ruleId: briefText(source.auditId, 160),
+      strategy: briefText(source.strategy, 40),
+      engineMode: briefText(report.engine?.mode, 80),
+      lighthouseVersion: briefText(report.engine?.lighthouseVersion, 40) || null,
+    },
+    repositoryHandoff: {
+      patchType: template.patchType,
+      risk: template.risk,
+      inspectFor: repositorySourceHints(template.patchType),
+      suggestedChange: briefText(template.patch, 1_200),
+      verificationPlan: briefText(template.verificationPlan, 700),
+      acceptanceCriteria: [
+        `The exact ${briefText(source.auditId || finding.id, 160)} rule must no longer fail for ${briefText(source.strategy || "the measured evidence mode", 80)}.`,
+        "Repository tests and the production build must pass without weakening unrelated checks.",
+        "A fresh Frontmend audit must observe the public deployment before resolution is claimed.",
+      ],
+    },
+    authority: {
+      sourceAccess: "coding-agent-only",
+      frontmendChangedTarget: false,
+      requiresHumanReview: true,
+      deploymentAuthority: "site-owner",
+      privacy:
+        "Keep absolute paths, credentials, environment values, customer data, and unrelated source out of Frontmend repair fields.",
+    },
+  };
+}
+
 export function createRepairDraft({ auditId, finding, input = {}, source = "human", now = Date.now() }) {
   if (!finding?.id) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
   const extra = Object.keys(input).find(
@@ -198,6 +338,8 @@ export function createRepairDraft({ auditId, finding, input = {}, source = "huma
     revisionHistory: [],
     changeRequest: null,
     reviewedAt: null,
+    implementationReceipt: null,
+    implementationHistory: [],
     deploymentAttestedAt: null,
   };
 }
@@ -215,6 +357,8 @@ export function requestRepairChanges(repair, feedback, now = Date.now()) {
       requestedAt: now,
     },
     reviewedAt: null,
+    implementationReceipt: null,
+    implementationHistory: [],
     deploymentAttestedAt: null,
     updatedAt: now,
   };
@@ -277,7 +421,78 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
       .slice(-MAX_REPAIR_REVISIONS),
     changeRequest: null,
     reviewedAt: null,
+    implementationReceipt: null,
+    implementationHistory: [],
     deploymentAttestedAt: null,
+    updatedAt: now,
+  };
+}
+
+export function recordRepositoryImplementation(repair, input = {}, now = Date.now()) {
+  if (!repair?.id) throw new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist.");
+  if (repair.status !== "approved") {
+    throw new AuditError(
+      "REPAIR_NOT_APPROVED",
+      "A person must approve the repair plan before repository implementation can be reported.",
+    );
+  }
+  if (Number.isFinite(repair.deploymentAttestedAt)) {
+    throw new AuditError(
+      "DEPLOYMENT_ALREADY_ATTESTED",
+      "Repository implementation must be reported before the site owner attests deployment.",
+    );
+  }
+  const allowed = ["summary", "files", "checks", "commitSha"];
+  const extra = Object.keys(input).find((key) => !allowed.includes(key));
+  if (extra) {
+    throw new AuditError("INVALID_IMPLEMENTATION_RECEIPT", `Unknown implementation field: ${extra}.`);
+  }
+  const files = boundedUniqueList(input.files, "files", 8, repositoryRelativePath);
+  const checks = boundedUniqueList(input.checks, "checks", 8, (check) => {
+    if (!check || typeof check !== "object" || Array.isArray(check)) {
+      throw new AuditError("INVALID_IMPLEMENTATION_RECEIPT", "Each check must be an object.");
+    }
+    const unknown = Object.keys(check).find((key) => !["name", "status"].includes(key));
+    if (unknown || !IMPLEMENTATION_CHECK_STATUSES.includes(check.status)) {
+      throw new AuditError(
+        "INVALID_IMPLEMENTATION_RECEIPT",
+        "Each check must contain only name and a passed, failed, or not-run status.",
+      );
+    }
+    return {
+      name: boundedString(check.name, "check name", 120),
+      status: check.status,
+    };
+  });
+  const commitSha = input.commitSha == null ? null : boundedString(input.commitSha, "commitSha", 64);
+  if (commitSha !== null && !/^[0-9a-f]{7,64}$/i.test(commitSha)) {
+    throw new AuditError(
+      "INVALID_IMPLEMENTATION_RECEIPT",
+      "commitSha must be a 7 to 64 character hexadecimal Git object ID.",
+    );
+  }
+  const previousReceipt = repair.implementationReceipt?.agentReported
+    ? repair.implementationReceipt
+    : null;
+  const previousHistory = Array.isArray(repair.implementationHistory)
+    ? repair.implementationHistory
+    : [];
+  return {
+    ...repair,
+    implementationReceipt: {
+      revision: Number.isFinite(previousReceipt?.revision) ? previousReceipt.revision + 1 : 1,
+      summary: boundedString(input.summary, "summary", 300),
+      files,
+      checks,
+      commitSha,
+      source: "agent",
+      reportedAt: now,
+      agentReported: true,
+      sourceChangedByFrontmend: false,
+    },
+    implementationHistory: previousReceipt
+      ? [...previousHistory, previousReceipt].slice(-MAX_IMPLEMENTATION_RECEIPTS)
+      : previousHistory.slice(-MAX_IMPLEMENTATION_RECEIPTS),
     updatedAt: now,
   };
 }
@@ -286,6 +501,7 @@ export function repairMissionState(repair) {
   const hasDraft = Boolean(repair?.id);
   const approved = repair?.status === "approved";
   const changesRequested = repair?.status === "changes-requested";
+  const implemented = approved && Boolean(repair?.implementationReceipt?.agentReported);
   const deploymentAttested = approved && Number.isFinite(repair?.deploymentAttestedAt);
   const steps = [
     { id: "measure", label: "Measure", owner: "Frontmend", status: "complete" },
@@ -300,6 +516,12 @@ export function repairMissionState(repair) {
       label: "Review",
       owner: "Person",
       status: approved ? "complete" : changesRequested ? "blocked" : hasDraft ? "current" : "blocked",
+    },
+    {
+      id: "implement",
+      label: "Implement",
+      owner: "Coding agent",
+      status: implemented ? "complete" : approved ? "available" : "blocked",
     },
     {
       id: "deploy",
@@ -322,6 +544,7 @@ export function repairMissionState(repair) {
       ? [{ id: "review_in_ui", actor: "person" }]
       : !deploymentAttested
         ? [
+          { id: "record_repository_implementation", actor: "agent", optional: true },
           { id: "export_reviewed_plan", actor: "person" },
           { id: "deploy_externally", actor: "site-owner" },
           { id: "attest_deployment_in_ui", actor: "site-owner" },
@@ -589,6 +812,22 @@ export function repairExportMarkdown({ report, repair }) {
     "",
     repair.verificationPlan,
     "",
+    ...(repair.implementationReceipt
+      ? [
+          "## Repository implementation receipt",
+          "",
+          `- Receipt revision: ${Number.isFinite(repair.implementationReceipt.revision) ? repair.implementationReceipt.revision : 1}`,
+          `- Previous receipts retained: ${Array.isArray(repair.implementationHistory) ? repair.implementationHistory.length : 0}`,
+          `- Reported by: coding agent at ${new Date(repair.implementationReceipt.reportedAt).toISOString()}`,
+          `- Summary: ${receiptText(repair.implementationReceipt.summary, 300)}`,
+          `- Files: ${repair.implementationReceipt.files.map((file) => `\`${receiptText(file, 200)}\``).join(", ")}`,
+          `- Checks: ${repair.implementationReceipt.checks.map((check) => `${receiptText(check.name, 120)} — ${receiptText(check.status, 20)}`).join("; ")}`,
+          `- Git object: ${receiptText(repair.implementationReceipt.commitSha, 64)}`,
+          "",
+          "> This receipt is agent-reported repository metadata. Frontmend did not inspect or change source, run these checks, or deploy the site.",
+          "",
+        ]
+      : []),
     "> This artifact is a reviewed proposal. It does not claim the target site was changed or the finding was resolved.",
     "",
   ];
@@ -638,12 +877,19 @@ export function auditReportMarkdown(report) {
   const outcomes = Array.isArray(report.ruleOutcomes) ? report.ruleOutcomes.slice(0, 64) : [];
   const outcomeOmitted = Math.max(0, (Array.isArray(report.ruleOutcomes) ? report.ruleOutcomes.length : 0) - outcomes.length);
   const viewports = Array.isArray(report.viewports) ? report.viewports.slice(0, 8) : [];
+  const viewportFailures = Array.isArray(report.viewportFailures)
+    ? report.viewportFailures.slice(0, 2)
+    : [];
   const isDocumentAudit = report.engine.mode === "live-document";
   const boundary = isDocumentAudit
     ? "This run inspected the fetched HTML document and public response headers. It did not execute page scripts, exercise user journeys, capture screenshots, or measure rendered viewport behavior."
     : report.engine.mode === "live-lighthouse"
       ? "This run used Lighthouse lab evidence for the listed emulated strategies. It does not prove every device, user journey, network condition, or production state."
-      : "This report records only the public evidence observed by the named audit engine and does not extend beyond those measurements.";
+      : report.engine.mode === "hybrid-lighthouse-document"
+        ? "This run retained Lighthouse lab evidence only for the measured strategies and supplemented unavailable viewport evidence with fetched HTML and public response headers. Document evidence did not execute scripts or measure rendered behavior."
+        : report.engine.mode === "live-lighthouse-partial"
+          ? "This run retained Lighthouse lab evidence only for the measured strategies. Unavailable strategies were not inferred or replaced with fabricated viewport results."
+          : "This report records only the public evidence observed by the named audit engine and does not extend beyond those measurements.";
 
   const lines = [
     "# Frontmend audit report",
@@ -705,6 +951,28 @@ export function auditReportMarkdown(report) {
       ...viewports.map((viewport) =>
         `- ${receiptText(viewport?.label ?? viewport?.id, 120)} — ${receiptText(viewport?.detail, 160)}`,
       ),
+    );
+  }
+
+  if (viewportFailures.length) {
+    lines.push(
+      "",
+      "### Unavailable strategies",
+      "",
+      ...viewportFailures.map((failure) =>
+        `- ${receiptText(failure?.label ?? failure?.id, 120)} — ${receiptText(failure?.code, 80)}: ${receiptText(failure?.message, 240)}`,
+      ),
+    );
+  }
+
+  if (report.documentSupplement) {
+    lines.push(
+      "",
+      "### Hybrid document supplement",
+      "",
+      `- Non-overlapping document rules added: ${artifactMetric(report.documentSupplement.evaluatedRuleCount)}`,
+      `- Overlapping document rules omitted from totals: ${artifactMetric(report.documentSupplement.overlappingRulesOmitted)}`,
+      `- Boundary: ${receiptText(report.documentSupplement.caveat, 360)}`,
     );
   }
 

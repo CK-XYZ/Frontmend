@@ -3,8 +3,10 @@ import test from "node:test";
 import {
   auditReportMarkdown,
   compareVerification,
+  createRepositoryFixBrief,
   createVerificationContext,
   createRepairDraft,
+  recordRepositoryImplementation,
   requestRepairChanges,
   repairMissionState,
   repairExportMarkdown,
@@ -23,6 +25,34 @@ const finding = {
     strategy: "document",
   },
 };
+
+test("creates a source-safe repository handoff from measured evidence", () => {
+  const brief = createRepositoryFixBrief({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    finalUrl: "https://removemyexif.com/",
+    engine: { mode: "live-document", provider: "Frontmend document audit", ruleSetVersion: 1 },
+    findings: [{
+      ...finding,
+      category: "Security",
+      selector: "Document",
+      evidence: "The Content-Security-Policy response header was absent.",
+    }],
+  }, finding.id);
+
+  assert.equal(brief.schemaVersion, 1);
+  assert.equal(brief.findingId, finding.id);
+  assert.equal(brief.target.publicPath, "/");
+  assert.equal(brief.evidence.ruleId, "content-security-policy");
+  assert.equal(brief.repositoryHandoff.patchType, "headers");
+  assert.equal(brief.repositoryHandoff.risk, "high");
+  assert.match(brief.repositoryHandoff.inspectFor[0], /response-header/i);
+  assert.match(brief.repositoryHandoff.suggestedChange, /Report-Only/);
+  assert.equal(brief.repositoryHandoff.acceptanceCriteria.length, 3);
+  assert.equal(brief.authority.frontmendChangedTarget, false);
+  assert.equal(brief.authority.sourceAccess, "coding-agent-only");
+  assert.match(brief.authority.privacy, /absolute paths/);
+});
 
 test("creates a bounded source-attributed repair that requires human review", () => {
   const repair = createRepairDraft({
@@ -112,8 +142,10 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   assert.equal(approved.steps.find((step) => step.id === "verify").status, "blocked");
   assert.deepEqual(
     approved.nextActions.map((action) => action.actor),
-    ["person", "site-owner", "site-owner"],
+    ["agent", "person", "site-owner", "site-owner"],
   );
+  assert.equal(approved.nextActions[0].optional, true);
+  assert.equal(approved.steps.find((step) => step.id === "implement").status, "available");
 
   const attested = repairMissionState({
     id: "repair-1",
@@ -134,6 +166,81 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   assert.equal(changesRequested.steps.find((step) => step.id === "draft").status, "current");
   assert.equal(changesRequested.steps.find((step) => step.id === "review").status, "blocked");
   assert.deepEqual(changesRequested.nextActions, [{ id: "revise_repair", actor: "agent" }]);
+});
+
+test("records bounded agent implementation evidence without claiming deployment", () => {
+  const approved = {
+    ...createRepairDraft({ auditId: "audit-1", finding, now: 100 }),
+    status: "approved",
+    reviewedAt: 110,
+  };
+  const implemented = recordRepositoryImplementation(
+    approved,
+    {
+      summary: "Added the reviewed report-only header through the repository configuration.",
+      files: ["worker/index.js", "tests/headers.test.mjs"],
+      checks: [
+        { name: "bun test", status: "passed" },
+        { name: "production build", status: "failed" },
+      ],
+      commitSha: "94a2827",
+    },
+    120,
+  );
+
+  assert.equal(implemented.implementationReceipt.source, "agent");
+  assert.equal(implemented.implementationReceipt.revision, 1);
+  assert.deepEqual(implemented.implementationHistory, []);
+  assert.equal(implemented.implementationReceipt.sourceChangedByFrontmend, false);
+  assert.equal(implemented.deploymentAttestedAt, null);
+  assert.equal(repairMissionState(implemented).steps.find((step) => step.id === "implement").status, "complete");
+  const rerun = recordRepositoryImplementation(implemented, {
+    summary: "Re-ran the checks after correcting the repository test fixture.",
+    files: ["worker/index.js", "tests/headers.test.mjs"],
+    checks: [{ name: "bun test", status: "passed" }],
+    commitSha: "94a2827",
+  }, 130);
+  assert.equal(rerun.implementationReceipt.revision, 2);
+  assert.equal(rerun.implementationHistory.length, 1);
+  assert.equal(rerun.implementationHistory[0].revision, 1);
+  assert.equal(rerun.implementationHistory[0].checks[1].status, "failed");
+  let boundedHistory = rerun;
+  for (let revision = 3; revision <= 8; revision += 1) {
+    boundedHistory = recordRepositoryImplementation(boundedHistory, {
+      summary: `Implementation receipt revision ${revision}.`,
+      files: ["worker/index.js"],
+      checks: [{ name: "bun test", status: "passed" }],
+    }, 130 + revision);
+  }
+  assert.equal(boundedHistory.implementationReceipt.revision, 8);
+  assert.deepEqual(
+    boundedHistory.implementationHistory.map((receipt) => receipt.revision),
+    [3, 4, 5, 6, 7],
+  );
+  assert.throws(
+    () => recordRepositoryImplementation(approved, {
+      summary: "Unsafe path",
+      files: ["C:/private/source.js"],
+      checks: [{ name: "test", status: "passed" }],
+    }),
+    (error) => error.code === "INVALID_IMPLEMENTATION_RECEIPT",
+  );
+  assert.throws(
+    () => recordRepositoryImplementation(approved, {
+      summary: "URL is not a repository path",
+      files: ["https://example.com/source.js"],
+      checks: [{ name: "test", status: "passed" }],
+    }),
+    (error) => error.code === "INVALID_IMPLEMENTATION_RECEIPT",
+  );
+  assert.throws(
+    () => recordRepositoryImplementation({ ...approved, deploymentAttestedAt: 130 }, {
+      summary: "Late receipt",
+      files: ["src/index.js"],
+      checks: [{ name: "test", status: "passed" }],
+    }),
+    (error) => error.code === "DEPLOYMENT_ALREADY_ATTESTED",
+  );
 });
 
 test("human feedback gates bounded agent revisions and clears stale approvals", () => {
@@ -585,6 +692,47 @@ test("exports a bounded escaped audit report with an explicit evidence boundary"
   assert.equal((artifact.match(/^### \d+\./gm) ?? []).length, 20);
 });
 
+test("exports hybrid evidence without implying document rules replace a viewport", () => {
+  const artifact = auditReportMarkdown({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    finalUrl: "https://removemyexif.com/",
+    completedAt: 1_787_766_200_000,
+    score: 82,
+    scoreBasis: "measured-lighthouse-viewports",
+    checks: { passed: 7, warnings: 1, failed: 3 },
+    findingCount: 1,
+    findingsOmitted: 0,
+    findings: [],
+    viewportCount: 1,
+    viewports: [{ id: "mobile", label: "Mobile", detail: "Lighthouse" }],
+    viewportFailures: [{
+      id: "desktop",
+      label: "Desktop",
+      code: "PROVIDER_RATE_LIMITED",
+      message: "Desktop Lighthouse was unavailable.",
+    }],
+    documentSupplement: {
+      evaluatedRuleCount: 8,
+      overlappingRulesOmitted: 1,
+      caveat: "Document evidence does not replace the unavailable viewport.",
+    },
+    ruleOutcomes: [],
+    engine: {
+      mode: "hybrid-lighthouse-document",
+      provider: "PageSpeed Insights + Frontmend document audit",
+      ruleSetVersion: 1,
+      lighthouseVersion: "13.4.1",
+      notice: "Non-duplicative document evidence supplemented the report.",
+    },
+  });
+
+  assert.match(artifact, /Hybrid document supplement/);
+  assert.match(artifact, /Non-overlapping document rules added: 8/);
+  assert.match(artifact, /Overlapping document rules omitted from totals: 1/);
+  assert.match(artifact, /does not replace the unavailable viewport/);
+});
+
 test("exports only human-approved repair proposals with an honesty notice", () => {
   const repair = {
     ...createRepairDraft({
@@ -595,17 +743,34 @@ test("exports only human-approved repair proposals with an honesty notice", () =
     status: "approved",
     reviewedAt: 1_787_766_001_000,
   };
+  const implemented = recordRepositoryImplementation(repair, {
+    summary: "Applied the reviewed response-header configuration.",
+    files: ["worker/index.js"],
+    checks: [{ name: "bun test", status: "passed" }],
+    commitSha: "94a2827",
+  }, 1_787_766_002_000);
+  const rerun = recordRepositoryImplementation(implemented, {
+    summary: "Re-ran the approved implementation checks.",
+    files: ["worker/index.js"],
+    checks: [{ name: "bun test", status: "passed" }],
+    commitSha: "94a2827",
+  }, 1_787_766_003_000);
   const markdown = repairExportMarkdown({
     report: {
       auditId: repair.auditId,
       url: "https://removemyexif.com/",
       finalUrl: "https://removemyexif.com/",
     },
-    repair,
+    repair: rerun,
   });
   assert.match(markdown, /Human reviewed:/);
   assert.match(markdown, /Deployment handoff: not yet attested/);
   assert.match(markdown, /does not claim the target site was changed/i);
+  assert.match(markdown, /Repository implementation receipt/);
+  assert.match(markdown, /Receipt revision: 2/);
+  assert.match(markdown, /Previous receipts retained: 1/);
+  assert.match(markdown, /`worker\/index\.js`/);
+  assert.match(markdown, /Frontmend did not inspect or change source/);
   assert.throws(
     () => repairExportMarkdown({ report: { auditId: repair.auditId }, repair: { ...repair, status: "draft" } }),
     (error) => error.code === "REPAIR_NOT_APPROVED",

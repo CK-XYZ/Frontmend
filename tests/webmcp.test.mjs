@@ -18,6 +18,7 @@ const TOOL_NAMES = [
   "check_site_audit_progress",
   "cancel_site_audit",
   "get_site_audit_results",
+  "get_repository_fix_brief",
   "start_related_page_audit",
   "start_site_exploration",
   "get_site_exploration",
@@ -25,8 +26,49 @@ const TOOL_NAMES = [
   "stage_site_repair",
   "revise_site_repair",
   "get_repair_workspace",
+  "record_repository_implementation",
   "start_repair_verification",
 ];
+
+test("repository fix brief gives a coding agent bounded evidence without claiming source access", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const finding = {
+    id: "document-content-security-policy",
+    title: "No Content Security Policy header was observed",
+    severity: "low",
+    category: "Security",
+    selector: "Document",
+    evidence: "The Content-Security-Policy response header was absent.",
+    repair: "Introduce a tested Content Security Policy.",
+    source: {
+      provider: "Frontmend document audit",
+      auditId: "content-security-policy",
+      strategy: "document",
+    },
+  };
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getResults: async () => ({
+      auditId,
+      url: "https://removemyexif.com/",
+      finalUrl: "https://removemyexif.com/",
+      engine: { mode: "live-document", provider: "Frontmend document audit", ruleSetVersion: 1 },
+      findings: [finding],
+    }),
+  };
+
+  const result = await findTool(
+    createFrontmendTools(service),
+    "get_repository_fix_brief",
+  ).execute({ findingId: finding.id });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.findingId, finding.id);
+  assert.equal(result.data.repositoryHandoff.patchType, "headers");
+  assert.equal(result.data.authority.sourceAccess, "coding-agent-only");
+  assert.equal(result.data.authority.frontmendChangedTarget, false);
+  assert.equal("absolutePath" in result.data.repositoryHandoff, false);
+});
 
 test("cancel tool uses visible audit context and returns persisted terminal state", async () => {
   const calls = [];
@@ -303,12 +345,37 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.equal(earlyVerification.ok, false);
   assert.equal(earlyVerification.error.code, "DEPLOYMENT_NOT_ATTESTED");
 
-  repair = { ...repair, status: "approved", deploymentAttestedAt: 20 };
+  repair = {
+    ...repair,
+    status: "approved",
+    implementationReceipt: {
+      revision: 2,
+      summary: "Current implementation",
+      files: ["worker/index.js"],
+      checks: [{ name: "bun test", status: "passed" }],
+      commitSha: "94a2827",
+      source: "agent",
+      reportedAt: 19,
+    },
+    implementationHistory: [{
+      revision: 1,
+      summary: "Initial implementation",
+      files: ["worker/index.js"],
+      checks: [{ name: "bun test", status: "failed" }],
+      commitSha: null,
+      source: "agent",
+      reportedAt: 18,
+    }],
+    deploymentAttestedAt: 20,
+  };
   const readyWorkspace = await findTool(tools, "get_repair_workspace").execute({
     auditId: repair.auditId,
     repairId: repair.id,
   });
   assert.equal(readyWorkspace.data.repairs[0].deploymentAttestedAt, 20);
+  assert.equal(readyWorkspace.data.repairs[0].implementationReceipt.revision, 2);
+  assert.equal(readyWorkspace.data.repairs[0].implementationHistory[0].checks[0].status, "failed");
+  assert.equal(readyWorkspace.data.repairs[0].implementationHistory[0].sourceChangedByFrontmend, false);
   assert.equal(readyWorkspace.data.repairs[0].mission.state, "ready-for-verification");
 
   const verification = await findTool(tools, "start_repair_verification").execute({
@@ -318,6 +385,52 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.equal(verification.ok, true);
   assert.match(verification.data.workspacePath, /^\/audits\//);
   assert.deepEqual(calls.at(-1), ["verify", repair.auditId, repair.id]);
+});
+
+test("implementation receipt tool reports bounded repository evidence only", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const calls = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    recordImplementation: async (receivedAuditId, receivedRepairId, input) => {
+      calls.push({ receivedAuditId, receivedRepairId, input });
+      return {
+        id: repairId,
+        status: "approved",
+        implementationReceipt: {
+          ...input,
+          source: "agent",
+          agentReported: true,
+          sourceChangedByFrontmend: false,
+          reportedAt: 20,
+        },
+      };
+    },
+  };
+  const result = await findTool(
+    createFrontmendTools(service),
+    "record_repository_implementation",
+  ).execute({
+    repairId,
+    summary: "Applied the reviewed header configuration.",
+    files: ["worker/index.js"],
+    checks: [{ name: "bun test", status: "passed" }],
+    commitSha: "94a2827",
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.implementationReceipt.sourceChangedByFrontmend, false);
+  assert.deepEqual(calls[0], {
+    receivedAuditId: auditId,
+    receivedRepairId: repairId,
+    input: {
+      summary: "Applied the reviewed header configuration.",
+      files: ["worker/index.js"],
+      checks: [{ name: "bun test", status: "passed" }],
+      commitSha: "94a2827",
+    },
+  });
 });
 
 test("verification receipt tool returns the same bounded proof artifact", async () => {
@@ -454,6 +567,7 @@ test("contextual tool availability follows the visible audit and human review st
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
+    "get_repository_fix_brief",
     "stage_site_repair",
     "get_repair_workspace",
   ]);
@@ -461,15 +575,26 @@ test("contextual tool availability follows the visible audit and human review st
   repairs = [{ status: "changes-requested", deploymentAttestedAt: null }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
+    "get_repository_fix_brief",
     "stage_site_repair",
     "revise_site_repair",
     "get_repair_workspace",
+  ]);
+
+  repairs = [{ status: "approved", deploymentAttestedAt: null }];
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "stage_site_repair",
+    "get_repair_workspace",
+    "record_repository_implementation",
   ]);
 
   repairs = [{ status: "approved", deploymentAttestedAt: 1_777_000_000_000 }];
   audit.report.verification = { status: "resolved" };
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
+    "get_repository_fix_brief",
     "get_verification_receipt",
     "stage_site_repair",
     "get_repair_workspace",
@@ -499,7 +624,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 12);
+  assert.equal(snapshots.at(-1).totalTools, 14);
   dispose();
 });
 
@@ -567,7 +692,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 12);
+  assert.equal(snapshots.at(-1).totalTools, 14);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

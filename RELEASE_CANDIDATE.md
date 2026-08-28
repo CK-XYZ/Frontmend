@@ -23,10 +23,10 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun run test` | PASS — 84 passed, 0 failed |
+| Tests | `bun test` | PASS — 91 passed, 0 failed |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
-| Wrangler types | `bunx wrangler types --check` | PASS before whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --outdir dist/wrangler-dry-run --config wrangler.jsonc` | PASS — five assets; 122.47 KiB raw / 28.59 KiB gzip Worker upload; no upload performed |
+| Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
+| Deploy bundle | `bunx wrangler deploy --dry-run --config wrangler.jsonc` | PASS — five assets; 136.50 KiB raw / 31.63 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -40,16 +40,17 @@ The candidate is deployed and HTTP/API-verified but not WebMCP-verified until ea
 - [x] `name`, `main`, `compatibility_date`, assets, Durable Object bindings, and the `v1` SQLite migration pass Wrangler's dry run.
 - [x] `compatibility_date` is `2026-08-27`.
 - [x] Confirm the currently authenticated Cloudflare account is the intended production owner immediately before deployment.
-- [ ] Obtain a Google PageSpeed API key and keep it outside source control.
-- [ ] After the Worker exists, set the key interactively with `bunx wrangler secret put PAGESPEED_API_KEY --name frontmend --config wrangler.jsonc`. Do not place the value on the command line or in Git.
+- [x] Obtain a Google PageSpeed API key and keep it outside source control.
+- [x] Set the key interactively as the `PAGESPEED_API_KEY` Worker secret; secret change version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b` was recorded without exposing the value.
 - [x] Perform the authorised deployment to the exact custom domain with `workers.dev` and preview URLs disabled.
 - [x] Record the exact deployed URL, deployed version ID, source state, UTC deployment time, and final command receipt here.
 - [x] Verify explicit WebMCP response headers: `Origin-Agent-Cluster: ?1` and `Permissions-Policy: tools=(self)`.
 - [x] Verify public DNS through `1.1.1.1` and `8.8.8.8`, valid HTTPS, current hashed assets, SPA restoration, private-target rejection, and Durable Object persistence.
 - [x] Complete a real production self-audit: `807bc951-7e1a-4064-96d1-e162e849cedb` observed CSP and `nosniff`, scored 78, and retained only the two honest unhydrated-document findings.
+- [x] Complete the production PageSpeed path: audit `c7b70680-06b8-444d-a1de-ab6d5c9d2d83` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 85, and recorded no fallback.
 - [ ] Complete both fresh-session procedures below against the exact production URL.
 
-`PAGESPEED_API_KEY` is not required for the Worker to start. Without it, Google may rate-limit Lighthouse and Frontmend will truthfully use its bounded live-document fallback. The release should nevertheless configure the key for a dependable judging path.
+`PAGESPEED_API_KEY` is not required for the Worker to start. It is now configured for the deployed judging path; if Google still rate-limits one strategy, the strengthened candidate retains any successful Lighthouse viewport and names the unavailable strategy rather than discarding valid evidence.
 
 ## Fresh-session ChatGPT verification
 
@@ -83,6 +84,28 @@ Define `FRONTMEND_URL` as the exact public HTTPS deployment URL. Do not use loca
 14. Save screenshots of: the production URL and one-tool landing state; running contextual tools; completed report plus matching structured result; staged review plus the human-only approval boundary; and Recently used/Sources.
 
 Failure conditions: **Human mode**, missing Site tools UI, any tool set inconsistent with visible state, a tool call that navigates before returning, mismatched IDs/evidence, approval by the agent, or a deployment/change claim without external proof.
+
+## Fresh-session Codex repository verification
+
+This is the strongest end-to-end product demonstration because the coding agent already has authorised access to the target repository while Frontmend supplies independent public evidence. Use a controlled target whose repository is open in Codex. Do not use a third-party site.
+
+1. Start a new Codex task rooted at the controlled target repository. Record `git status --short` before the demo so pre-existing work is attributable.
+2. Open `FRONTMEND_URL` as a top-level page in Codex's browser and confirm the landing page exposes only `start_site_audit`.
+3. Send this natural demo prompt, replacing the target once:
+
+   > Audit `CONTROLLED_TARGET_URL`, identify the highest-impact finding that can be fixed in this repository, and prepare a concrete repair plan. Use Frontmend’s site tools for live evidence and inspect the repository yourself to locate the owning code. Don’t edit anything until I approve the plan, and don’t deploy.
+
+4. Confirm the agent uses Frontmend for the public audit and `get_repository_fix_brief` for the selected finding, but uses Codex repository tools—not Frontmend—to inspect source. The brief must contain only public evidence, search hints, acceptance criteria, and authority boundaries; it must not contain absolute local paths or source uploads.
+5. Confirm `stage_site_repair` creates the same visible proposal the agent describes. If necessary, request one revision in the UI and verify `revise_site_repair` preserves the feedback and revision trail.
+6. Review the exact proposal and approve it manually in Frontmend. Then send:
+
+   > Implement the approved repair in this repository, preserve unrelated work, and run the relevant tests and production build. When they finish, use Frontmend’s implementation-receipt tool to record only the short summary, repository-relative files, check outcomes, and current commit ID if one exists. Do not commit, push, deploy, or claim the public finding is fixed.
+
+7. Confirm Codex edits only the intended repository scope and runs allowed checks. The contextual WebMCP set should now include `record_repository_implementation`; its structured result and visible receipt must match the changed relative filenames and truthful check statuses.
+8. Confirm the mission rail marks **Implement** complete while **Deploy** remains owned by the site owner and **Verify** remains blocked. Frontmend must still say it did not inspect or change source and has not verified the public result.
+9. Record `git status --short` and the diff after the demo. Save screenshots of the repository fix brief, visible human approval, repository diff/check output, implementation receipt, and still-locked deployment boundary.
+
+Failure conditions: Frontmend receives source contents or absolute paths; the agent edits before approval; unrelated files change; failed or skipped checks are reported as passed; Frontmend approves, deploys, or claims resolution; or the visible receipt differs from the repository evidence.
 
 ## Fresh-session Chrome verification
 
@@ -119,4 +142,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The candidate may be labelled **RC1 deployed and HTTP/API-verified**. It must not be labelled ChatGPT-verified, Chrome-verified, or submission-ready until `PAGESPEED_API_KEY` and both fresh-session procedures have real receipts. The deployed source is captured by this repository's initial release commit and must still be pushed before a public repository revision can be tied to the Cloudflare version.
+The deployed version may be labelled **RC1 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled ChatGPT-verified, Chrome-verified, or submission-ready until both fresh-session procedures have real receipts. The strengthened source described in the fresh local receipt has not been committed, pushed, or deployed; the deployed source is still tied to the repository's initial release commit.

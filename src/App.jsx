@@ -40,12 +40,14 @@ const LANDING_SIGNALS = [
   { label: "Accessibility", detail: "Evidence attached", state: "neutral", icon: ShieldCheck },
   { label: "Verification", detail: "Before and after", state: "good", icon: CheckCircle },
 ];
-const WEBMCP_TOOL_COUNT = 12;
+const WEBMCP_TOOL_COUNT = 14;
 const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
   cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
   get_site_audit_results: ["Read audit evidence", "Inspect the bounded findings and measured rule outcomes."],
+  get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
+  record_repository_implementation: ["Record repository implementation", "Attach bounded file and check evidence after an approved repair is implemented by a coding agent."],
   start_related_page_audit: ["Audit an observed route", "Start a new audit from a same-site path found in this evidence."],
   start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
   get_site_exploration: ["Read site exploration", "Inspect mission progress and recurring evidence across selected pages."],
@@ -1066,6 +1068,66 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
           <p>{repair.verificationPlan}</p>
         </div>
       </div>
+      {repair.implementationReceipt ? (
+        <section className="implementation-receipt" aria-labelledby="implementation-receipt-title">
+          <div className="implementation-receipt-heading">
+            <span aria-hidden="true"><Robot size={20} weight="duotone" /></span>
+            <div>
+              <p className="kicker">Coding-agent receipt</p>
+              <strong id="implementation-receipt-title">Repository implementation reported</strong>
+              <p>
+                Revision {repair.implementationReceipt.revision ?? 1} · {repair.implementationReceipt.summary}
+              </p>
+            </div>
+          </div>
+          <dl>
+            <div>
+              <dt>Files</dt>
+              <dd>{repair.implementationReceipt.files.join(", ")}</dd>
+            </div>
+            <div>
+              <dt>Checks</dt>
+              <dd>
+                {repair.implementationReceipt.checks
+                  .map((check) => `${check.name}: ${check.status}`)
+                  .join(" · ")}
+              </dd>
+            </div>
+            {repair.implementationReceipt.commitSha ? (
+              <div>
+                <dt>Git object</dt>
+                <dd><code>{repair.implementationReceipt.commitSha}</code></dd>
+              </div>
+            ) : null}
+          </dl>
+          {repair.implementationHistory?.length ? (
+            <details className="implementation-history">
+              <summary>
+                {repair.implementationHistory.length} previous implementation receipt
+                {repair.implementationHistory.length === 1 ? "" : "s"}
+              </summary>
+              <ol>
+                {repair.implementationHistory.map((receipt) => (
+                  <li key={`${receipt.revision ?? 1}-${receipt.reportedAt}`}>
+                    <strong>Revision {receipt.revision ?? 1}</strong>
+                    <span>{receipt.summary}</span>
+                    <small>
+                      {receipt.checks.map((check) => `${check.name}: ${check.status}`).join(" · ")}
+                    </small>
+                  </li>
+                ))}
+              </ol>
+            </details>
+          ) : null}
+          <small>
+            Agent-reported repository metadata only · Frontmend did not inspect or change source · public result not yet verified
+          </small>
+        </section>
+      ) : approved && !deploymentAttested ? (
+        <p className="implementation-receipt-empty">
+          A coding agent can optionally attach repository-relative files and check outcomes before deployment.
+        </p>
+      ) : null}
       {changesRequested ? (
         <div className="change-requested-card" role="status">
           <span aria-hidden="true"><Robot size={20} weight="duotone" /></span>
@@ -1498,6 +1560,16 @@ function SiteExploration({ report }) {
 function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   const report = audit.report;
   const isDocumentAudit = report.engine.mode === "live-document";
+  const isHybridAudit = report.engine.mode === "hybrid-lighthouse-document";
+  const isPartialLighthouse = report.engine.mode === "live-lighthouse-partial";
+  const evidenceLabel = isDocumentAudit
+    ? "live document evidence"
+    : isHybridAudit
+      ? "partial Lighthouse + document evidence"
+      : isPartialLighthouse
+        ? "partial Lighthouse evidence"
+        : "live Lighthouse evidence";
+  const viewportFailures = Array.isArray(report.viewportFailures) ? report.viewportFailures : [];
   const viewports = report.viewports?.length ? report.viewports : VIEWPORTS;
   const [viewportId, setViewportId] = useState(
     viewports.find((item) => item.id === "mobile")?.id ?? viewports[0]?.id,
@@ -1590,13 +1662,13 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
             </a>
           </div>
           <p className="kicker">
-            Audit complete · {isDocumentAudit ? "live document evidence" : "live Lighthouse evidence"}
+            Audit complete · {evidenceLabel}
           </p>
           <h1 id="report-title">{report.hostname}</h1>
         </div>
         <div
           className="score-card"
-          aria-label={`${isDocumentAudit ? "Document coverage" : "Frontend health"} score ${report.score} out of 100`}
+          aria-label={`${isDocumentAudit ? "Document coverage" : "Measured frontend health"} score ${report.score} out of 100`}
         >
           <strong>{report.score}</strong>
           <span>{isDocumentAudit ? "Coverage" : "Health"}</span>
@@ -1637,10 +1709,37 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
         </div>
         <div>
           <span>{report.viewportCount}</span>
-          <small>{isDocumentAudit ? "Viewports measured" : "Viewports"}</small>
+          <small>Viewports measured</small>
         </div>
         <p>{report.engine.notice}</p>
       </div>
+
+      {viewportFailures.length ? (
+        <section className="viewport-failures" aria-labelledby="viewport-failures-title">
+          <Warning size={19} weight="fill" aria-hidden="true" />
+          <div>
+            <strong id="viewport-failures-title">Partial viewport evidence retained</strong>
+            <p>
+              Frontmend kept every successful measurement instead of discarding the run. Unavailable
+              strategies remain explicit and can be retried without turning them into inferred results.
+            </p>
+            <ul>
+              {viewportFailures.map((failure) => (
+                <li key={failure.id}>
+                  <span>{failure.label}</span>
+                  <code>{failure.code}</code>
+                  <small>{failure.message}</small>
+                </li>
+              ))}
+            </ul>
+            {report.documentSupplement ? (
+              <small className="document-supplement-note">
+                {report.documentSupplement.evaluatedRuleCount} non-overlapping document rules added · {report.documentSupplement.overlappingRulesOmitted} overlapping rules omitted from totals. Document evidence does not replace the unavailable viewport.
+              </small>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
 
       <VerificationBanner verification={report.verification} />
 
@@ -1657,7 +1756,8 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
         <div className="preview-column">
           <div className="viewport-tabs" role="tablist" aria-label="Preview viewport">
             {viewports.map((item) => {
-              const Icon = item.icon ?? (item.id === "mobile" ? DeviceMobile : Desktop);
+              const Icon = item.icon
+                ?? (item.id === "mobile" ? DeviceMobile : item.id === "document" ? Browser : Desktop);
               return (
                 <button
                   key={item.id}

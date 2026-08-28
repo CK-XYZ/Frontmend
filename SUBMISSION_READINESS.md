@@ -15,18 +15,20 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 - [x] Failed audits can be retried by people or agents without replaying the deduplicated failure; attempts remain rate-limited, numbered, and attached to the stable workspace.
 - [x] Active audits can be cancelled by a person or agent through the shared service; provider abort, persisted `cancelled` state, idempotent replay, retention, and same-ID retry are covered in both runtimes.
 - [x] Human UI and WebMCP use the same application service and Worker routes.
-- [x] Live Lighthouse evidence is supported with a clearly labelled live-document fallback.
+- [x] Mobile and desktop Lighthouse requests run independently; successful viewport evidence survives a sibling failure, with a labelled hybrid document supplement or truthful partial-Lighthouse result.
 - [x] Live-document fallback emits a bounded schema-5 Document profile with element counts, inline-code counts, external-origin inventory, and observed response-header signals; it remains explicit about omitted runtime and viewport evidence.
 - [x] Completed document reports expose bounded unique same-site route paths, an omitted count, and an unvisited-route caveat; the retained parent job authoritatively validates every human or agent follow-up and persists bounded root/parent/depth lineage into the child.
 - [x] A durable site-exploration mission atomically admits one to three selected observed routes, retains independent child audits, aggregates recurring rule evidence, survives reload, and exports a bounded non-crawl report.
 - [x] Missing-CSP findings include a bounded static resource-origin inventory and generate a site-aware Report-Only draft that avoids blanket inline-script weakening.
 - [x] Evidence is bounded, versioned, source-attributed, and marked untrusted to agents.
-- [x] Lighthouse result bounding is explicit: the complete failure total, retained ten-detail queue, omitted count, and full rule-outcome record remain distinct across UI, JSON, and Markdown.
+- [x] Lighthouse result bounding is explicit: supported-rule check counts, the complete supported failure total, retained ten-detail queue, omitted count, and full supported rule-outcome record remain distinct across UI, JSON, and Markdown; hybrid totals omit overlapping document rules.
 - [x] Agents can stage a repair proposal without changing the target site.
+- [x] Coding agents can request a source-safe repository fix brief with measured evidence, ownership hints, and acceptance criteria; Frontmend does not receive repository source or absolute paths.
 - [x] People can request bounded, visible changes; agents can revise only after that request, and each new proposal re-enters human review with a five-version history cap.
 - [x] Approval is absent from WebMCP and requires explicit confirmation in the visible UI.
 - [x] Verification remains blocked after approval until a person explicitly attests the reviewed change was deployed; WebMCP cannot grant or bypass that attestation.
 - [x] Repair missions expose the same step ownership and allowed next actions through HTTP, WebMCP, and the visible UI.
+- [x] After human approval, a coding agent can attach a bounded implementation receipt containing only repository-relative files, check outcomes, a summary, and optional Git object ID; repeated reports retain five prior receipts so failed checks cannot be silently overwritten, and none can approve, deploy, or claim resolution.
 - [x] Approved plans export as Markdown with an explicit proposal-only notice.
 - [x] Completed audits export as bounded Markdown with escaped provider text, rule-level provenance, and evidence-mode limits through the visible report workspace.
 - [x] Repair verification uses a fresh replay-safe audit; `resolved` requires an explicit pass for the exact original rule.
@@ -42,11 +44,11 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 84 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun test`: 91 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
 - [x] `bunx wrangler deploy --dry-run`: static assets plus both Durable Object bindings recognized.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
-- [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; the current library contains twelve bounded tools and completed reports register only their applicable result, exploration, and repair capabilities.
+- [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current fourteen-tool library, and completed reports still register only their applicable result, exploration, and repair capabilities.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.
 - [x] Live cancellation proof `7c70fe45`: a real `removemyexif.com` run returned and restored persisted `cancelled` state; a repeated start returned HTTP 202 under the same ID as attempt 2 and completed with score 89 using fresh live-document evidence.
 - [x] Real site-exploration proof: homepage audit `ad95d84f` exposed eight observed paths plus 33 omitted; WebMCP started `/tools/remove-pdf-metadata` as audit `7bf9d065`, and the human route control started `/tools` as audit `3f3972ab`. The baseline ID, stable paths, visible state, exported caveat, and zero browser console errors were verified.
@@ -74,7 +76,7 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 - [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves Cloudflare Worker version `11ee543b-2a8d-46f1-8636-57d7568e74bd`; public DNS, valid HTTPS, hashed assets, SPA restoration, structured private-target rejection, and Durable Object execution were verified.
 - [x] Production security/WebMCP headers: `Origin-Agent-Cluster: ?1`, `Permissions-Policy: tools=(self)`, CSP, `nosniff`, frame denial, and strict-origin referrer policy are present on the public origin.
 - [x] Production self-audit `807bc951-7e1a-4064-96d1-e162e849cedb`: completed with truthful live-document fallback, score 78, CSP and `nosniff` observed, and only the two unhydrated-document limitations retained.
-- [ ] Production PageSpeed API-key path receipt.
+- [x] Production PageSpeed API-key path: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; audit `c7b70680-06b8-444d-a1de-ab6d5c9d2d83` returned Lighthouse 13.4.1 mobile and desktop evidence, score 85, with no fallback.
 
 ## Competition delivery
 
@@ -93,6 +95,6 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. A reliable Lighthouse judging path should configure `PAGESPEED_API_KEY`; the honest document fallback is live and verified without it.
+2. The strengthened partial-viewport, repository-brief, and implementation-receipt source is locally verified but has not been committed, pushed, or deployed.
 3. The production deployment must be exercised from fresh ChatGPT and Chrome sessions before any submission claim.
 4. Video capture, narration, upload, and Devpost submission remain external deliverables.

@@ -160,6 +160,19 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
+    async recordImplementation(auditId, repairId, input) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/implementation`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ ...input, source: "agent" }),
+          },
+        ),
+      );
+    },
+
     async attestDeployment(auditId, repairId) {
       return responsePayload(
         await fetchImpl(
@@ -407,6 +420,17 @@ export function createAuditService(options = {}) {
       }
       const expectedGeneration = generation;
       return rememberRepair(await transport.reviseRepair(auditId, repairId, input), expectedGeneration);
+    },
+
+    async recordImplementation(auditId, repairId, input) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(
+        await transport.recordImplementation(auditId, repairId, input),
+        expectedGeneration,
+      );
     },
 
     async attestDeployment(auditId, repairId) {

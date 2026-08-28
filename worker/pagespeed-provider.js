@@ -200,7 +200,8 @@ function ruleOutcomeFromAudit(id, audit, strategy) {
 function countChecks(results) {
   const counts = { passed: 0, warnings: 0, failed: 0 };
   for (const result of results) {
-    for (const audit of Object.values(result.lighthouseResult?.audits ?? {})) {
+    for (const [id, audit] of Object.entries(result.lighthouseResult?.audits ?? {})) {
+      if (!RULES[id]) continue;
       if (typeof audit?.score !== "number" || audit.scoreDisplayMode === "notApplicable") continue;
       if (audit.score >= 0.9) counts.passed += 1;
       else if (audit.score >= 0.5) counts.warnings += 1;
@@ -665,6 +666,54 @@ async function fetchStrategy({ url, strategy, fetchImpl, apiKey, signal }) {
   return result;
 }
 
+async function fetchStrategyOutcome({ url, strategy, fetchImpl, apiKey, signal }) {
+  const cancellation = cancellableSignal(signal, 90_000);
+  try {
+    const result = await fetchStrategy({
+      url,
+      strategy,
+      fetchImpl,
+      apiKey,
+      signal: cancellation.signal,
+    });
+    return { strategy, result, error: null };
+  } catch (error) {
+    if (signal?.aborted) {
+      throw providerError("AUDIT_CANCELLED", "The audit was cancelled.");
+    }
+    if (cancellation.timedOut()) {
+      return {
+        strategy,
+        result: null,
+        error: providerError(
+          "PROVIDER_TIMEOUT",
+          `The ${strategy} Lighthouse audit exceeded the 90 second time limit.`,
+        ),
+      };
+    }
+    return {
+      strategy,
+      result: null,
+      error: error?.code
+        ? error
+        : providerError("PROVIDER_FAILED", `The ${strategy} Lighthouse audit failed.`),
+    };
+  } finally {
+    cancellation.cleanup();
+  }
+}
+
+function viewportFailure(outcome) {
+  return {
+    id: outcome.strategy,
+    label: outcome.strategy === "mobile" ? "Mobile" : "Desktop",
+    status: "unavailable",
+    code: bounded(outcome.error?.code, 80) || "PROVIDER_FAILED",
+    message: bounded(outcome.error?.message, 240) || "Lighthouse evidence was unavailable.",
+    recoverable: outcome.error?.recoverable !== false,
+  };
+}
+
 export async function runPageSpeedAudit({
   auditId,
   url,
@@ -674,40 +723,30 @@ export async function runPageSpeedAudit({
   now = () => Date.now(),
   signal,
 }) {
-  const cancellation = cancellableSignal(signal, 90_000);
-  const results = [];
-
-  try {
-    for (const [index, strategy] of STRATEGIES.entries()) {
-      throwIfCancelled(signal);
-      await onProgress({
-        phase: "capture",
-        phaseLabel: `Running ${strategy} Lighthouse audit`,
-        progress: index === 0 ? 18 : 48,
-      });
-      results.push(
-        await fetchStrategy({ url, strategy, fetchImpl, apiKey, signal: cancellation.signal }),
-      );
-    }
-  } catch (error) {
-    if (signal?.aborted) {
-      throw providerError("AUDIT_CANCELLED", "The audit was cancelled.");
-    }
-    if (cancellation.timedOut()) {
-      throw providerError("PROVIDER_TIMEOUT", "The live audit exceeded the 90 second time limit.");
-    }
-    throw error;
-  } finally {
-    cancellation.cleanup();
-  }
+  throwIfCancelled(signal);
+  await onProgress({
+    phase: "capture",
+    phaseLabel: "Running mobile and desktop Lighthouse audits",
+    progress: 18,
+  });
+  const outcomes = await Promise.all(
+    STRATEGIES.map((strategy) =>
+      fetchStrategyOutcome({ url, strategy, fetchImpl, apiKey, signal }),
+    ),
+  );
 
   throwIfCancelled(signal);
   await onProgress({ phase: "inspect", phaseLabel: "Structuring measured evidence", progress: 82 });
   throwIfCancelled(signal);
+  const successful = outcomes.filter((outcome) => outcome.result);
+  const failed = outcomes.filter((outcome) => outcome.error);
+  if (!successful.length) {
+    throw failed[0]?.error ?? providerError("PROVIDER_FAILED", "Lighthouse evidence was unavailable.");
+  }
+  const results = successful.map((outcome) => outcome.result);
   const findings = [];
   const ruleOutcomes = [];
-  for (const [index, result] of results.entries()) {
-    const strategy = STRATEGIES[index];
+  for (const { strategy, result } of successful) {
     for (const [id, audit] of Object.entries(result.lighthouseResult.audits)) {
       const outcome = ruleOutcomeFromAudit(id, audit, strategy);
       if (outcome) ruleOutcomes.push(outcome);
@@ -726,11 +765,13 @@ export async function runPageSpeedAudit({
   const completedAt = now();
   const finalUrl = bounded(results[0].lighthouseResult.finalUrl, 2048) || url;
   const screenshots = Object.fromEntries(
-    results.flatMap((result, index) => {
+    successful.flatMap(({ strategy, result }) => {
       const screenshot = screenshotFrom(result);
-      return screenshot ? [[STRATEGIES[index], screenshot]] : [];
+      return screenshot ? [[strategy, screenshot]] : [];
     }),
   );
+  const viewportFailures = failed.map(viewportFailure);
+  const partial = viewportFailures.length > 0;
 
   return {
     screenshots,
@@ -742,8 +783,9 @@ export async function runPageSpeedAudit({
       hostname: new URL(finalUrl).hostname,
       completedAt,
       score,
-      viewportCount: STRATEGIES.length,
-      viewports: STRATEGIES.map((strategy, index) => ({
+      scoreBasis: "measured-lighthouse-viewports",
+      viewportCount: successful.length,
+      viewports: successful.map(({ strategy }, index) => ({
         id: strategy,
         label: strategy === "mobile" ? "Mobile" : "Desktop",
         detail: "Lighthouse",
@@ -752,17 +794,20 @@ export async function runPageSpeedAudit({
           ? `/api/audits/${encodeURIComponent(auditId)}/evidence/${strategy}`
           : null,
       })),
+      viewportFailures,
       findingCount: findings.length,
       findingsOmitted: Math.max(0, findings.length - boundedFindings.length),
       findings: boundedFindings,
       ruleOutcomes,
       checks: countChecks(results),
       engine: {
-        mode: "live-lighthouse",
+        mode: partial ? "live-lighthouse-partial" : "live-lighthouse",
         provider: "PageSpeed Insights",
         ruleSetVersion: 1,
         lighthouseVersion: bounded(results[0].lighthouseResult.lighthouseVersion, 40),
-        notice: "Live evidence measured by Lighthouse in mobile and desktop emulation.",
+        notice: partial
+          ? `Lighthouse evidence retained for ${successful.length} of ${STRATEGIES.length} strategies; ${viewportFailures.map((failure) => failure.label.toLowerCase()).join(" and ")} unavailable.`
+          : "Live evidence measured by Lighthouse in mobile and desktop emulation.",
       },
     },
   };
@@ -852,9 +897,132 @@ export async function runDocumentAudit({
   }
 }
 
+function mergeChecks(left = {}, right = {}) {
+  return {
+    passed: (left.passed ?? 0) + (right.passed ?? 0),
+    warnings: (left.warnings ?? 0) + (right.warnings ?? 0),
+    failed: (left.failed ?? 0) + (right.failed ?? 0),
+  };
+}
+
+const DOCUMENT_RULE_ALIASES = Object.freeze({
+  "html-lang": "html-has-lang",
+});
+
+function canonicalDocumentRuleId(value) {
+  return DOCUMENT_RULE_ALIASES[value] ?? value;
+}
+
+function supplementalDocumentEvidence(lighthouseReport, documentReport) {
+  const measuredLighthouseRules = new Set(
+    (lighthouseReport.ruleOutcomes ?? [])
+      .filter((outcome) => outcome.source?.provider === "Lighthouse")
+      .map((outcome) => outcome.source.auditId),
+  );
+  const isSupplementalRule = (ruleId) =>
+    !measuredLighthouseRules.has(canonicalDocumentRuleId(ruleId));
+  const ruleOutcomes = (documentReport.ruleOutcomes ?? []).filter((outcome) =>
+    isSupplementalRule(outcome.source?.auditId),
+  );
+  const findings = (documentReport.findings ?? []).filter((finding) =>
+    isSupplementalRule(finding.source?.auditId),
+  );
+  const warningRules = new Set(
+    findings
+      .filter((finding) => finding.severity === "low")
+      .map((finding) => finding.source?.auditId),
+  );
+  const checks = { passed: 0, warnings: 0, failed: 0 };
+  for (const outcome of ruleOutcomes) {
+    if (outcome.status === "passed") checks.passed += 1;
+    else if (outcome.status === "failed" && warningRules.has(outcome.source?.auditId)) {
+      checks.warnings += 1;
+    } else if (outcome.status === "failed") checks.failed += 1;
+  }
+  return {
+    findings,
+    ruleOutcomes,
+    checks,
+    overlappingRulesOmitted:
+      (documentReport.ruleOutcomes?.length ?? 0) - ruleOutcomes.length,
+  };
+}
+
+function mergeHybridEvidence(lighthouse, document) {
+  const severityOrder = { high: 0, medium: 1, low: 2 };
+  const supplement = supplementalDocumentEvidence(lighthouse.report, document.report);
+  const retainedFindings = [
+    ...(lighthouse.report.findings ?? []),
+    ...supplement.findings,
+  ].sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity]);
+  const findings = retainedFindings.slice(0, 10);
+  const findingCount =
+    (lighthouse.report.findingCount ?? lighthouse.report.findings?.length ?? 0) +
+    supplement.findings.length;
+  const unavailable = (lighthouse.report.viewportFailures ?? [])
+    .map((failure) => failure.label.toLowerCase())
+    .join(" and ");
+
+  return {
+    screenshots: lighthouse.screenshots,
+    report: {
+      ...lighthouse.report,
+      completedAt: document.report.completedAt,
+      finalUrl: document.report.finalUrl ?? lighthouse.report.finalUrl,
+      hostname: document.report.hostname ?? lighthouse.report.hostname,
+      viewports: [
+        ...(lighthouse.report.viewports ?? []),
+        ...(document.report.viewports ?? []),
+      ],
+      findingCount,
+      findingsOmitted: Math.max(0, findingCount - findings.length),
+      findings,
+      documentProfile: document.report.documentProfile,
+      ruleOutcomes: [
+        ...(lighthouse.report.ruleOutcomes ?? []),
+        ...supplement.ruleOutcomes,
+      ],
+      checks: mergeChecks(lighthouse.report.checks, supplement.checks),
+      documentSupplement: {
+        evaluatedRuleCount: supplement.ruleOutcomes.length,
+        overlappingRulesOmitted: supplement.overlappingRulesOmitted,
+        caveat:
+          "Fetched-document rules already evaluated by the retained Lighthouse strategy were omitted from hybrid totals. Document evidence does not replace the unavailable viewport.",
+      },
+      engine: {
+        mode: "hybrid-lighthouse-document",
+        provider: "PageSpeed Insights + Frontmend document audit",
+        ruleSetVersion: 1,
+        lighthouseVersion: lighthouse.report.engine.lighthouseVersion,
+        notice: `Retained Lighthouse evidence for ${lighthouse.report.viewportCount} of ${STRATEGIES.length} strategies; ${unavailable} unavailable. Non-duplicative live HTML and response-header rules supplement the report without replacing the missing viewport.`,
+        fallbackReason: "PARTIAL_LIGHTHOUSE",
+      },
+    },
+  };
+}
+
 export async function runFrontmendAudit(options) {
   try {
-    return await runPageSpeedAudit(options);
+    const lighthouse = await runPageSpeedAudit(options);
+    if (lighthouse.report.engine.mode !== "live-lighthouse-partial") return lighthouse;
+    try {
+      const document = await runDocumentAudit({
+        ...options,
+        fallbackReason: "PARTIAL_LIGHTHOUSE",
+        onProgress: async (state) => {
+          const progress = state.progress < 70 ? 86 : 92;
+          await options.onProgress?.({
+            ...state,
+            phaseLabel: "Retaining partial Lighthouse evidence and inspecting live HTML",
+            progress,
+          });
+        },
+      });
+      return mergeHybridEvidence(lighthouse, document);
+    } catch (error) {
+      if (error?.code === "AUDIT_CANCELLED") throw error;
+      return lighthouse;
+    }
   } catch (error) {
     const fallbackCodes = new Set([
       "PROVIDER_RATE_LIMITED",

@@ -327,6 +327,12 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
         changeRequest: null,
       }),
       approveRepair: async () => ({ ...draft, status: "approved", reviewedAt: 10 }),
+      recordImplementation: async (_auditId, _repairId, input) => ({
+        ...draft,
+        status: "approved",
+        reviewedAt: 10,
+        implementationReceipt: { ...input, source: "agent", reportedAt: 15 },
+      }),
       attestDeployment: async () => ({
         ...draft,
         status: "approved",
@@ -349,6 +355,12 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
   assert.equal(service.getRepairs(AUDIT_ID)[0].revision, 2);
   await service.approveRepair(AUDIT_ID, repairId);
   assert.equal(service.getRepairs(AUDIT_ID)[0].status, "approved");
+  await service.recordImplementation(AUDIT_ID, repairId, {
+    summary: "Applied the approved plan.",
+    files: ["worker/index.js"],
+    checks: [{ name: "bun test", status: "passed" }],
+  });
+  assert.equal(service.getRepairs(AUDIT_ID)[0].implementationReceipt.source, "agent");
   await service.attestDeployment(AUDIT_ID, repairId);
   assert.equal(service.getRepairs(AUDIT_ID)[0].deploymentAttestedAt, 20);
   assert.match(service.getRepairExportUrl(AUDIT_ID, repairId), /\/export$/);

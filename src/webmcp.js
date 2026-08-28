@@ -1,5 +1,9 @@
 import { AuditError } from "./audit-service.js";
-import { repairMissionState, verificationReceiptMarkdown } from "./repair-contract.js";
+import {
+  createRepositoryFixBrief,
+  repairMissionState,
+  verificationReceiptMarkdown,
+} from "./repair-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 
@@ -109,11 +113,19 @@ export function contextualFrontmendToolNames(service) {
   }
   if (explorations.length) available.add("get_site_exploration");
   if (findings.length) {
+    available.add("get_repository_fix_brief");
     available.add("stage_site_repair");
     available.add("get_repair_workspace");
   }
   if (repairs.some((repair) => repair.status === "changes-requested")) {
     available.add("revise_site_repair");
+  }
+  if (
+    repairs.some(
+      (repair) => repair.status === "approved" && !Number.isFinite(repair.deploymentAttestedAt),
+    )
+  ) {
+    available.add("record_repository_implementation");
   }
   if (
     repairs.some(
@@ -234,6 +246,30 @@ export function createFrontmendTools(service) {
         const value = objectInput(input);
         noExtra(value, ["auditId"]);
         return service.getResults(auditIdForTool(service, value.auditId));
+      },
+    }),
+    tool({
+      name: "get_repository_fix_brief",
+      title: "Prepare repository fix brief",
+      description:
+        "Translate one completed Frontmend finding into a bounded, source-safe implementation contract for a coding agent with repository access. It returns measured evidence, repository search hints, acceptance criteria, and authority boundaries. It does not inspect files, upload source, stage a repair, change the repository, or deploy the target.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact finding ID from the completed report." },
+        },
+        required: ["findingId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "findingId"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const findingId = requiredString(value.findingId, "findingId", 160);
+        const report = await service.getResults(auditId);
+        return createRepositoryFixBrief(report, findingId);
       },
     }),
     tool({
@@ -534,6 +570,28 @@ export function createFrontmendTools(service) {
             risk: repair.risk,
             requiresHumanReview: repair.requiresHumanReview,
             reviewedAt: repair.reviewedAt,
+            implementationReceipt: repair.implementationReceipt
+              ? {
+                  revision: repair.implementationReceipt.revision ?? 1,
+                  summary: repair.implementationReceipt.summary,
+                  files: repair.implementationReceipt.files,
+                  checks: repair.implementationReceipt.checks,
+                  commitSha: repair.implementationReceipt.commitSha,
+                  source: repair.implementationReceipt.source,
+                  reportedAt: repair.implementationReceipt.reportedAt,
+                  sourceChangedByFrontmend: false,
+                }
+              : null,
+            implementationHistory: (repair.implementationHistory ?? []).slice(-5).map((receipt) => ({
+              revision: receipt.revision ?? 1,
+              summary: receipt.summary,
+              files: receipt.files,
+              checks: receipt.checks,
+              commitSha: receipt.commitSha,
+              source: receipt.source,
+              reportedAt: receipt.reportedAt,
+              sourceChangedByFrontmend: false,
+            })),
             deploymentAttestedAt: repair.deploymentAttestedAt,
             changeRequest: repair.changeRequest
               ? {
@@ -555,6 +613,69 @@ export function createFrontmendTools(service) {
             })),
             mission: repair.mission ?? repairMissionState(repair),
           })),
+        };
+      },
+    }),
+    tool({
+      name: "record_repository_implementation",
+      title: "Record repository implementation",
+      description:
+        "Record a bounded receipt after a coding agent implements a human-approved repair in the repository. It accepts only repository-relative filenames, check outcomes, and an optional Git object ID. This does not inspect or upload source, change files, approve the repair, attest deployment, or claim the public result is fixed.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          repairId: { type: "string", minLength: 1, description: "Human-approved repair ID." },
+          summary: { type: "string", minLength: 1, maxLength: 300, description: "What the coding agent changed." },
+          files: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 200 },
+            description: "Repository-relative changed file paths only; no source contents or absolute paths.",
+          },
+          checks: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            items: {
+              type: "object",
+              properties: {
+                name: { type: "string", minLength: 1, maxLength: 120 },
+                status: { type: "string", enum: ["passed", "failed", "not-run"] },
+              },
+              required: ["name", "status"],
+              additionalProperties: false,
+            },
+          },
+          commitSha: { type: "string", minLength: 7, maxLength: 64, pattern: "^[0-9a-fA-F]+$" },
+        },
+        required: ["repairId", "summary", "files", "checks"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "repairId", "summary", "files", "checks", "commitSha"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const repair = await service.recordImplementation(
+          auditId,
+          requiredString(value.repairId, "repairId", 80),
+          {
+            summary: requiredString(value.summary, "summary", 300),
+            files: value.files,
+            checks: value.checks,
+            commitSha: optionalString(value.commitSha, "commitSha", 64),
+          },
+        );
+        return {
+          auditId,
+          repairId: repair.id,
+          status: repair.status,
+          implementationReceipt: repair.implementationReceipt,
+          mission: repair.mission ?? repairMissionState(repair),
+          nextAction: "The site owner may now review the receipt, deploy externally, and attest that handoff in the visible UI.",
         };
       },
     }),

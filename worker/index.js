@@ -13,6 +13,7 @@ import {
   compareVerification,
   createVerificationContext,
   createRepairDraft,
+  recordRepositoryImplementation,
   requestRepairChanges,
   repairExportMarkdown,
   repairWithMission,
@@ -504,7 +505,7 @@ async function routeApi(request, env, url) {
   }
 
   const repairMatch = url.pathname.match(
-    /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|deployment|verify|export))?)?$/,
+    /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
   );
   if (repairMatch) {
     const [, auditId, repairId, action] = repairMatch;
@@ -900,7 +901,7 @@ export class FrontmendAuditJob {
     if (state.status !== "complete" || !state.report) {
       return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before staging a repair."));
     }
-    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|deployment|export|verification-input))?)?$/);
+    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|export|verification-input))?)?$/);
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That repair route does not exist."));
     const [, rawRepairId, action] = match;
     const repairs = (await this.ctx.storage.get("repairs")) ?? [];
@@ -972,6 +973,18 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("INVALID_REPAIR", "Repair revisions must be agent-authored."));
       }
       repairs[repairIndex] = reviseRepairDraft(repair, proposal, "agent");
+      await this.ctx.storage.put("repairs", repairs);
+      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+    }
+    if (action === "implementation" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const { source, ...receipt } = input ?? {};
+      if (source !== "agent") {
+        return errorResponse(
+          new AuditError("INVALID_IMPLEMENTATION_RECEIPT", "Repository implementation receipts must be agent-reported."),
+        );
+      }
+      repairs[repairIndex] = recordRepositoryImplementation(repair, receipt);
       await this.ctx.storage.put("repairs", repairs);
       return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
     }

@@ -12,6 +12,7 @@ import {
   compareVerification,
   createVerificationContext,
   createRepairDraft,
+  recordRepositoryImplementation,
   requestRepairChanges,
   repairExportMarkdown,
   repairWithMission,
@@ -486,7 +487,7 @@ export function createLocalAuditRuntime(options = {}) {
       }
 
       const repairMatch = requestUrl.pathname.match(
-        /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|deployment|verify|export))?)?$/,
+        /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
       );
       if (repairMatch) {
         const [, auditId, rawRepairId, action] = repairMatch;
@@ -567,6 +568,19 @@ export function createLocalAuditRuntime(options = {}) {
             );
           }
           Object.assign(repair, reviseRepairDraft(repair, proposal, "agent"));
+          return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
+        }
+        if (action === "implementation" && request.method === "POST") {
+          assertSameOrigin(request);
+          const input = await readBody(request);
+          const { source, ...receipt } = input ?? {};
+          if (source !== "agent") {
+            return sendError(
+              response,
+              new AuditError("INVALID_IMPLEMENTATION_RECEIPT", "Repository implementation receipts must be agent-reported."),
+            );
+          }
+          Object.assign(repair, recordRepositoryImplementation(repair, receipt));
           return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
         }
         if (action === "deployment" && request.method === "POST") {

@@ -80,6 +80,7 @@ test("builds bounded live Lighthouse evidence for mobile and desktop", async () 
   );
   assert.equal(output.report.findings.every((finding) => finding.evidence.length <= 240), true);
   assert.equal(output.report.findings.every((finding) => !finding.evidence.includes("<")), true);
+  assert.deepEqual(output.report.checks, { passed: 2, warnings: 0, failed: 2 });
   assert.deepEqual(
     output.report.ruleOutcomes.filter((outcome) => outcome.source.auditId === "color-contrast"),
     [
@@ -218,7 +219,7 @@ test("propagates caller cancellation without falling back to another provider", 
     () => operation,
     (error) => error.code === "AUDIT_CANCELLED" && error.recoverable === true,
   );
-  assert.equal(calls, 1);
+  assert.equal(calls, 2);
 });
 
 test("falls back to bounded live document evidence when Lighthouse is rate limited", async () => {
@@ -244,7 +245,7 @@ test("falls back to bounded live document evidence when Lighthouse is rate limit
     },
   });
 
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
   assert.equal(output.report.engine.mode, "live-document");
   assert.equal(output.report.engine.fallbackReason, "PROVIDER_RATE_LIMITED");
   assert.equal(output.report.viewportCount, 0);
@@ -260,6 +261,101 @@ test("falls back to bounded live document evidence when Lighthouse is rate limit
     "passed",
   );
   assert.deepEqual(output.screenshots, {});
+});
+
+test("retains one successful Lighthouse viewport and supplements it with document evidence", async () => {
+  const calls = [];
+  const output = await runFrontmendAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    now: () => 1_787_766_000_000,
+    fetchImpl: async (input) => {
+      const requestUrl = new URL(input);
+      if (requestUrl.hostname === "pagespeedonline.googleapis.com") {
+        const strategy = requestUrl.searchParams.get("strategy");
+        calls.push(strategy);
+        if (strategy === "desktop") return new Response("busy", { status: 429 });
+        const fixture = lighthouseFixture(strategy);
+        fixture.lighthouseResult.audits["image-alt"] = {
+          score: 0,
+          scoreDisplayMode: "binary",
+          displayValue: "1 image",
+          details: { items: [{ node: { selector: "img.hero" } }] },
+        };
+        return Response.json(fixture);
+      }
+      calls.push("document");
+      return new Response(
+        '<!doctype html><html lang="en"><head><title>Remove My EXIF</title><meta name="viewport" content="width=device-width"></head><body><main><h1>Remove metadata</h1><img class="hero" src="/hero.jpg"></main></body></html>',
+        {
+          status: 200,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "x-content-type-options": "nosniff",
+          },
+        },
+      );
+    },
+  });
+
+  assert.deepEqual(calls, ["mobile", "desktop", "document"]);
+  assert.equal(output.report.engine.mode, "hybrid-lighthouse-document");
+  assert.equal(output.report.engine.fallbackReason, "PARTIAL_LIGHTHOUSE");
+  assert.equal(output.report.viewportCount, 1);
+  assert.deepEqual(output.report.viewports.map((viewport) => viewport.id), ["mobile", "document"]);
+  assert.deepEqual(output.report.viewportFailures, [{
+    id: "desktop",
+    label: "Desktop",
+    status: "unavailable",
+    code: "PROVIDER_RATE_LIMITED",
+    message: "The live audit provider is busy. Try again in a few minutes.",
+    recoverable: true,
+  }]);
+  assert.equal(output.report.scoreBasis, "measured-lighthouse-viewports");
+  assert.equal(output.report.documentProfile.type, "live-document-profile");
+  assert.deepEqual(output.report.documentSupplement, {
+    evaluatedRuleCount: 8,
+    overlappingRulesOmitted: 1,
+    caveat: "Fetched-document rules already evaluated by the retained Lighthouse strategy were omitted from hybrid totals. Document evidence does not replace the unavailable viewport.",
+  });
+  assert.deepEqual(output.report.checks, { passed: 7, warnings: 1, failed: 3 });
+  assert.equal(output.report.findingCount, 4);
+  assert.equal(output.report.findings.some((finding) => finding.id === "mobile-color-contrast"), true);
+  assert.equal(output.report.findings.some((finding) => finding.id === "mobile-image-alt"), true);
+  assert.equal(output.report.findings.some((finding) => finding.id === "document-image-alt"), false);
+  assert.equal(
+    output.report.ruleOutcomes.filter((outcome) => outcome.source.auditId === "image-alt").length,
+    1,
+  );
+  assert.equal(
+    output.report.findings.some((finding) => finding.id === "document-content-security-policy"),
+    true,
+  );
+  assert.equal(output.screenshots.mobile, "data:image/jpeg;base64,YWJj");
+  assert.equal("desktop" in output.screenshots, false);
+});
+
+test("returns partial Lighthouse evidence when the document supplement also fails", async () => {
+  const output = await runFrontmendAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    fetchImpl: async (input) => {
+      const requestUrl = new URL(input);
+      if (requestUrl.hostname !== "pagespeedonline.googleapis.com") {
+        return new Response("unavailable", { status: 503 });
+      }
+      const strategy = requestUrl.searchParams.get("strategy");
+      if (strategy === "desktop") return new Response("failed", { status: 500 });
+      return Response.json(lighthouseFixture(strategy));
+    },
+  });
+
+  assert.equal(output.report.engine.mode, "live-lighthouse-partial");
+  assert.equal(output.report.viewportCount, 1);
+  assert.deepEqual(output.report.viewports.map((viewport) => viewport.id), ["mobile"]);
+  assert.equal(output.report.viewportFailures[0].id, "desktop");
+  assert.equal(output.report.viewportFailures[0].code, "PROVIDER_FAILED");
+  assert.equal("documentProfile" in output.report, false);
 });
 
 test("builds a bounded static CSP resource inventory without claiming runtime coverage", async () => {

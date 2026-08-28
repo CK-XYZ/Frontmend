@@ -848,6 +848,79 @@ input:focus-visible,
   text-align: right;
 }
 
+.viewport-failures {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  margin: -8px 0 24px;
+  padding: 16px 18px;
+  border: 1px solid #e8cf9c;
+  border-radius: 18px;
+  background: #fffaf0;
+  color: #72531f;
+}
+
+.viewport-failures > svg {
+  margin-top: 2px;
+  color: #b37a1f;
+}
+
+.viewport-failures strong,
+.viewport-failures p,
+.viewport-failures ul {
+  margin: 0;
+}
+
+.viewport-failures p {
+  margin-top: 3px;
+  color: #846a40;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.viewport-failures ul {
+  display: grid;
+  gap: 7px;
+  margin-top: 11px;
+  padding: 0;
+  list-style: none;
+}
+
+.viewport-failures li {
+  display: grid;
+  grid-template-columns: 72px max-content minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+}
+
+.viewport-failures li span {
+  font-size: 11px;
+  font-weight: 760;
+}
+
+.viewport-failures li code {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(179, 122, 31, 0.1);
+  font-size: 9px;
+}
+
+.viewport-failures li small {
+  color: #846a40;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.viewport-failures .document-supplement-note {
+  display: block;
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(179, 122, 31, 0.18);
+  color: #76613f;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .route-journey {
   position: relative;
   display: grid;
@@ -2397,6 +2470,113 @@ input:focus-visible,
   line-height: 1.55;
 }
 
+.implementation-receipt {
+  display: grid;
+  gap: 11px;
+  margin-top: 13px;
+  padding: 14px;
+  border: 1px solid #cbdcc6;
+  border-radius: 12px;
+  background: #f4f8ef;
+}
+
+.implementation-receipt-heading {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
+.implementation-receipt-heading strong {
+  color: #365037;
+  font-size: 12px;
+}
+
+.implementation-receipt-heading p:not(.kicker) {
+  margin: 3px 0 0;
+  color: #647366;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.implementation-receipt dl {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin: 0;
+}
+
+.implementation-receipt dl div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.implementation-receipt dt,
+.implementation-receipt > small {
+  color: #718072;
+  font-size: 8px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.implementation-receipt dd {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+  color: #364537;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.implementation-history {
+  border-top: 1px solid rgba(92, 116, 92, 0.18);
+  padding-top: 9px;
+}
+
+.implementation-history summary {
+  cursor: pointer;
+  color: #536955;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.implementation-history ol {
+  display: grid;
+  gap: 6px;
+  margin: 9px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.implementation-history li {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 3px 9px;
+  padding: 8px 9px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.6);
+  color: #566557;
+  font-size: 9px;
+}
+
+.implementation-history li span,
+.implementation-history li small {
+  overflow-wrap: anywhere;
+}
+
+.implementation-history li small {
+  grid-column: 2;
+  color: #718072;
+  font-size: 8px;
+}
+
+.implementation-receipt-empty {
+  margin: 12px 0 0;
+  color: #776d5d;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
 .repair-review-callout,
 .repair-actions {
   display: flex;
@@ -3789,6 +3969,14 @@ input:focus-visible,
     margin-bottom: 16px;
   }
 
+  .viewport-failures li {
+    grid-template-columns: 1fr max-content;
+  }
+
+  .viewport-failures li small {
+    grid-column: 1 / -1;
+  }
+
   .route-journey,
   .observed-routes {
     padding: 15px;
@@ -3932,6 +4120,10 @@ input:focus-visible,
 
   .deployment-gate {
     display: flex;
+  }
+
+  .implementation-receipt dl {
+    grid-template-columns: 1fr;
   }
 
   .repair-risk {

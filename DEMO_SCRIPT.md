@@ -2,6 +2,10 @@
 
 Target length: 2 minutes 30 seconds. Show the real deployed application and keep the browser address visible at the beginning and end.
 
+Natural fresh-task prompt for the repository-aware version:
+
+> Audit the deployed site, identify the highest-impact finding that can be fixed in this repository, and prepare a concrete repair plan. Use Frontmend’s site tools for live evidence and inspect the repository yourself to locate the owning code. Don’t edit anything until I approve the plan, and don’t deploy.
+
 ## 0:00–0:20 — The problem
 
 “Frontend audits produce long reports, but the repair still gets lost between an agent, a developer, and a browser. Frontmend gives both people and browser agents one evidence-backed repair bench.”
@@ -28,15 +32,21 @@ Open **Agent log** and show the three genuine lifecycle entries. Point out that 
 
 If Lighthouse falls back, say exactly: “The provider was quota-limited, so Frontmend is showing a bounded live Document profile and zero measured viewports. It does not invent a screenshot.” Point out the real HTML size, element counts, external origins, inline code, and response-header signals; then read the caveat that runtime DOM changes, CSS imports, requests, and user journeys are outside this evidence mode.
 
+If only one Lighthouse strategy succeeds, say exactly: “Frontmend retained the successful viewport and names the missing strategy. The Document profile adds only non-overlapping HTML and header rules; it does not pretend to be the missing viewport.” Show the added-rule and omitted-overlap counts beside the provider failure.
+
 ## 0:55–1:30 — Agent proposes, person decides
 
 Ask the agent to stage a repair for the selected finding. Show the draft appear immediately in the same visible workspace. For CSP, trace an observed origin from the evidence inventory into the Report-Only header, then point out the inline evidence, nonce-or-hash guidance, risk, and real-journey verification plan. Emphasize that the agent cannot approve it.
+
+Before staging, use `get_repository_fix_brief` for the finding. Show that Frontmend returns measured evidence, likely repository ownership points, and acceptance criteria—but no source content or absolute paths. This is the Codex-native handoff: the coding agent already has repository access; Frontmend contributes public evidence and a bounded contract.
 
 Write one specific change request and click **Request agent revision**. Show approval disappear, ask the agent to read `get_repair_workspace`, and then use `revise_site_repair`. Point to the incremented revision, reopened human review, and visible revision trail. This is collaboration over shared state, not an agent clicking its own approval.
 
 Use the repair mission rail to narrate ownership: Frontmend measures, a person or agent drafts, the person reviews, the site owner deploys through their normal workflow, and Frontmend verifies. Ask the agent for `get_repair_workspace` to show that the same next-action model is structured rather than scraped from the page.
 
 Review the proposal and click **Approve repair plan** yourself. Show that export becomes available, while verification remains locked at **Waiting for site owner**. Ask the agent to verify now and show the structured `DEPLOYMENT_NOT_ATTESTED` failure in the visible Agent log.
+
+On a controlled repository, let the coding agent implement the approved plan through its normal repository tools and run the relevant checks. Then call `record_repository_implementation` with only a short summary, repository-relative filenames, check outcomes, and an optional commit ID. Show the same receipt in the visible repair workspace. Explain that Frontmend still did not inspect source, make the edit, deploy it, or prove the public result.
 
 Only on a controlled target where the reviewed change has genuinely been deployed, check the site-owner confirmation and click **Confirm deployment handoff**. Explain that this is a human report, not a Frontmend deployment claim; it unlocks measurement but does not claim the repair succeeded.
 
@@ -50,7 +60,7 @@ Never rehearse a fake resolution. If the finding remains, use that truthful resu
 
 ## 2:05–2:30 — Why WebMCP
 
-“Visual automation would have to rediscover every control and scrape dense report text. Frontmend has twelve semantic capabilities over the same application service and visible state, but exposes only the ones that are valid now: start on the landing page, progress and cancellation during a run, then evidence, single-page or cross-page exploration, and repair work after completion. Human feedback unlocks agent revision; human deployment attestation unlocks verification. Its visible activity ledger makes agent work accountable without turning sensitive inputs into telemetry. The agent contributes speed; the person retains approval; the browser proves the result.”
+“Visual automation would have to rediscover every control and scrape dense report text. Frontmend has fourteen semantic capabilities over the same application service and visible state, but exposes only the ones that are valid now: start on the landing page, progress and cancellation during a run, then evidence, repository handoff, single-page or cross-page exploration, and repair work after completion. Human feedback unlocks agent revision; human approval unlocks an implementation receipt; human deployment attestation unlocks verification. Its visible activity ledger makes agent work accountable without turning sensitive inputs into telemetry. The agent contributes repository-aware execution; the person retains approval and deployment authority; the browser proves the public result.”
 
 Click the **WebMCP · _ active** status. The capability panel should match the current browser discovery and clearly show the human-only approval and deployment boundary.
 

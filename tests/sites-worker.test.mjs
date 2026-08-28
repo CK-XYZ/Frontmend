@@ -1191,6 +1191,62 @@ test("audit jobs persist one repair per finding and require human approval befor
     "blocked",
   );
 
+  const humanImplementation = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/implementation`, {
+      method: "POST",
+      body: JSON.stringify({
+        summary: "Applied the approved policy.",
+        files: ["worker/index.js"],
+        checks: [{ name: "bun test", status: "passed" }],
+      }),
+    }),
+  );
+  assert.equal(humanImplementation.status, 400);
+  assert.equal((await humanImplementation.json()).error.code, "INVALID_IMPLEMENTATION_RECEIPT");
+
+  const implementationResponse = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/implementation`, {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        summary: "Applied the approved report-only policy in the Worker response path.",
+        files: ["worker/index.js", "tests/sites-worker.test.mjs"],
+        checks: [
+          { name: "bun test", status: "passed" },
+          { name: "bun run build", status: "failed" },
+        ],
+      }),
+    }),
+  );
+  const implementedRepair = (await implementationResponse.json()).data;
+  assert.equal(implementationResponse.status, 200);
+  assert.equal(implementedRepair.implementationReceipt.source, "agent");
+  assert.equal(implementedRepair.implementationReceipt.sourceChangedByFrontmend, false);
+  assert.equal(
+    implementedRepair.mission.steps.find((step) => step.id === "implement").status,
+    "complete",
+  );
+  assert.equal(implementedRepair.deploymentAttestedAt, null);
+
+  const implementationRerunResponse = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/implementation`, {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        summary: "Corrected the fixture and re-ran the approved implementation checks.",
+        files: ["worker/index.js", "tests/sites-worker.test.mjs"],
+        checks: [
+          { name: "bun test", status: "passed" },
+          { name: "bun run build", status: "passed" },
+        ],
+      }),
+    }),
+  );
+  const implementationRerun = (await implementationRerunResponse.json()).data;
+  assert.equal(implementationRerun.implementationReceipt.revision, 2);
+  assert.equal(implementationRerun.implementationHistory.length, 1);
+  assert.equal(implementationRerun.implementationHistory[0].checks[1].status, "failed");
+
   const exportResponse = await job.fetch(
     new Request(`https://frontmend.internal/repairs/${first.id}/export`),
   );
