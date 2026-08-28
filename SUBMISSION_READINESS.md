@@ -84,6 +84,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Valid Apache-2.0 project licence.
 - [x] Direct dependency and external-service notice.
 - [x] Reproducible local setup instructions.
+- [x] Tracked publication preflight: no credential-like filenames, common token/private-key signatures, or absolute user-home paths detected; `.env*` and Cloudflare `.dev.vars*` secrets are ignored with safe examples explicitly allowlisted.
 - [ ] Public source repository and challenge-period commit history.
 - [x] Working public deployment with a stable judging URL.
 - [ ] Production URL verified in ChatGPT's in-app browser.
