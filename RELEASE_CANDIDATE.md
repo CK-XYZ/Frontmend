@@ -104,9 +104,9 @@ This is the strongest end-to-end product demonstration because the coding agent 
 
    > Implement the approved repair in this repository, preserve unrelated work, and run the relevant tests and production build. When they finish, use Frontmend’s implementation-receipt tool to record only the short summary, repository-relative files, check outcomes, and current commit ID if one exists. Do not commit, push, deploy, or claim the public finding is fixed.
 
-7. Confirm Codex edits only the reviewed repository scope and runs the planned checks. The contextual WebMCP set should now include `record_repository_implementation`; its structured result and visible receipt must match the changed relative filenames and truthful check statuses. The final verification receipt must retain both the reviewed repository plan and the implementation receipt as separate agent-reported provenance.
-8. Confirm the mission rail marks **Implement** complete while **Deploy** remains owned by the site owner and **Verify** remains blocked. Frontmend must still say it did not inspect or change source and has not verified the public result.
-9. Record `git status --short` and the diff after the demo. Save screenshots of the repository fix brief, visible human approval, repository diff/check output, implementation receipt, and still-locked deployment boundary.
+8. Confirm Codex edits only the reviewed repository scope and runs the planned checks. The contextual WebMCP set should now include `record_repository_implementation`; its structured result and visible receipt must match the changed relative filenames and truthful check statuses. The final verification receipt must retain both the reviewed repository plan and the implementation receipt as separate agent-reported provenance.
+9. Confirm the mission rail marks **Implement** complete while **Deploy** remains owned by the site owner and **Verify** remains blocked. Frontmend must still say it did not inspect or change source and has not verified the public result.
+10. Record `git status --short` and the diff after the demo. Save screenshots of the repository fix brief, visible human approval, repository diff/check output, implementation receipt, and still-locked deployment boundary.
 
 Failure conditions: Frontmend receives source contents or absolute paths; the agent edits before approval; unrelated files change; failed or skipped checks are reported as passed; Frontmend approves, deploys, or claims resolution; or the visible receipt differs from the repository evidence.
 
