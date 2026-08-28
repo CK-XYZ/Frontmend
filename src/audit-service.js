@@ -1,0 +1,515 @@
+import { AuditError, normalizePublicUrl } from "./url-policy.js";
+
+export { AuditError, normalizePublicUrl } from "./url-policy.js";
+
+async function responsePayload(response) {
+  let payload;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new AuditError("INVALID_RESPONSE", "The live audit service returned an invalid response.");
+  }
+  if (!response.ok || payload?.ok === false) {
+    const detail = payload?.error;
+    throw new AuditError(
+      typeof detail?.code === "string" ? detail.code : "AUDIT_REQUEST_FAILED",
+      typeof detail?.message === "string"
+        ? detail.message
+        : "The live audit service could not complete the request.",
+      detail?.recoverable !== false,
+    );
+  }
+  if (!payload?.data || typeof payload.data !== "object") {
+    throw new AuditError("INVALID_RESPONSE", "The live audit service returned incomplete data.");
+  }
+  return payload.data;
+}
+
+export function createHttpAuditTransport(options = {}) {
+  const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
+  const baseUrl = options.baseUrl ?? "";
+  if (!fetchImpl) throw new Error("Frontmend requires fetch to reach the live audit service.");
+
+  return {
+    async start({ url, source }) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ url, source }),
+        }),
+      );
+    },
+
+    async startRelated(auditId, path, source) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/routes`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ path, source }),
+        }),
+      );
+    },
+
+    async startExploration(auditId, paths, source) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ paths, source }),
+        }),
+      );
+    },
+
+    async listExplorations(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async getExploration(auditId, missionId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations/${encodeURIComponent(missionId)}`,
+          { headers: { accept: "application/json" } },
+        ),
+      );
+    },
+
+    async get(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async cancel(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}`, {
+          method: "DELETE",
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async results(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/results`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async listRepairs(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async stageRepair(auditId, input) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify(input),
+        }),
+      );
+    },
+
+    async approveRepair(auditId, repairId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/approve`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: "{}",
+          },
+        ),
+      );
+    },
+
+    async requestRepairChanges(auditId, repairId, feedback) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/changes`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ feedback }),
+          },
+        ),
+      );
+    },
+
+    async reviseRepair(auditId, repairId, input) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/revise`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ ...input, source: "agent" }),
+          },
+        ),
+      );
+    },
+
+    async attestDeployment(auditId, repairId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/deployment`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: "{}",
+          },
+        ),
+      );
+    },
+
+    async startVerification(auditId, repairId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verify`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: "{}",
+          },
+        ),
+      );
+    },
+
+    repairExportUrl(auditId, repairId) {
+      return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/export`;
+    },
+
+    verificationReceiptUrl(auditId) {
+      return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/receipt`;
+    },
+
+    auditReportUrl(auditId) {
+      return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/report`;
+    },
+
+    explorationReportUrl(auditId, missionId) {
+      return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations/${encodeURIComponent(missionId)}/report`;
+    },
+  };
+}
+
+export function createAuditService(options = {}) {
+  const transport = options.transport ?? createHttpAuditTransport(options);
+  const now = options.now ?? Date.now;
+  const jobs = new Map();
+  const repairs = new Map();
+  const explorations = new Map();
+  const listeners = new Set();
+  let agentActivities = [];
+  let activitySequence = 0;
+  let activeAuditId = null;
+  let generation = 0;
+
+  const emit = () => {
+    for (const listener of listeners) listener();
+  };
+
+  const remember = (audit, expectedGeneration = generation) => {
+    if (!audit?.id || expectedGeneration !== generation) return audit;
+    jobs.set(audit.id, audit);
+    activeAuditId = audit.id;
+    emit();
+    return audit;
+  };
+
+  const rememberRepair = (repair, expectedGeneration = generation) => {
+    if (!repair?.id || expectedGeneration !== generation) return repair;
+    const current = repairs.get(repair.auditId) ?? [];
+    repairs.set(repair.auditId, [...current.filter((item) => item.id !== repair.id), repair]);
+    emit();
+    return repair;
+  };
+
+  const rememberExploration = (exploration, expectedGeneration = generation) => {
+    if (!exploration?.id || expectedGeneration !== generation) return exploration;
+    const rootAuditId = exploration.rootAuditId;
+    if (rootAuditId) {
+      const current = explorations.get(rootAuditId) ?? [];
+      explorations.set(rootAuditId, [
+        exploration,
+        ...current.filter((item) => item.id !== exploration.id),
+      ].slice(0, 10));
+      emit();
+    }
+    return exploration;
+  };
+
+  return {
+    async startAudit(input) {
+      const url = normalizePublicUrl(input?.url);
+      const source = input?.source === "agent" ? "agent" : "human";
+      const expectedGeneration = generation;
+      const audit = await transport.start({ url, source });
+      return remember(audit, expectedGeneration);
+    },
+
+    async startRelatedAudit(auditId, path, source = "human") {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      if (typeof path !== "string" || !path || path.length > 256) {
+        throw new AuditError("INVALID_INPUT", "path must contain 1 to 256 characters.");
+      }
+      const expectedGeneration = generation;
+      const audit = await transport.startRelated(
+        auditId,
+        path,
+        source === "agent" ? "agent" : "human",
+      );
+      return remember(audit, expectedGeneration);
+    },
+
+    async startSiteExploration(auditId, paths, source = "human") {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      if (!Array.isArray(paths) || paths.length < 1 || paths.length > 3) {
+        throw new AuditError("INVALID_INPUT", "Choose between 1 and 3 observed routes.");
+      }
+      const expectedGeneration = generation;
+      return rememberExploration(
+        await transport.startExploration(
+          auditId,
+          paths,
+          source === "agent" ? "agent" : "human",
+        ),
+        expectedGeneration,
+      );
+    },
+
+    async listSiteExplorations(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const workspace = await transport.listExplorations(auditId);
+      if (expectedGeneration === generation) {
+        explorations.set(
+          auditId,
+          [...(workspace.explorations ?? [])].sort(
+            (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
+          ),
+        );
+        emit();
+      }
+      return workspace;
+    },
+
+    async getSiteExploration(auditId, missionId) {
+      if (
+        typeof auditId !== "string" ||
+        !auditId ||
+        typeof missionId !== "string" ||
+        !missionId
+      ) {
+        throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberExploration(
+        await transport.getExploration(auditId, missionId),
+        expectedGeneration,
+      );
+    },
+
+    async getAudit(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const audit = await transport.get(auditId);
+      return remember(audit, expectedGeneration);
+    },
+
+    async cancelAudit(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const audit = await transport.cancel(auditId);
+      return remember(audit, expectedGeneration);
+    },
+
+    async getResults(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const report = await transport.results(auditId);
+      const existing = jobs.get(auditId);
+      if (existing && expectedGeneration === generation) {
+        remember({ ...existing, status: "complete", progress: 100, report }, expectedGeneration);
+      }
+      return report;
+    },
+
+    async listRepairs(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const workspace = await transport.listRepairs(auditId);
+      if (expectedGeneration === generation) {
+        repairs.set(auditId, workspace.repairs ?? []);
+        emit();
+      }
+      return workspace;
+    },
+
+    async stageRepair(auditId, input) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(await transport.stageRepair(auditId, input), expectedGeneration);
+    },
+
+    async approveRepair(auditId, repairId) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(await transport.approveRepair(auditId, repairId), expectedGeneration);
+    },
+
+    async requestRepairChanges(auditId, repairId, feedback) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      if (typeof feedback !== "string" || !feedback.trim() || feedback.length > 600) {
+        throw new AuditError("INVALID_INPUT", "feedback must contain 1 to 600 characters.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(
+        await transport.requestRepairChanges(auditId, repairId, feedback),
+        expectedGeneration,
+      );
+    },
+
+    async reviseRepair(auditId, repairId, input) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(await transport.reviseRepair(auditId, repairId, input), expectedGeneration);
+    },
+
+    async attestDeployment(auditId, repairId) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(await transport.attestDeployment(auditId, repairId), expectedGeneration);
+    },
+
+    async startVerification(auditId, repairId) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return remember(await transport.startVerification(auditId, repairId), expectedGeneration);
+    },
+
+    getRepairs(auditId) {
+      return repairs.get(auditId) ?? [];
+    },
+
+    getRepairExportUrl(auditId, repairId) {
+      return transport.repairExportUrl(auditId, repairId);
+    },
+
+    getVerificationReceiptUrl(auditId) {
+      return transport.verificationReceiptUrl(auditId);
+    },
+
+    getAuditReportUrl(auditId) {
+      return transport.auditReportUrl(auditId);
+    },
+
+    getSiteExplorations(auditId) {
+      return explorations.get(auditId) ?? [];
+    },
+
+    getSiteExplorationReportUrl(auditId, missionId) {
+      return transport.explorationReportUrl(auditId, missionId);
+    },
+
+    getActiveAudit() {
+      return activeAuditId ? jobs.get(activeAuditId) ?? null : null;
+    },
+
+    beginAgentActivity({ tool, title }) {
+      activitySequence += 1;
+      const activity = {
+        id: `agent-${activitySequence}`,
+        tool: String(tool ?? "unknown").slice(0, 80),
+        title: String(title ?? tool ?? "Agent action").slice(0, 120),
+        status: "running",
+        auditId: null,
+        repairId: null,
+        errorCode: null,
+        startedAt: now(),
+        completedAt: null,
+      };
+      agentActivities = [activity, ...agentActivities].slice(0, 20);
+      emit();
+      return activity.id;
+    },
+
+    finishAgentActivity(activityId, result) {
+      const status = result?.status === "failed" ? "failed" : "succeeded";
+      agentActivities = agentActivities.map((activity) =>
+        activity.id === activityId
+          ? {
+              ...activity,
+              status,
+              auditId: typeof result?.auditId === "string" ? result.auditId.slice(0, 80) : null,
+              repairId: typeof result?.repairId === "string" ? result.repairId.slice(0, 80) : null,
+              errorCode: typeof result?.errorCode === "string" ? result.errorCode.slice(0, 80) : null,
+              completedAt: now(),
+            }
+          : activity,
+      );
+      emit();
+    },
+
+    getAgentActivities() {
+      return agentActivities.map((activity) => ({ ...activity }));
+    },
+
+    clearAgentActivities() {
+      agentActivities = [];
+      emit();
+    },
+
+    reset() {
+      generation += 1;
+      activeAuditId = null;
+      repairs.clear();
+      explorations.clear();
+      emit();
+    },
+
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+export const auditService = createAuditService();

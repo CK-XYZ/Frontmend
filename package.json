@@ -1,0 +1,31 @@
+{
+  "name": "frontmend",
+  "version": "0.1.0",
+  "private": true,
+  "license": "Apache-2.0",
+  "type": "module",
+  "packageManager": "bun@1.4.0",
+  "engines": {
+    "bun": ">=1.3.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build && bun scripts/prepare-sites-build.mjs",
+    "preview": "vite preview",
+    "test": "node --test tests/*.test.mjs",
+    "test:contracts": "node --test tests/audit-service.test.mjs tests/pagespeed-provider.test.mjs tests/route-contract.test.mjs tests/site-exploration-contract.test.mjs tests/repair-contract.test.mjs tests/webmcp.test.mjs",
+    "test:sites": "node --test tests/sites-worker.test.mjs",
+    "deploy": "bun run build && wrangler deploy --config wrangler.jsonc"
+  },
+  "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "react": "19.2.0",
+    "react-dom": "19.2.0"
+  },
+  "devDependencies": {
+    "@socketsecurity/bun-security-scanner": "^1.1.2",
+    "@vitejs/plugin-react": "5.0.4",
+    "vite": "6.4.2",
+    "wrangler": "^4.33.2"
+  }
+}

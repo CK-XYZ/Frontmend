@@ -1,0 +1,1113 @@
+import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import { createRelatedAuditInput } from "../src/route-contract.js";
+import {
+  assertMissionId,
+  createSiteExplorationInputs,
+  createSiteExplorationMission,
+  siteExplorationLimits,
+  siteExplorationMarkdown,
+  siteExplorationSnapshot,
+} from "../src/site-exploration-contract.js";
+import {
+  auditReportMarkdown,
+  compareVerification,
+  createVerificationContext,
+  createRepairDraft,
+  requestRepairChanges,
+  repairExportMarkdown,
+  repairWithMission,
+  reviseRepairDraft,
+  verificationReceiptMarkdown,
+  validateRepairId,
+} from "../src/repair-contract.js";
+import { runFrontmendAudit } from "./pagespeed-provider.js";
+
+const BODY_LIMIT_BYTES = 4096;
+const RATE_WINDOW_MS = 10 * 60 * 1000;
+const RATE_LIMIT = 5;
+const GLOBAL_RATE_LIMIT = 60;
+const REUSE_WINDOW_MS = 10 * 60 * 1000;
+const JOB_RETENTION_MS = 24 * 60 * 60 * 1000;
+const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+function json(data, init = {}) {
+  const headers = new Headers(init.headers);
+  headers.set("content-type", "application/json; charset=utf-8");
+  headers.set("cache-control", "no-store");
+  return new Response(JSON.stringify(data), { ...init, headers });
+}
+
+function publicError(error) {
+  if (error instanceof AuditError) {
+    const status = [
+      "NOT_FOUND",
+      "AUDIT_NOT_FOUND",
+      "EVIDENCE_NOT_FOUND",
+      "REPAIR_NOT_FOUND",
+      "FINDING_NOT_FOUND",
+      "EXPLORATION_NOT_FOUND",
+    ].includes(error.code)
+      ? 404
+      : error.code === "METHOD_NOT_ALLOWED"
+        ? 405
+        : [
+            "AUDIT_NOT_READY",
+            "REPAIR_NOT_APPROVED",
+            "DEPLOYMENT_NOT_ATTESTED",
+            "CHANGES_ALREADY_REQUESTED",
+            "CHANGES_REQUESTED",
+            "REVISION_NOT_REQUESTED",
+          ].includes(error.code)
+          ? 409
+          : 400;
+    return { status, code: error.code, message: error.message, recoverable: true };
+  }
+  if (error?.code === "RATE_LIMITED") {
+    return { status: 429, code: error.code, message: error.message, recoverable: true };
+  }
+  return {
+    status: 500,
+    code: "INTERNAL_ERROR",
+    message: "Frontmend could not complete the request.",
+    recoverable: false,
+  };
+}
+
+function errorResponse(error, headers) {
+  const detail = publicError(error);
+  return json(
+    {
+      ok: false,
+      error: { code: detail.code, message: detail.message, recoverable: detail.recoverable },
+    },
+    { status: detail.status, headers },
+  );
+}
+
+async function readJsonBody(request) {
+  const declared = Number(request.headers.get("content-length") ?? 0);
+  if (declared > BODY_LIMIT_BYTES) {
+    throw new AuditError("INVALID_INPUT", "The request body is too large.");
+  }
+  const reader = request.body?.getReader();
+  if (!reader) return {};
+  const chunks = [];
+  let received = 0;
+  while (true) {
+    const { value, done } = await reader.read();
+    if (done) break;
+    received += value.byteLength;
+    if (received > BODY_LIMIT_BYTES) {
+      await reader.cancel().catch(() => {});
+      throw new AuditError("INVALID_INPUT", "The request body is too large.");
+    }
+    chunks.push(value);
+  }
+  const bytes = new Uint8Array(received);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  try {
+    return JSON.parse(new TextDecoder().decode(bytes));
+  } catch {
+    throw new AuditError("INVALID_INPUT", "The request body must be valid JSON.");
+  }
+}
+
+async function sha256(value) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+function assertSameOrigin(request) {
+  const origin = request.headers.get("origin");
+  if (origin && origin !== new URL(request.url).origin) {
+    throw new AuditError("ORIGIN_MISMATCH", "Audit requests must come from this Frontmend page.");
+  }
+}
+
+function auditSnapshot(state) {
+  return {
+    id: state.id,
+    attempt: Number.isFinite(state.attempt) ? state.attempt : 1,
+    url: state.url,
+    source: state.source,
+    status: state.status,
+    phase: state.phase,
+    phaseLabel: state.phaseLabel,
+    progress: state.progress,
+    exploration: state.exploration ?? state.report?.exploration ?? null,
+    siteExploration: state.siteExploration ?? state.report?.siteExploration ?? null,
+    report: state.status === "complete" ? state.report : null,
+    error: state.error ?? null,
+  };
+}
+
+async function gateAdmissions(request, env, routes, missionId) {
+  const ip = request.headers.get("cf-connecting-ip") ?? "local-preview";
+  const fingerprint = await sha256(ip);
+  const items = await Promise.all(
+    routes.map(async (route) => ({
+      urlHash: await sha256(`${route.url}\nexploration:${missionId}:${route.path}`),
+    })),
+  );
+  const gate = env.AUDIT_GATE.get(env.AUDIT_GATE.idFromName("frontmend-gate-v1"));
+  const response = await gate.fetch("https://frontmend.internal/admit-batch", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fingerprint, items, now: Date.now() }),
+  });
+  const admission = await response.json();
+  if (!admission.allowed) {
+    const error = new Error("This site exploration exceeds the current live-audit budget. Try again in a few minutes.");
+    error.code = "RATE_LIMITED";
+    error.retryAfterMs = admission.retryAfterMs;
+    throw error;
+  }
+  return admission.admissions;
+}
+
+async function readExplorationMission(env, rootAuditId, missionId) {
+  const rootJob = jobFromId(env, rootAuditId);
+  const path = missionId
+    ? `/explorations/${encodeURIComponent(assertMissionId(missionId))}`
+    : "/explorations";
+  const response = await rootJob.fetch(`https://frontmend.internal${path}`);
+  const payload = await response.json();
+  if (!response.ok || payload?.ok === false) return { response, payload };
+  return { response, payload, rootJob };
+}
+
+async function aggregateMission(env, mission) {
+  const audits = await Promise.all(
+    mission.children.map(async (child) => {
+      if (!child.auditId) return null;
+      try {
+        const response = await jobFromId(env, child.auditId).fetch("https://frontmend.internal/");
+        const payload = await response.json();
+        if (response.ok && payload?.data) return payload.data;
+        return {
+          id: child.auditId,
+          status: "failed",
+          progress: 100,
+          error: payload?.error ?? {
+            code: "AUDIT_NOT_FOUND",
+            message: "The child audit is unavailable.",
+            recoverable: true,
+          },
+        };
+      } catch {
+        return {
+          id: child.auditId,
+          status: "failed",
+          progress: 100,
+          error: {
+            code: "AUDIT_STATUS_UNAVAILABLE",
+            message: "The child audit status is temporarily unavailable.",
+            recoverable: true,
+          },
+        };
+      }
+    }),
+  );
+  return siteExplorationSnapshot(mission, audits.filter(Boolean));
+}
+
+async function startSiteExploration(request, env, rootAuditId) {
+  assertSameOrigin(request);
+  const input = await readJsonBody(request);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new AuditError("INVALID_INPUT", "The request body must be an object.");
+  }
+  const extra = Object.keys(input).find((key) => !["paths", "source"].includes(key));
+  if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
+  const rootJob = jobFromId(env, rootAuditId);
+  const inputResponse = await rootJob.fetch("https://frontmend.internal/exploration-inputs", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ paths: input.paths }),
+  });
+  const inputPayload = await inputResponse.json();
+  if (!inputResponse.ok || inputPayload?.ok === false) {
+    return json(inputPayload, { status: inputResponse.status });
+  }
+
+  const missionId = crypto.randomUUID();
+  const source = input.source === "agent" ? "agent" : "human";
+  const routes = inputPayload.data.routes;
+  const admissions = await gateAdmissions(request, env, routes, missionId);
+  const children = await Promise.all(
+    routes.map(async (route, index) => {
+      const admission = admissions[index];
+      const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
+      try {
+        const response = await job.fetch("https://frontmend.internal/start", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            id: admission.jobId,
+            url: route.url,
+            source,
+            exploration: route.exploration,
+            siteExploration: {
+              missionId,
+              rootAuditId,
+              position: index + 1,
+              total: routes.length,
+            },
+          }),
+        });
+        const payload = await response.json();
+        if (!response.ok || payload?.ok === false) {
+          return { auditId: admission.jobId, startError: payload?.error };
+        }
+        return { auditId: admission.jobId, audit: payload.data };
+      } catch (error) {
+        return {
+          auditId: admission.jobId,
+          startError: { code: "AUDIT_START_FAILED", message: error?.message },
+        };
+      }
+    }),
+  );
+  const mission = createSiteExplorationMission({
+    missionId,
+    rootAuditId,
+    source,
+    routes,
+    children,
+    createdAt: Date.now(),
+  });
+  const persistResponse = await rootJob.fetch(
+    `https://frontmend.internal/explorations/${encodeURIComponent(missionId)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(mission),
+    },
+  );
+  if (!persistResponse.ok) {
+    const payload = await persistResponse.json();
+    return json(payload, { status: persistResponse.status });
+  }
+  const snapshot = siteExplorationSnapshot(
+    mission,
+    children.map((child) => child.audit).filter(Boolean),
+  );
+  return json({ ok: true, data: snapshot }, {
+    status: 202,
+    headers: {
+      location: `/api/audits/${encodeURIComponent(rootAuditId)}/explorations/${encodeURIComponent(missionId)}`,
+    },
+  });
+}
+
+async function getSiteExplorations(env, rootAuditId, missionId, report = false) {
+  const stored = await readExplorationMission(env, rootAuditId, missionId);
+  if (!stored.response.ok || stored.payload?.ok === false) {
+    return json(stored.payload, { status: stored.response.status });
+  }
+  if (!missionId) {
+    const explorations = await Promise.all(
+      (stored.payload.data.explorations ?? []).map((mission) => aggregateMission(env, mission)),
+    );
+    return json({ ok: true, data: { rootAuditId, explorations } });
+  }
+  const snapshot = await aggregateMission(env, stored.payload.data);
+  if (report) {
+    if (!["complete", "partial", "failed"].includes(snapshot.status)) {
+      return errorResponse(
+        new AuditError("AUDIT_NOT_READY", "Finish the selected page audits before exporting this exploration."),
+      );
+    }
+    return new Response(siteExplorationMarkdown(snapshot), {
+      headers: {
+        "content-type": "text/markdown; charset=utf-8",
+        "content-disposition": `attachment; filename="frontmend-site-exploration-${snapshot.id}.md"`,
+        "cache-control": "no-store",
+        "x-content-type-options": "nosniff",
+      },
+    });
+  }
+  return json({ ok: true, data: snapshot });
+}
+
+async function startRelatedAudit(request, env, baselineAuditId) {
+  assertSameOrigin(request);
+  const input = await readJsonBody(request);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new AuditError("INVALID_INPUT", "The request body must be an object.");
+  }
+  const extra = Object.keys(input).find((key) => !["path", "source"].includes(key));
+  if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
+
+  const baselineJob = jobFromId(env, baselineAuditId);
+  const inputResponse = await baselineJob.fetch("https://frontmend.internal/route-input", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ path: input.path }),
+  });
+  const inputPayload = await inputResponse.json();
+  if (!inputResponse.ok || inputPayload?.ok === false) {
+    return json(inputPayload, { status: inputResponse.status });
+  }
+
+  const related = inputPayload.data;
+  const source = input.source === "agent" ? "agent" : "human";
+  const admission = await gateAdmission(
+    request,
+    env,
+    related.url,
+    `route:${baselineAuditId}:${related.exploration.observedPath}`,
+  );
+  const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
+  const response = await job.fetch("https://frontmend.internal/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: admission.jobId,
+      url: related.url,
+      source,
+      exploration: related.exploration,
+    }),
+  });
+  const payload = await response.json();
+  return json(payload, {
+    status: response.status === 202 ? 202 : admission.reused ? 200 : 202,
+    headers: { location: `/api/audits/${encodeURIComponent(admission.jobId)}` },
+  });
+}
+
+async function gateAdmission(request, env, url, operationKey = "") {
+  const ip = request.headers.get("cf-connecting-ip") ?? "local-preview";
+  const [fingerprint, urlHash] = await Promise.all([
+    sha256(ip),
+    sha256(operationKey ? `${url}\n${operationKey}` : url),
+  ]);
+  const gate = env.AUDIT_GATE.get(env.AUDIT_GATE.idFromName("frontmend-gate-v1"));
+  const response = await gate.fetch("https://frontmend.internal/admit", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ fingerprint, urlHash, now: Date.now() }),
+  });
+  const admission = await response.json();
+  if (!admission.allowed) {
+    const error = new Error("Too many live audits were started. Try again in a few minutes.");
+    error.code = "RATE_LIMITED";
+    error.retryAfterMs = admission.retryAfterMs;
+    throw error;
+  }
+  return admission;
+}
+
+async function startAudit(request, env) {
+  assertSameOrigin(request);
+  const input = await readJsonBody(request);
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new AuditError("INVALID_INPUT", "The request body must be an object.");
+  }
+  const extra = Object.keys(input).find((key) => !["url", "source"].includes(key));
+  if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
+  const url = normalizePublicUrl(input.url);
+  const source = input.source === "agent" ? "agent" : "human";
+  const admission = await gateAdmission(request, env, url);
+  const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
+  const response = await job.fetch("https://frontmend.internal/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ id: admission.jobId, url, source }),
+  });
+  const payload = await response.json();
+  return json(payload, {
+    status: response.status === 202 ? 202 : admission.reused ? 200 : 202,
+    headers: { location: `/api/audits/${encodeURIComponent(admission.jobId)}` },
+  });
+}
+
+function jobFromId(env, auditId) {
+  if (!JOB_ID_PATTERN.test(auditId)) {
+    throw new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID.");
+  }
+  return env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(auditId));
+}
+
+async function proxyJobRequest(job, path, request, body) {
+  const headers = new Headers();
+  if (body !== undefined) headers.set("content-type", "application/json");
+  const init = { method: request.method, headers };
+  if (body !== undefined) init.body = JSON.stringify(body);
+  return job.fetch(`https://frontmend.internal${path}`, init);
+}
+
+async function startRepairVerification(request, env, baselineAuditId, repairId) {
+  assertSameOrigin(request);
+  validateRepairId(repairId);
+  const baselineJob = jobFromId(env, baselineAuditId);
+  const inputResponse = await baselineJob.fetch(
+    `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-input`,
+  );
+  const inputPayload = await inputResponse.json();
+  if (!inputResponse.ok || inputPayload?.ok === false) {
+    return json(inputPayload, { status: inputResponse.status });
+  }
+  const verification = inputPayload.data;
+  const admission = await gateAdmission(request, env, verification.url, `repair:${repairId}`);
+  const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
+  const response = await job.fetch("https://frontmend.internal/start", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      id: admission.jobId,
+      url: verification.url,
+      source: "verification",
+      verification,
+    }),
+  });
+  const payload = await response.json();
+  return json(payload, {
+    status: admission.reused ? 200 : 202,
+    headers: { location: `/api/audits/${encodeURIComponent(admission.jobId)}` },
+  });
+}
+
+async function routeApi(request, env, url) {
+  if (request.method === "POST" && url.pathname === "/api/audits") {
+    return startAudit(request, env);
+  }
+
+  const routeMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/routes$/);
+  if (routeMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(
+        new AuditError("METHOD_NOT_ALLOWED", "That route exploration operation is not supported."),
+      );
+    }
+    return startRelatedAudit(request, env, routeMatch[1]);
+  }
+
+  const explorationMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/explorations(?:\/([^/]+)(?:\/(report))?)?$/,
+  );
+  if (explorationMatch) {
+    const [, rootAuditId, missionId, resource] = explorationMatch;
+    if (!missionId && request.method === "POST") {
+      return startSiteExploration(request, env, rootAuditId);
+    }
+    if (request.method === "GET") {
+      return getSiteExplorations(env, rootAuditId, missionId, resource === "report");
+    }
+    return errorResponse(
+      new AuditError("METHOD_NOT_ALLOWED", "That site exploration operation is not supported."),
+    );
+  }
+
+  const repairMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|deployment|verify|export))?)?$/,
+  );
+  if (repairMatch) {
+    const [, auditId, repairId, action] = repairMatch;
+    const job = jobFromId(env, auditId);
+    if (action === "verify" && request.method === "POST") {
+      return startRepairVerification(request, env, auditId, repairId);
+    }
+    if (!["GET", "POST"].includes(request.method)) {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair operation is not supported."));
+    }
+    let body;
+    if (request.method === "POST") {
+      assertSameOrigin(request);
+      body = await readJsonBody(request);
+    }
+    const suffix = repairId
+      ? `/repairs/${encodeURIComponent(repairId)}${action ? `/${action}` : ""}`
+      : "/repairs";
+    const response = await proxyJobRequest(job, suffix, request, body);
+    return new Response(response.body, response);
+  }
+
+  const match = url.pathname.match(
+    /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|evidence)(?:\/([^/]+))?)?$/,
+  );
+  if (!match) {
+    return errorResponse(new AuditError("NOT_FOUND", "That API route does not exist."));
+  }
+  const [, auditId, resource, evidenceId] = match;
+  const job = jobFromId(env, auditId);
+  if (request.method === "DELETE" && !resource) {
+    assertSameOrigin(request);
+    const response = await job.fetch("https://frontmend.internal/", { method: "DELETE" });
+    return new Response(response.body, response);
+  }
+  if (request.method !== "GET") {
+    return errorResponse(
+      new AuditError("METHOD_NOT_ALLOWED", "That audit operation is not supported."),
+    );
+  }
+  const suffix =
+    resource === "results"
+      ? "/results"
+      : resource === "report"
+        ? "/report"
+      : resource === "receipt"
+        ? "/receipt"
+      : resource === "evidence"
+        ? `/evidence/${evidenceId ?? ""}`
+        : "/";
+  const response = await job.fetch(`https://frontmend.internal${suffix}`);
+  return new Response(response.body, response);
+}
+
+async function serveAssets(request, env) {
+  const response = await env.ASSETS.fetch(request);
+  const acceptsHtml = request.headers.get("accept")?.includes("text/html");
+  if (response.status !== 404 || !acceptsHtml || !["GET", "HEAD"].includes(request.method)) {
+    return response;
+  }
+  const indexUrl = new URL(request.url);
+  indexUrl.pathname = "/index.html";
+  indexUrl.search = "";
+  return env.ASSETS.fetch(new Request(indexUrl, request));
+}
+
+function withSecurityHeaders(response) {
+  const headers = new Headers(response.headers);
+  headers.set("origin-agent-cluster", "?1");
+  headers.set("permissions-policy", "tools=(self)");
+  headers.set("referrer-policy", "strict-origin-when-cross-origin");
+  headers.set("x-content-type-options", "nosniff");
+  headers.set("x-frame-options", "DENY");
+  if (headers.get("content-type")?.includes("text/html")) {
+    headers.set(
+      "content-security-policy",
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; form-action 'self'; upgrade-insecure-requests",
+    );
+  }
+  return new Response(response.body, {
+    status: response.status,
+    statusText: response.statusText,
+    headers,
+  });
+}
+
+export default {
+  async fetch(request, env) {
+    const url = new URL(request.url);
+    try {
+      const response = url.pathname.startsWith("/api/")
+        ? await routeApi(request, env, url)
+        : await serveAssets(request, env);
+      return withSecurityHeaders(response);
+    } catch (error) {
+      const headers = error?.retryAfterMs
+        ? { "retry-after": String(Math.max(1, Math.ceil(error.retryAfterMs / 1000))) }
+        : undefined;
+      return withSecurityHeaders(errorResponse(error, headers));
+    }
+  },
+};
+
+export class FrontmendAuditGate {
+  constructor(ctx) {
+    this.ctx = ctx;
+  }
+
+  async fetch(request) {
+    if (request.method !== "POST") return json({ allowed: false }, { status: 405 });
+    const requestUrl = new URL(request.url);
+    const { fingerprint, urlHash, items, now } = await readJsonBody(request);
+    const isBatch = requestUrl.pathname === "/admit-batch";
+    const batchItems = isBatch ? items : [{ urlHash }];
+    if (
+      typeof fingerprint !== "string" ||
+      !Array.isArray(batchItems) ||
+      batchItems.length < 1 ||
+      batchItems.length > siteExplorationLimits.maxRoutes ||
+      batchItems.some((item) => typeof item?.urlHash !== "string" || !item.urlHash) ||
+      new Set(batchItems.map((item) => item.urlHash)).size !== batchItems.length ||
+      !Number.isFinite(now)
+    ) {
+      return json({ allowed: false }, { status: 400 });
+    }
+
+    const state = (await this.ctx.storage.get("gate")) ?? { rates: {}, jobs: {}, starts: [] };
+    const cutoff = now - RATE_WINDOW_MS;
+    state.starts = (state.starts ?? []).filter((timestamp) => timestamp > cutoff);
+    if (state.starts.length + batchItems.length > GLOBAL_RATE_LIMIT) {
+      return json({
+        allowed: false,
+        retryAfterMs: Math.max(1_000, state.starts[0] + RATE_WINDOW_MS - now),
+      });
+    }
+    const attempts = (state.rates[fingerprint] ?? []).filter((timestamp) => timestamp > cutoff);
+    if (attempts.length + batchItems.length > RATE_LIMIT) {
+      return json({
+        allowed: false,
+        retryAfterMs: Math.max(1_000, attempts[0] + RATE_WINDOW_MS - now),
+      });
+    }
+    attempts.push(...batchItems.map(() => now));
+    state.rates[fingerprint] = attempts;
+    state.starts.push(...batchItems.map(() => now));
+
+    for (const [key, record] of Object.entries(state.jobs)) {
+      if (!record || record.createdAt <= now - REUSE_WINDOW_MS) delete state.jobs[key];
+    }
+    const admissions = batchItems.map((item) => {
+      const existing = state.jobs[item.urlHash];
+      const jobId = existing?.jobId ?? crypto.randomUUID();
+      if (!existing) state.jobs[item.urlHash] = { jobId, createdAt: now };
+      return { jobId, reused: Boolean(existing) };
+    });
+
+    const rateEntries = Object.entries(state.rates)
+      .map(([key, timestamps]) => [key, timestamps.filter((timestamp) => timestamp > cutoff)])
+      .filter(([, timestamps]) => timestamps.length)
+      .slice(-500);
+    state.rates = Object.fromEntries(rateEntries);
+    state.jobs = Object.fromEntries(Object.entries(state.jobs).slice(-500));
+    await this.ctx.storage.put("gate", state);
+
+    return isBatch
+      ? json({ allowed: true, admissions })
+      : json({ allowed: true, ...admissions[0] });
+  }
+}
+
+export class FrontmendAuditJob {
+  constructor(ctx, env) {
+    this.ctx = ctx;
+    this.env = env;
+    this.abortController = null;
+  }
+
+  async alarm() {
+    await this.ctx.storage.deleteAll();
+  }
+
+  async scheduleRetention() {
+    if (typeof this.ctx.storage.setAlarm !== "function") return;
+    await this.ctx.storage.setAlarm(Date.now() + JOB_RETENTION_MS).catch(() => {});
+  }
+
+  async fetch(request) {
+    const url = new URL(request.url);
+    if (request.method === "POST" && url.pathname === "/start") {
+      const input = await readJsonBody(request);
+      const existing = await this.ctx.storage.get("state");
+      if (existing && !["failed", "cancelled"].includes(existing.status)) {
+        return json({ ok: true, data: auditSnapshot(existing) });
+      }
+      const state = {
+        id: input.id,
+        attempt: existing
+          ? (Number.isFinite(existing.attempt) ? existing.attempt : 1) + 1
+          : 1,
+        url: input.url,
+        source: input.source,
+        verification: input.verification ?? null,
+        exploration: input.exploration ?? null,
+        siteExploration: input.siteExploration ?? null,
+        status: "queued",
+        phase: "queued",
+        phaseLabel: "Waiting for the live audit provider",
+        progress: 4,
+        report: null,
+        error: null,
+        startedAt: Date.now(),
+      };
+      await this.ctx.storage.put("state", state);
+      this.abortController = new AbortController();
+      this.ctx.waitUntil(this.run(state));
+      return json({ ok: true, data: auditSnapshot(state) }, { status: 202 });
+    }
+
+    const state = await this.ctx.storage.get("state");
+    if (!state) {
+      return errorResponse(new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."));
+    }
+    if (request.method === "DELETE" && url.pathname === "/") {
+      if (["complete", "failed", "cancelled"].includes(state.status)) {
+        return json({ ok: true, data: auditSnapshot(state) });
+      }
+      this.abortController?.abort("cancelled");
+      const cancelled = {
+        ...state,
+        status: "cancelled",
+        phase: "cancelled",
+        phaseLabel: "Audit cancelled",
+        report: null,
+        error: null,
+        completedAt: Date.now(),
+      };
+      await this.ctx.storage.put("state", cancelled);
+      await this.scheduleRetention();
+      return json({ ok: true, data: auditSnapshot(cancelled) });
+    }
+    if (url.pathname.startsWith("/repairs")) {
+      return this.handleRepairs(request, url, state);
+    }
+    if (request.method === "POST" && url.pathname === "/exploration-inputs") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(
+          new AuditError("AUDIT_NOT_READY", "Finish the root audit before exploring multiple pages."),
+        );
+      }
+      const input = await readJsonBody(request);
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
+      }
+      const extra = Object.keys(input).find((key) => key !== "paths");
+      if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
+      try {
+        return json({ ok: true, data: createSiteExplorationInputs(state.report, input.paths) });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (url.pathname === "/explorations" && request.method === "GET") {
+      const explorations = (await this.ctx.storage.get("explorations")) ?? [];
+      return json({ ok: true, data: { rootAuditId: state.id, explorations } });
+    }
+    const explorationMatch = url.pathname.match(/^\/explorations\/([^/]+)$/);
+    if (explorationMatch) {
+      let missionId;
+      try {
+        missionId = assertMissionId(decodeURIComponent(explorationMatch[1]));
+      } catch (error) {
+        return errorResponse(error);
+      }
+      const explorations = (await this.ctx.storage.get("explorations")) ?? [];
+      if (request.method === "GET") {
+        const mission = explorations.find((item) => item.id === missionId);
+        return mission
+          ? json({ ok: true, data: mission })
+          : errorResponse(
+              new AuditError("EXPLORATION_NOT_FOUND", "No site exploration exists with that ID."),
+            );
+      }
+      if (request.method === "POST") {
+        const mission = await readJsonBody(request);
+        if (mission?.id !== missionId || mission?.rootAuditId !== state.id) {
+          return errorResponse(new AuditError("INVALID_INPUT", "The exploration does not match this root audit."));
+        }
+        const retained = [
+          ...explorations.filter((item) => item.id !== missionId),
+          mission,
+        ].slice(-10);
+        await this.ctx.storage.put("explorations", retained);
+        return json({ ok: true, data: mission }, { status: 201 });
+      }
+      return errorResponse(
+        new AuditError("METHOD_NOT_ALLOWED", "That site exploration operation is not supported."),
+      );
+    }
+    if (request.method === "POST" && url.pathname === "/route-input") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(
+          new AuditError("AUDIT_NOT_READY", "Finish the parent audit before exploring its routes."),
+        );
+      }
+      const input = await readJsonBody(request);
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
+      }
+      const extra = Object.keys(input).find((key) => key !== "path");
+      if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
+      try {
+        return json({ ok: true, data: createRelatedAuditInput(state.report, input.path) });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (request.method !== "GET") {
+      return errorResponse(
+        new AuditError("METHOD_NOT_ALLOWED", "That audit operation is not supported."),
+      );
+    }
+    if (url.pathname === "/results") {
+      if (state.status === "cancelled") {
+        return errorResponse(new AuditError("AUDIT_CANCELLED", "The audit was cancelled."));
+      }
+      if (state.status === "failed") {
+        return json({ ok: false, error: state.error }, { status: 422 });
+      }
+      if (state.status !== "complete") {
+        return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
+      }
+      return json({ ok: true, data: state.report });
+    }
+    if (url.pathname === "/receipt") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
+      }
+      try {
+        return new Response(verificationReceiptMarkdown(state.report), {
+          headers: {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="frontmend-verification-${state.id}.md"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (url.pathname === "/report") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
+      }
+      try {
+        return new Response(auditReportMarkdown(state.report), {
+          headers: {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="frontmend-audit-${state.id}.md"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (url.pathname.startsWith("/evidence/")) {
+      const strategy = url.pathname.slice("/evidence/".length);
+      const dataUrl = await this.ctx.storage.get(`evidence:${strategy}`);
+      if (!dataUrl || typeof dataUrl !== "string") {
+        return errorResponse(
+          new AuditError("EVIDENCE_NOT_FOUND", "That evidence image is unavailable."),
+        );
+      }
+      const match = dataUrl.match(/^data:(image\/(?:jpeg|png|webp));base64,([a-z0-9+/=]+)$/i);
+      if (!match) {
+        return errorResponse(new AuditError("EVIDENCE_INVALID", "That evidence image is invalid."));
+      }
+      const bytes = Uint8Array.from(atob(match[2]), (character) => character.charCodeAt(0));
+      return new Response(bytes, {
+        headers: {
+          "content-type": match[1],
+          "cache-control": "public, max-age=600, immutable",
+          "x-content-type-options": "nosniff",
+        },
+      });
+    }
+    return json({ ok: true, data: auditSnapshot(state) });
+  }
+
+  async handleRepairs(request, url, state) {
+    if (state.status !== "complete" || !state.report) {
+      return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before staging a repair."));
+    }
+    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|deployment|export|verification-input))?)?$/);
+    if (!match) return errorResponse(new AuditError("NOT_FOUND", "That repair route does not exist."));
+    const [, rawRepairId, action] = match;
+    const repairs = (await this.ctx.storage.get("repairs")) ?? [];
+
+    if (!rawRepairId && request.method === "GET") {
+      return json({
+        ok: true,
+        data: { auditId: state.id, repairs: repairs.map(repairWithMission) },
+      });
+    }
+    if (!rawRepairId && request.method === "POST") {
+      const input = await readJsonBody(request);
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return errorResponse(new AuditError("INVALID_REPAIR", "The repair proposal must be an object."));
+      }
+      const finding = state.report.findings.find((item) => item.id === input.findingId);
+      if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
+      const existing = repairs.find((repair) => repair.findingId === finding.id);
+      if (existing) return json({ ok: true, data: repairWithMission(existing) });
+      if (repairs.length >= 10) {
+        return errorResponse(new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
+      }
+      const { source, ...proposal } = input;
+      const repair = createRepairDraft({
+        auditId: state.id,
+        finding,
+        input: proposal,
+        source,
+      });
+      repairs.push(repair);
+      await this.ctx.storage.put("repairs", repairs);
+      return json({ ok: true, data: repairWithMission(repair) }, { status: 201 });
+    }
+
+    const repairId = validateRepairId(decodeURIComponent(rawRepairId ?? ""));
+    const repairIndex = repairs.findIndex((repair) => repair.id === repairId);
+    if (repairIndex < 0) {
+      return errorResponse(new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist."));
+    }
+    const repair = repairs[repairIndex];
+    if (!action && request.method === "GET") {
+      return json({ ok: true, data: repairWithMission(repair) });
+    }
+
+    if (action === "approve" && request.method === "POST") {
+      if (repair.status === "changes-requested") {
+        return errorResponse(
+          new AuditError("CHANGES_REQUESTED", "Revise this repair before it can be approved."),
+        );
+      }
+      if (repair.status !== "approved") {
+        repairs[repairIndex] = { ...repair, status: "approved", reviewedAt: Date.now() };
+        await this.ctx.storage.put("repairs", repairs);
+      }
+      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+    }
+    if (action === "changes" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const extra = Object.keys(input ?? {}).find((key) => key !== "feedback");
+      if (extra) return errorResponse(new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`));
+      repairs[repairIndex] = requestRepairChanges(repair, input?.feedback);
+      await this.ctx.storage.put("repairs", repairs);
+      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+    }
+    if (action === "revise" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const { source, ...proposal } = input ?? {};
+      if (source !== undefined && source !== "agent") {
+        return errorResponse(new AuditError("INVALID_REPAIR", "Repair revisions must be agent-authored."));
+      }
+      repairs[repairIndex] = reviseRepairDraft(repair, proposal, "agent");
+      await this.ctx.storage.put("repairs", repairs);
+      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+    }
+    if (action === "deployment" && request.method === "POST") {
+      if (repair.status !== "approved") {
+        return errorResponse(
+          new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before confirming deployment."),
+        );
+      }
+      if (!Number.isFinite(repair.deploymentAttestedAt)) {
+        repairs[repairIndex] = { ...repair, deploymentAttestedAt: Date.now() };
+        await this.ctx.storage.put("repairs", repairs);
+      }
+      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+    }
+    if (action === "verification-input" && request.method === "GET") {
+      if (repair.status !== "approved") {
+        return errorResponse(new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before verification."));
+      }
+      if (!Number.isFinite(repair.deploymentAttestedAt)) {
+        return errorResponse(
+          new AuditError(
+            "DEPLOYMENT_NOT_ATTESTED",
+            "A person must confirm the reviewed change was deployed before verification.",
+          ),
+        );
+      }
+      return json({ ok: true, data: createVerificationContext(state.report, repair) });
+    }
+    if (action === "export" && request.method === "GET") {
+      try {
+        return new Response(repairExportMarkdown({ report: state.report, repair }), {
+          headers: {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="frontmend-repair-${repair.id}.md"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair operation is not supported."));
+  }
+
+  async run(initialState) {
+    try {
+      const output = await runFrontmendAudit({
+        auditId: initialState.id,
+        url: initialState.url,
+        apiKey: this.env.PAGESPEED_API_KEY,
+        signal: this.abortController?.signal,
+        onProgress: async (progress) => {
+          const current = await this.ctx.storage.get("state");
+          if (
+            !current ||
+            current.attempt !== initialState.attempt ||
+            ["complete", "failed", "cancelled"].includes(current.status)
+          ) return;
+          await this.ctx.storage.put("state", {
+            ...current,
+            status: "running",
+            ...progress,
+          });
+        },
+      });
+      if (initialState.verification) {
+        output.report.verification = compareVerification(output.report, initialState.verification);
+      }
+      if (initialState.exploration) {
+        output.report.exploration = initialState.exploration;
+      }
+      if (initialState.siteExploration) {
+        output.report.siteExploration = initialState.siteExploration;
+      }
+      const ready = await this.ctx.storage.get("state");
+      if (
+        !ready ||
+        ready.attempt !== initialState.attempt ||
+        ready.status === "cancelled"
+      ) return;
+      for (const [strategy, dataUrl] of Object.entries(output.screenshots)) {
+        await this.ctx.storage.put(`evidence:${strategy}`, dataUrl);
+      }
+      const current = (await this.ctx.storage.get("state")) ?? initialState;
+      if (
+        current.attempt !== initialState.attempt ||
+        current.status === "cancelled"
+      ) return;
+      await this.ctx.storage.put("state", {
+        ...current,
+        status: "complete",
+        phase: "complete",
+        phaseLabel: "Live audit complete",
+        progress: 100,
+        report: output.report,
+        error: null,
+      });
+      await this.scheduleRetention();
+    } catch (error) {
+      const current = (await this.ctx.storage.get("state")) ?? initialState;
+      if (
+        current.attempt !== initialState.attempt ||
+        current.status === "cancelled"
+      ) return;
+      if (error?.code === "AUDIT_CANCELLED") {
+        await this.ctx.storage.put("state", {
+          ...current,
+          status: "cancelled",
+          phase: "cancelled",
+          phaseLabel: "Audit cancelled",
+          report: null,
+          error: null,
+          completedAt: Date.now(),
+        });
+        await this.scheduleRetention();
+        return;
+      }
+      await this.ctx.storage.put("state", {
+        ...current,
+        status: "failed",
+        phase: "failed",
+        phaseLabel: "Live audit failed",
+        progress: current.progress,
+        report: null,
+        error: {
+          code: typeof error?.code === "string" ? error.code : "AUDIT_FAILED",
+          message:
+            typeof error?.message === "string"
+              ? error.message.slice(0, 300)
+              : "The live audit could not be completed.",
+          recoverable: error?.recoverable !== false,
+        },
+      });
+      await this.scheduleRetention();
+    }
+  }
+}

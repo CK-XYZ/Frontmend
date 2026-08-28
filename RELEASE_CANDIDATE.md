@@ -1,0 +1,122 @@
+# Frontmend release candidate
+
+Prepared: 29 August 2026 (Australia/Perth)
+
+This is the release-candidate receipt and production verification runbook. It records the Cloudflare deployment and public HTTP/API proof below; fresh ChatGPT and Chrome WebMCP proof is still outstanding.
+
+Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Chrome WebMCP guide](https://developer.chrome.com/docs/ai/webmcp), [Google's Model Context Tool Inspector](https://chromewebstore.google.com/detail/webmcp-model-context-tool/gbpdfapgefenggkahomfgkhfehlcenpd), and [Cloudflare Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/).
+
+## Candidate identity
+
+- Source provenance: the standalone repository's initial release commit captures the working tree deployed to the Cloudflare version below; push remains a separate action
+- Worker name: `frontmend`
+- Cloudflare version: `11ee543b-2a8d-46f1-8636-57d7568e74bd`
+- Deployment created: `2026-08-28T18:23:55.282Z`
+- Wrangler source of truth: `wrangler.jsonc`
+- Runtime: Worker module plus `FrontmendAuditGate` and `FrontmendAuditJob` SQLite Durable Objects
+- Static assets: `dist/client`, exposed to the Worker as `ASSETS`
+- Production URL: `https://frontmend.test.knightware.xyz/`
+
+## Fresh local receipt
+
+Run from `Ideas/Frontmend`:
+
+| Gate | Command | Result on 29 August 2026 |
+| --- | --- | --- |
+| Tests | `bun run test` | PASS — 84 passed, 0 failed |
+| Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
+| Wrangler types | `bunx wrangler types --check` | PASS before whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
+| Deploy bundle | `bunx wrangler deploy --dry-run --outdir dist/wrangler-dry-run --config wrangler.jsonc` | PASS — five assets; 122.47 KiB raw / 28.59 KiB gzip Worker upload; no upload performed |
+
+Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
+
+## Deployment prerequisites
+
+The candidate is deployed and HTTP/API-verified but not WebMCP-verified until each remaining item below is satisfied.
+
+- [x] Wrangler 4.x is installed (`4.126.0` during this receipt).
+- [x] Wrangler is authenticated to the intended Cloudflare account.
+- [x] No `.wrangler/deploy/config.json` redirect overrides `wrangler.jsonc`.
+- [x] `name`, `main`, `compatibility_date`, assets, Durable Object bindings, and the `v1` SQLite migration pass Wrangler's dry run.
+- [x] `compatibility_date` is `2026-08-27`.
+- [x] Confirm the currently authenticated Cloudflare account is the intended production owner immediately before deployment.
+- [ ] Obtain a Google PageSpeed API key and keep it outside source control.
+- [ ] After the Worker exists, set the key interactively with `bunx wrangler secret put PAGESPEED_API_KEY --name frontmend --config wrangler.jsonc`. Do not place the value on the command line or in Git.
+- [x] Perform the authorised deployment to the exact custom domain with `workers.dev` and preview URLs disabled.
+- [x] Record the exact deployed URL, deployed version ID, source state, UTC deployment time, and final command receipt here.
+- [x] Verify explicit WebMCP response headers: `Origin-Agent-Cluster: ?1` and `Permissions-Policy: tools=(self)`.
+- [x] Verify public DNS through `1.1.1.1` and `8.8.8.8`, valid HTTPS, current hashed assets, SPA restoration, private-target rejection, and Durable Object persistence.
+- [x] Complete a real production self-audit: `807bc951-7e1a-4064-96d1-e162e849cedb` observed CSP and `nosniff`, scored 78, and retained only the two honest unhydrated-document findings.
+- [ ] Complete both fresh-session procedures below against the exact production URL.
+
+`PAGESPEED_API_KEY` is not required for the Worker to start. Without it, Google may rate-limit Lighthouse and Frontmend will truthfully use its bounded live-document fallback. The release should nevertheless configure the key for a dependable judging path.
+
+## Fresh-session ChatGPT verification
+
+Define `FRONTMEND_URL` as the exact public HTTPS deployment URL. Do not use localhost, a preview server, an old browser tab, or a URL from a previous build.
+
+1. Update the ChatGPT desktop app, then fully quit and reopen it.
+2. Use a personal supported workspace, not Enterprise or Edu. In **Settings → Browser → Permissions**, turn on **Enable site tools**.
+3. Start a new chat with no inherited browser tab or earlier Frontmend messages. Select **GPT-5.6 Sol** or **GPT-5.6 Terra**; do not use Luna for this test.
+4. Open `FRONTMEND_URL` as a top-level page in ChatGPT's built-in browser. Wait for the landing page to settle.
+5. In the browser address bar, select **Site tools → Available site tools**. Record a screenshot showing exactly one active Frontmend tool, `start_site_audit`. The page badge should read **WebMCP · 1 active**, not **Human mode**.
+6. Send this exact prompt, replacing the placeholder once:
+
+   > Use the current page's site tools, not visual clicking, to audit `FRONTMEND_URL`. Return the tool name, audit ID, status, and workspace path. Do not claim the audit is complete until the tool reports it.
+
+7. Confirm **Sources/Recently used** records `start_site_audit`, the result contains a stable audit ID and `/audits/<id>` workspace path, and the visible Agent log adds a successful entry without raw arguments or the URL.
+8. Open the returned workspace path only after the tool call finishes. While the audit is queued or running, inspect **Available site tools** again. It must expose `check_site_audit_progress` and `cancel_site_audit`; the visible page must also offer **Cancel audit**.
+9. Send:
+
+   > Check the visible Frontmend audit until it reaches a terminal state. Use the page's site tool and report the exact status and evidence mode. Do not cancel it and do not infer completion from the screen.
+
+10. If the audit completes, send:
+
+    > Read the completed audit using the current page's site tool. Report the audit ID, final URL, engine and evidence mode, measured viewport count, score, finding IDs, omitted-finding count, and any observed same-site route paths. Distinguish Lighthouse evidence from the live-document fallback.
+
+11. Confirm `get_site_audit_results` appears in **Recently used**, its structured values match the visible report, and the page's contextual capability list has changed from progress tools to completed-report tools. Export the human audit report and compare its audit ID, evidence mode, findings, and boundary with the tool result.
+12. If at least one finding exists, send:
+
+    > Stage a repair proposal for the first visible finding using Frontmend's site tool. Do not approve it, do not attest deployment, and do not claim the target changed. Return the repair ID, finding ID, risk, status, and human next action.
+
+13. Confirm the visible review workspace appears, `stage_site_repair` is in **Recently used**, the proposal remains awaiting human review, and no site change or approval is claimed. Open **Agent log** and verify all successful calls are listed without prompts, URLs, patches, or tool arguments.
+14. Save screenshots of: the production URL and one-tool landing state; running contextual tools; completed report plus matching structured result; staged review plus the human-only approval boundary; and Recently used/Sources.
+
+Failure conditions: **Human mode**, missing Site tools UI, any tool set inconsistent with visible state, a tool call that navigates before returning, mismatched IDs/evidence, approval by the agent, or a deployment/change claim without external proof.
+
+## Fresh-session Chrome verification
+
+Chrome's public WebMCP origin trial begins with Chrome 149. This exact inspector-based procedure uses Chrome 150.0.7861.0 or newer because that is the current minimum stated by Google's inspector extension. Until the production origin is enrolled in the WebMCP origin trial, use Chrome's explicit testing flag for this verification.
+
+1. Use Chrome 150.0.7861.0 or newer. Create a dedicated new Chrome profile with no Frontmend storage, service worker, or previously open Frontmend tab.
+2. Open `chrome://flags/#enable-webmcp-testing`, set **WebMCP testing** to **Enabled**, and relaunch Chrome.
+3. Install or enable Google's **Model Context Tool Inspector** extension only in this dedicated verification profile. It is a development inspector, not a production security boundary. Open `FRONTMEND_URL` directly as a top-level page, not inside an iframe, then perform one hard reload.
+4. In DevTools Console, run these read-only checks and save the output:
+
+   ```js
+   ({
+     modelContext: typeof document.modelContext,
+     registerTool: typeof document.modelContext?.registerTool,
+     originAgentCluster: window.originAgentCluster,
+   })
+   ```
+
+   Acceptance: `modelContext` is `"object"`, `registerTool` is `"function"`, and `originAgentCluster` is `true`.
+5. Open the Model Context Tool Inspector. Confirm it discovers exactly `start_site_audit` on the landing page. Inspect its schema and confirm unknown fields are disallowed.
+6. In the Inspector's agent chat, send:
+
+   > Audit the current Frontmend URL using the registered WebMCP tool. Return the tool name, audit ID, status, and workspace path. Do not use DOM clicking to start it.
+
+7. Confirm the call is `start_site_audit`, its structured output contains the stable ID and workspace path, and the visible Agent log records success. Navigate to the returned path after the call completes.
+8. While running, confirm the Inspector now discovers exactly `check_site_audit_progress` and `cancel_site_audit`. Manually invoke `check_site_audit_progress` with `{}` and verify the structured state matches the page.
+9. After completion, refresh the Inspector's registered-tool view. Invoke `get_site_audit_results` with `{}`. Compare audit ID, final URL, evidence mode, score, findings, omitted count, and route candidates with the visible report and exported Markdown.
+10. If a finding exists, invoke `stage_site_repair` with only its `findingId`. Confirm the draft appears in the visible UI and remains human-review-only. Invoke `get_repair_workspace` with `{}` and compare its repair ID, status, risk, mission state, and next action with the page.
+11. Negative-schema check: call `get_site_audit_results` with `{ "unexpected": true }`. It must fail with a structured validation error and must not change visible state.
+12. Close the tab, open `FRONTMEND_URL` in a new tab, and confirm only `start_site_audit` is registered again. This proves page-scoped lifecycle cleanup rather than stale tool retention.
+13. Save screenshots of the Chrome version, enabled flag, console capability check, Inspector tool lists at landing/running/completed states, structured result comparison, negative-schema error, visible Agent log, and human-only repair review.
+
+Failure conditions: missing API support, `originAgentCluster !== true`, stale tools after navigation or tab close, schemas the Inspector cannot parse, structured results that differ from visible state, unlogged calls, or an agent-only path through approval/deployment attestation.
+
+## Release decision
+
+The candidate may be labelled **RC1 deployed and HTTP/API-verified**. It must not be labelled ChatGPT-verified, Chrome-verified, or submission-ready until `PAGESPEED_API_KEY` and both fresh-session procedures have real receipts. The deployed source is captured by this repository's initial release commit and must still be pushed before a public repository revision can be tied to the Cloudflare version.

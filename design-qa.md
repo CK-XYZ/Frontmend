@@ -1,0 +1,39 @@
+# Frontmend Design QA
+
+Source target: the existing OpenUp landing implementation and its documented warm-white, centered, floating-search visual direction.
+
+Implemented states:
+
+- URL-first landing
+- Audit progress
+- Responsive findings workspace
+- How-it-works modal
+- Mobile layout rules and reduced-motion handling
+- Agent-staged repair review and human approval
+- Human feedback, agent revision, and bounded proposal-history states
+- Approved export and repair verification result banners
+- WebMCP activity drawer with empty, running, succeeded, failed, and clear-session states
+- Human-approved external-deployment gate with blocked and site-owner-attested states
+- CSP resource-origin evidence card and site-aware Report-Only repair preview
+- Completed-audit Markdown export in the primary report navigation
+- Live-document profile with bounded markup metrics and response-header signals
+- Running-audit cancellation in human and contextual WebMCP surfaces
+- Bounded same-site route exploration with human and WebMCP start actions
+- Visible route-journey provenance with root/hop/current nodes and parent-audit navigation
+- Dark cross-page exploration bench with bounded route selection, live aggregate progress, child-page links, recurring-issue evidence, and export
+
+Static review confirms that the implementation retains the source typography stack, surface palette, capsule proportions, spacing scale, focus treatment, modal language, and responsive breakpoints while replacing the appliance scene with audit-specific interface elements.
+
+The user-provided runtime was inspected in the in-app browser on 27 and 28 August 2026, first on port 5173 and again after the user moved it to port 3434. Verified rendered states include landing, live audit progress and cancellation controls, live document evidence, bounded route exploration, cross-page missions, CSP resource evidence, repair staging, disabled approval before explicit review confirmation, human change requests, agent revisions, human approval, deployment gating, export controls, and repeated verification results. The before/after receipt links audit IDs, exact-rule outcomes, and metric deltas; separate audit and proposal trails preserve their bounded histories. WebMCP now reports the active contextual subset from its twelve-tool library: the landing renders one active start capability, a running page exposes progress plus cancellation, and route-capable completed audits expose applicable result, exploration, and repair capabilities. The same running state renders the human **Cancel audit** action. API audit `7c70fe45` separately proved persisted cancellation and same-ID attempt-2 recovery. The status button opened a polished modal matching discovered tools and explicitly preserved human-only authority. Audit `ad95d84f` rendered eight route actions with 33 omitted, WebMCP started observed route `/tools/remove-pdf-metadata` as audit `7bf9d065`, and the human action started observed route `/tools` as audit `3f3972ab`; both surfaces used the shared service and the browser stayed console-clean. The later real route journey `d7239dd1` → `2856f957` → `31b3edab` → `8265782c` rendered a restrained purple provenance strip with root, two hops, current `/terms`, and a working parent link; the last hop came from genuine WebMCP and matched the exported lineage. Root `2ed1ffcd` then rendered the dark cross-page bench and completed exploration `8bd9c892` across two real child audits; the recurring missing-CSP card, reload, WebMCP aggregate, export, and 390px layout matched. Audit `f61621be`, repair `decdfde4` rendered revision 1, a specific human-feedback state, agent revision 2, reopened approval controls, and a two-card revision trail containing the prior feedback and corrected current header. No server was started or restarted by Codex.
+
+Playwright rendered the landing page and Human mode capability panel at 390×844 with no horizontal overflow and zero console errors. With `prefers-reduced-motion: reduce` emulated, the maximum computed animation and transition durations were both 0.01ms and no element exceeded 1ms. Captures are preserved at `output/playwright/frontmend-mobile-reduced-motion.png` and `output/playwright/frontmend-mobile-human-mode-panel.png`. The added SVG favicon also removed the only previous fresh-load 404.
+
+The clipboard-restricted share state was rendered at desktop and 390×844. The fallback exposes the exact stable workspace URL in a focused, fully selected input; its mobile card sits below the heading with no score-card overlap or horizontal overflow. The full hostname and score remain visible. The result capture is `output/playwright/frontmend-mobile-share-fallback.png`.
+
+Keyboard replays at 390×844 covered all three dialog surfaces. WebMCP capability, Agent log, and How it works each focused the first close control, contained Tab focus, closed through Escape, restored the invoking button, and left the console clean.
+
+The completed report navigation was replayed at 390×844 after adding **Export report**. New audit and Share audit remain on the first row, Export report wraps deliberately to the second, the full hostname and score stay clear, document width remains exactly 390px, and the console has zero errors. The verified capture is `output/playwright/frontmend-mobile-report-export.png`; real audit `d09c07c9` also returned its Markdown artifact with the expected safe download headers.
+
+The in-app browser then rendered the live Document profile for real audit `3e46d0a9`. The six-metric card, security-header chips, evidence caveat, issue marker, and finding queue remained visually distinct inside the existing evidence canvas. DOM inspection confirmed the metrics use semantic terms and definitions inside a named region. This audit did not reuse older narrow-viewport captures as evidence; a fresh mobile screenshot remains a separate visual check.
+
+final result: desktop pass; 390px pass; reduced-motion pass

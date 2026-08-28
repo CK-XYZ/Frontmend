@@ -1,0 +1,61 @@
+# Frontmend demo script
+
+Target length: 2 minutes 30 seconds. Show the real deployed application and keep the browser address visible at the beginning and end.
+
+## 0:00–0:20 — The problem
+
+“Frontend audits produce long reports, but the repair still gets lost between an agent, a developer, and a browser. Frontmend gives both people and browser agents one evidence-backed repair bench.”
+
+Paste a controlled public URL and point out that the normal human interface works without WebMCP.
+
+If a target cannot be audited, use **Try this URL again** to show a numbered fresh attempt under the same workspace. Explain that Frontmend retains normal rate limits and does not disguise a repeated measured failure as success.
+
+For the agent path, call `start_site_audit`, show that the result contains a stable `workspacePath`, then navigate to it only after the tool result returns. This preserves browser approval safety while still landing on a reloadable audit route.
+
+## 0:20–0:55 — Real audit
+
+Ask the agent to audit the current URL. Show `start_site_audit`, then the visible progress state. Ask it to check progress and retrieve results. Open one finding and show the measured evidence, rule provenance, evidence mode, and affected condition. For a missing CSP, show the bounded resource-origin inventory and its explicit static-HTML caveat.
+
+Briefly point out that the same running state exposes **Cancel audit** to the person and `cancel_site_audit` to the agent. If you demonstrate it, show the persisted cancelled state and the numbered same-ID retry; do not imply that leaving the page alone stops server work.
+
+Click **Export report** and briefly show the portable Markdown: target and final URL, audit ID, engine, score, findings, explicit rule outcomes, and the evidence boundary. It is the human handoff for the same persisted evidence the agent receives—not a second report assembled from screen text.
+
+Show **Routes observed on this page**. Ask the agent to choose one exact path with `start_related_page_audit`; point out that the completed parent job—not browser memory—accepts only paths found in its retained report, starts a fresh job, and returns a stable workspace without claiming the candidate was previously visited. Follow one more route and show **Route journey**: the visible root, parent hops, current path, and **Parent audit** link are the same bounded lineage the tool and Markdown export return. Contrast that with the same visible **Audit route** action for a person.
+
+For the strongest site-level moment, select two routes under **Explore a small part of this site** or call `start_site_exploration`. Show the two independent child audit IDs and then the recurring-issue card. Call `get_site_exploration` with `{}` and compare its page counts and exact rule with the visible aggregate. Export the mission and point to the explicit selected-pages-only boundary.
+
+Open **Agent log** and show the three genuine lifecycle entries. Point out that people can see what the agent did while raw URLs, tool arguments, patches, prompts, and secrets are deliberately absent.
+
+If Lighthouse falls back, say exactly: “The provider was quota-limited, so Frontmend is showing a bounded live Document profile and zero measured viewports. It does not invent a screenshot.” Point out the real HTML size, element counts, external origins, inline code, and response-header signals; then read the caveat that runtime DOM changes, CSS imports, requests, and user journeys are outside this evidence mode.
+
+## 0:55–1:30 — Agent proposes, person decides
+
+Ask the agent to stage a repair for the selected finding. Show the draft appear immediately in the same visible workspace. For CSP, trace an observed origin from the evidence inventory into the Report-Only header, then point out the inline evidence, nonce-or-hash guidance, risk, and real-journey verification plan. Emphasize that the agent cannot approve it.
+
+Write one specific change request and click **Request agent revision**. Show approval disappear, ask the agent to read `get_repair_workspace`, and then use `revise_site_repair`. Point to the incremented revision, reopened human review, and visible revision trail. This is collaboration over shared state, not an agent clicking its own approval.
+
+Use the repair mission rail to narrate ownership: Frontmend measures, a person or agent drafts, the person reviews, the site owner deploys through their normal workflow, and Frontmend verifies. Ask the agent for `get_repair_workspace` to show that the same next-action model is structured rather than scraped from the page.
+
+Review the proposal and click **Approve repair plan** yourself. Show that export becomes available, while verification remains locked at **Waiting for site owner**. Ask the agent to verify now and show the structured `DEPLOYMENT_NOT_ATTESTED` failure in the visible Agent log.
+
+Only on a controlled target where the reviewed change has genuinely been deployed, check the site-owner confirmation and click **Confirm deployment handoff**. Explain that this is a human report, not a Frontmend deployment claim; it unlocks measurement but does not claim the repair succeeded.
+
+## 1:30–2:05 — Export and prove
+
+Open or download the reviewed repair-plan Markdown and point out its baseline audit ID and proposal-only honesty notice. Contrast it with the earlier audit-report export: measured evidence first, reviewed proposal second, fresh verification proof last. After the controlled target has been updated and the deployment handoff recorded, start **Verify live site**. Show the before/after proof receipt: deployment-attestation time, baseline and fresh audit IDs, the exact rule outcome, and server-derived score, passed-check, and finding deltas.
+
+If demonstrating more than one repair attempt, point to the evidence trail. It keeps the original baseline and every recent verification together, so neither a human nor an agent can quietly replace an inconvenient result.
+
+Never rehearse a fake resolution. If the finding remains, use that truthful result to demonstrate why verification matters.
+
+## 2:05–2:30 — Why WebMCP
+
+“Visual automation would have to rediscover every control and scrape dense report text. Frontmend has twelve semantic capabilities over the same application service and visible state, but exposes only the ones that are valid now: start on the landing page, progress and cancellation during a run, then evidence, single-page or cross-page exploration, and repair work after completion. Human feedback unlocks agent revision; human deployment attestation unlocks verification. Its visible activity ledger makes agent work accountable without turning sensitive inputs into telemetry. The agent contributes speed; the person retains approval; the browser proves the result.”
+
+Click the **WebMCP · _ active** status. The capability panel should match the current browser discovery and clearly show the human-only approval and deployment boundary.
+
+On the completed workspace, call `get_site_audit_results` with `{}`. Frontmend should infer the visible audit. Then stage the selected finding with only `findingId` and show the same draft appearing immediately in the human review surface.
+
+End on the shareable `/audits/:id` result and show that a reload restores it.
+
+If clipboard permission is unavailable, **Share audit** reveals and selects the same stable URL instead of ending in a dead “copy unavailable” state.

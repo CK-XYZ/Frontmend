@@ -1,0 +1,872 @@
+import { AuditError } from "./url-policy.js";
+
+export const PATCH_TYPES = Object.freeze([
+  "html",
+  "css",
+  "javascript",
+  "headers",
+  "configuration",
+  "guidance",
+]);
+export const REPAIR_RISKS = Object.freeze(["low", "medium", "high"]);
+const MAX_LINEAGE_ENTRIES = 8;
+const MAX_REPAIR_REVISIONS = 5;
+
+function boundedString(value, field, maximum, { required = true } = {}) {
+  if (typeof value !== "string") {
+    if (!required && value == null) return "";
+    throw new AuditError("INVALID_REPAIR", `${field} must be a string.`);
+  }
+  const result = value.replace(/\r\n/g, "\n").trim();
+  if ((required && !result) || result.length > maximum) {
+    throw new AuditError(
+      "INVALID_REPAIR",
+      `${field} must contain ${required ? `1 to ${maximum}` : `at most ${maximum}`} characters.`,
+    );
+  }
+  return result;
+}
+
+const CSP_DIRECTIVES = Object.freeze([
+  "script-src",
+  "style-src",
+  "img-src",
+  "font-src",
+  "frame-src",
+  "media-src",
+]);
+
+function safeCspOrigins(context) {
+  if (context?.type !== "csp-resource-inventory" || !Array.isArray(context.directives)) return [];
+  let remaining = 18;
+  const result = [];
+  for (const directive of CSP_DIRECTIVES) {
+    const record = context.directives.find((item) => item?.directive === directive);
+    if (!record || !Array.isArray(record.origins) || remaining <= 0) continue;
+    const origins = [];
+    for (const value of record.origins) {
+      if (remaining <= 0 || typeof value !== "string") break;
+      try {
+        const parsed = new URL(value);
+        if (!["http:", "https:"].includes(parsed.protocol) || parsed.origin !== value) continue;
+        origins.push(value);
+        remaining -= 1;
+      } catch {
+        // Ignore malformed provider context instead of emitting it into a header proposal.
+      }
+    }
+    if (origins.length) result.push({ directive, origins });
+  }
+  return result;
+}
+
+function cspTemplateForFinding(finding) {
+  const context = finding?.repairContext;
+  const observed = safeCspOrigins(context);
+  const inlineScripts = Number.isFinite(context?.inline?.scripts)
+    ? Math.max(0, Math.round(context.inline.scripts))
+    : 0;
+  const inlineStyles = Number.isFinite(context?.inline?.styles)
+    ? Math.max(0, Math.round(context.inline.styles))
+    : 0;
+  const notes = [
+    "# Candidate derived from fetched HTML only. Start in Report-Only and observe real user journeys.",
+  ];
+  if (inlineScripts || inlineStyles) {
+    notes.push(
+      `# Inline evidence: ${inlineScripts} script block${inlineScripts === 1 ? "" : "s"}, ${inlineStyles} style block/attribute${inlineStyles === 1 ? "" : "s"}. Use nonces or hashes before enforcement.`,
+    );
+  }
+  const directives = [
+    "default-src 'self'",
+    "object-src 'none'",
+    "base-uri 'self'",
+    "frame-ancestors 'none'",
+    ...observed.map(({ directive, origins }) => `${directive} 'self' ${origins.join(" ")}`),
+  ];
+  return {
+    patchType: "headers",
+    risk: "high",
+    patch: `${notes.join("\n")}\nContent-Security-Policy-Report-Only: ${directives.join("; ")}`,
+    verificationPlan:
+      "Deploy in Report-Only mode, exercise critical user journeys, collect policy violations, add only confirmed runtime origins plus nonces or hashes, then enforce the policy and rerun the exact live response-header check.",
+  };
+}
+
+function templateForFinding(finding) {
+  const rule = finding?.source?.auditId ?? "";
+  const templates = {
+    "content-security-policy": {
+      ...cspTemplateForFinding(finding),
+    },
+    nosniff: {
+      patchType: "headers",
+      risk: "low",
+      patch: "X-Content-Type-Options: nosniff",
+      verificationPlan:
+        "Deploy the response header, request the public document again, and require the nosniff check to pass.",
+    },
+    "html-lang": {
+      patchType: "html",
+      risk: "low",
+      patch: '<html lang="[language-code]">',
+      verificationPlan:
+        "Replace the placeholder with the page language, deploy, and require the document-language check to pass.",
+    },
+    "document-title": {
+      patchType: "html",
+      risk: "low",
+      patch: "<title>[concise page-specific title]</title>",
+      verificationPlan:
+        "Replace the placeholder with an accurate title, deploy, and require the document-title check to pass.",
+    },
+    viewport: {
+      patchType: "html",
+      risk: "low",
+      patch: '<meta name="viewport" content="width=device-width, initial-scale=1">',
+      verificationPlan:
+        "Add the declaration to the document head, deploy, and rerun the mobile viewport check.",
+    },
+    "image-alt": {
+      patchType: "html",
+      risk: "medium",
+      patch:
+        '<!-- Use accurate text for meaningful images; decorative images use alt="". -->\n<img src="…" alt="[describe this image purpose]">',
+      verificationPlan:
+        "Review every affected image in context, deploy accurate alternatives, and rerun the image-alt check.",
+    },
+    "main-landmark": {
+      patchType: "html",
+      risk: "low",
+      patch: "<main>\n  <!-- primary page content -->\n</main>",
+      verificationPlan:
+        "Wrap only the primary content, deploy, and require exactly one useful main landmark in the next audit.",
+    },
+    "missing-h1": {
+      patchType: "html",
+      risk: "low",
+      patch: "<h1>[primary page heading]</h1>",
+      verificationPlan:
+        "Add a visible page-level heading that matches the content, deploy, and rerun the document outline check.",
+    },
+  };
+  return templates[rule] ?? {
+    patchType: "guidance",
+    risk: finding?.severity === "high" ? "medium" : "low",
+    patch: finding?.repair ?? "Review and implement the measured repair in the site source.",
+    verificationPlan:
+      "Deploy the reviewed change, then rerun the same public URL and compare the original measured rule under equivalent audit conditions.",
+  };
+}
+
+export function createRepairDraft({ auditId, finding, input = {}, source = "human", now = Date.now() }) {
+  if (!finding?.id) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
+  const extra = Object.keys(input).find(
+    (key) => !["findingId", "summary", "patchType", "patch", "verificationPlan", "risk"].includes(key),
+  );
+  if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
+  const defaults = templateForFinding(finding);
+  const patchType = input.patchType ?? defaults.patchType;
+  const risk = input.risk ?? defaults.risk;
+  if (!PATCH_TYPES.includes(patchType)) {
+    throw new AuditError("INVALID_REPAIR", "patchType is not supported.");
+  }
+  if (!REPAIR_RISKS.includes(risk)) {
+    throw new AuditError("INVALID_REPAIR", "risk is not supported.");
+  }
+  return {
+    id: crypto.randomUUID(),
+    auditId,
+    findingId: finding.id,
+    findingTitle: finding.title,
+    findingSource: finding.source ?? null,
+    status: "draft",
+    source: source === "agent" ? "agent" : "human",
+    summary: boundedString(input.summary ?? finding.repair, "summary", 300),
+    patchType,
+    patch: boundedString(input.patch ?? defaults.patch, "patch", 3_000),
+    verificationPlan: boundedString(
+      input.verificationPlan ?? defaults.verificationPlan,
+      "verificationPlan",
+      700,
+    ),
+    risk,
+    requiresHumanReview: true,
+    createdAt: now,
+    updatedAt: now,
+    revision: 1,
+    revisionHistory: [],
+    changeRequest: null,
+    reviewedAt: null,
+    deploymentAttestedAt: null,
+  };
+}
+
+export function requestRepairChanges(repair, feedback, now = Date.now()) {
+  if (!repair?.id) throw new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist.");
+  if (repair.status === "changes-requested") {
+    throw new AuditError("CHANGES_ALREADY_REQUESTED", "Changes have already been requested for this repair.");
+  }
+  return {
+    ...repair,
+    status: "changes-requested",
+    changeRequest: {
+      feedback: boundedString(feedback, "feedback", 600),
+      requestedAt: now,
+    },
+    reviewedAt: null,
+    deploymentAttestedAt: null,
+    updatedAt: now,
+  };
+}
+
+export function reviseRepairDraft(repair, input = {}, source = "agent", now = Date.now()) {
+  if (!repair?.id) throw new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist.");
+  if (repair.status !== "changes-requested" || !repair.changeRequest?.feedback) {
+    throw new AuditError(
+      "REVISION_NOT_REQUESTED",
+      "A person must request changes in the visible review interface before this repair can be revised.",
+    );
+  }
+  const allowed = ["summary", "patchType", "patch", "verificationPlan", "risk"];
+  const extra = Object.keys(input).find((key) => !allowed.includes(key));
+  if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
+  if (!Object.keys(input).length) {
+    throw new AuditError("INVALID_REPAIR", "A revision must change at least one proposal field.");
+  }
+  const patchType = input.patchType ?? repair.patchType;
+  const risk = input.risk ?? repair.risk;
+  if (!PATCH_TYPES.includes(patchType)) {
+    throw new AuditError("INVALID_REPAIR", "patchType is not supported.");
+  }
+  if (!REPAIR_RISKS.includes(risk)) {
+    throw new AuditError("INVALID_REPAIR", "risk is not supported.");
+  }
+  const next = {
+    summary: boundedString(input.summary ?? repair.summary, "summary", 300),
+    patchType,
+    patch: boundedString(input.patch ?? repair.patch, "patch", 3_000),
+    verificationPlan: boundedString(
+      input.verificationPlan ?? repair.verificationPlan,
+      "verificationPlan",
+      700,
+    ),
+    risk,
+  };
+  if (allowed.every((key) => next[key] === repair[key])) {
+    throw new AuditError("INVALID_REPAIR", "The revised proposal must differ from the current version.");
+  }
+  const previous = {
+    revision: Number.isFinite(repair.revision) ? repair.revision : 1,
+    summary: repair.summary,
+    patchType: repair.patchType,
+    patch: repair.patch,
+    verificationPlan: repair.verificationPlan,
+    risk: repair.risk,
+    source: repair.source,
+    createdAt: repair.updatedAt ?? repair.createdAt,
+    changeRequest: repair.changeRequest,
+  };
+  return {
+    ...repair,
+    ...next,
+    status: "draft",
+    source: source === "agent" ? "agent" : "human",
+    revision: previous.revision + 1,
+    revisionHistory: [...(Array.isArray(repair.revisionHistory) ? repair.revisionHistory : []), previous]
+      .slice(-MAX_REPAIR_REVISIONS),
+    changeRequest: null,
+    reviewedAt: null,
+    deploymentAttestedAt: null,
+    updatedAt: now,
+  };
+}
+
+export function repairMissionState(repair) {
+  const hasDraft = Boolean(repair?.id);
+  const approved = repair?.status === "approved";
+  const changesRequested = repair?.status === "changes-requested";
+  const deploymentAttested = approved && Number.isFinite(repair?.deploymentAttestedAt);
+  const steps = [
+    { id: "measure", label: "Measure", owner: "Frontmend", status: "complete" },
+    {
+      id: "draft",
+      label: "Draft",
+      owner: "Person or agent",
+      status: changesRequested ? "current" : hasDraft ? "complete" : "current",
+    },
+    {
+      id: "review",
+      label: "Review",
+      owner: "Person",
+      status: approved ? "complete" : changesRequested ? "blocked" : hasDraft ? "current" : "blocked",
+    },
+    {
+      id: "deploy",
+      label: "Deploy",
+      owner: "Site owner",
+      status: deploymentAttested ? "attested" : approved ? "current" : "blocked",
+    },
+    {
+      id: "verify",
+      label: "Verify",
+      owner: "Frontmend",
+      status: deploymentAttested ? "available" : "blocked",
+    },
+  ];
+  const nextActions = !hasDraft
+    ? [{ id: "stage_repair", actor: "person-or-agent" }]
+    : changesRequested
+      ? [{ id: "revise_repair", actor: "agent" }]
+    : !approved
+      ? [{ id: "review_in_ui", actor: "person" }]
+      : !deploymentAttested
+        ? [
+          { id: "export_reviewed_plan", actor: "person" },
+          { id: "deploy_externally", actor: "site-owner" },
+          { id: "attest_deployment_in_ui", actor: "site-owner" },
+        ]
+        : [
+          { id: "export_reviewed_plan", actor: "person" },
+          { id: "start_verification", actor: "person-or-agent" },
+        ];
+  return {
+    state: !hasDraft
+      ? "not-started"
+      : changesRequested
+        ? "changes-requested"
+      : approved
+        ? deploymentAttested
+          ? "ready-for-verification"
+          : "awaiting-external-deployment"
+        : "awaiting-human-review",
+    steps,
+    nextActions,
+    targetMutation: "external-only",
+    deploymentEvidence: deploymentAttested ? "site-owner-attestation" : "none",
+  };
+}
+
+export function repairWithMission(repair) {
+  return { ...repair, mission: repairMissionState(repair) };
+}
+
+export function validateRepairId(value) {
+  if (
+    typeof value !== "string" ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value)
+  ) {
+    throw new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist.");
+  }
+  return value;
+}
+
+function reportMetric(value) {
+  return Number.isFinite(value) ? Math.max(0, Math.round(value)) : null;
+}
+
+function outcomeForSource(report, source) {
+  return report?.ruleOutcomes?.find(
+    (outcome) =>
+      outcome.source?.provider === source?.provider &&
+      outcome.source?.auditId === source?.auditId &&
+      outcome.source?.strategy === source?.strategy,
+  )?.status ?? "missing";
+}
+
+function sameFindingSource(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.provider === right.provider &&
+      left.auditId === right.auditId &&
+      left.strategy === right.strategy,
+  );
+}
+
+function reportSnapshot(report, source) {
+  return {
+    auditId: report?.auditId ?? null,
+    completedAt: reportMetric(report?.completedAt),
+    score: reportMetric(report?.score),
+    findingCount: reportMetric(report?.findingCount),
+    checks: {
+      passed: reportMetric(report?.checks?.passed),
+      warnings: reportMetric(report?.checks?.warnings),
+      failed: reportMetric(report?.checks?.failed),
+    },
+    exactRuleOutcome: outcomeForSource(report, source),
+  };
+}
+
+function lineageEntry(snapshot, attempt, status = "baseline") {
+  return {
+    auditId: snapshot.auditId,
+    completedAt: snapshot.completedAt,
+    score: snapshot.score,
+    findingCount: snapshot.findingCount,
+    checksPassed: snapshot.checks?.passed ?? null,
+    exactRuleOutcome: snapshot.exactRuleOutcome,
+    attempt,
+    status,
+  };
+}
+
+function startingLineage(report, source) {
+  const previous = report?.verification?.lineage;
+  if (
+    sameFindingSource(report?.verification?.findingSource, source) &&
+    previous?.rootAuditId &&
+    Array.isArray(previous.entries) &&
+    previous.entries.length
+  ) {
+    return {
+      rootAuditId: previous.rootAuditId,
+      findingSource: source,
+      attemptCount: reportMetric(previous.attemptCount) ?? previous.entries.length - 1,
+      omitted: reportMetric(previous.omitted) ?? 0,
+      entries: previous.entries.slice(0, MAX_LINEAGE_ENTRIES),
+    };
+  }
+  const snapshot = reportSnapshot(report, source);
+  return {
+    rootAuditId: snapshot.auditId,
+    findingSource: source,
+    attemptCount: 0,
+    omitted: 0,
+    entries: [lineageEntry(snapshot, 0)],
+  };
+}
+
+function appendLineage(lineage, snapshot, status) {
+  const attemptCount = (reportMetric(lineage?.attemptCount) ?? 0) + 1;
+  const entries = [
+    ...(Array.isArray(lineage?.entries) ? lineage.entries : []),
+    lineageEntry(snapshot, attemptCount, status),
+  ];
+  const boundedEntries = entries.length <= MAX_LINEAGE_ENTRIES
+    ? entries
+    : [entries[0], ...entries.slice(-(MAX_LINEAGE_ENTRIES - 1))];
+  return {
+    rootAuditId: lineage?.rootAuditId ?? boundedEntries[0]?.auditId ?? snapshot.auditId,
+    findingSource: lineage?.findingSource,
+    attemptCount,
+    omitted: Math.max(0, attemptCount + 1 - boundedEntries.length),
+    entries: boundedEntries,
+  };
+}
+
+export function createVerificationContext(report, repair) {
+  if (!report?.auditId || !repair?.id || !repair?.findingSource) {
+    throw new AuditError("INVALID_REPAIR", "The verification context is incomplete.");
+  }
+  if (repair.status !== "approved") {
+    throw new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before verification.");
+  }
+  if (!Number.isFinite(repair.deploymentAttestedAt)) {
+    throw new AuditError(
+      "DEPLOYMENT_NOT_ATTESTED",
+      "A person must confirm the reviewed change was deployed before verification.",
+    );
+  }
+  return {
+    url: report.finalUrl ?? report.url,
+    baselineAuditId: report.auditId,
+    repairId: repair.id,
+    repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
+    findingId: repair.findingId,
+    findingTitle: repair.findingTitle,
+    findingSource: repair.findingSource,
+    baselineEngine: report.engine,
+    baseline: reportSnapshot(report, repair.findingSource),
+    lineage: startingLineage(report, repair.findingSource),
+    deploymentAttestedAt: repair.deploymentAttestedAt,
+  };
+}
+
+function metricDelta(current, baseline) {
+  return Number.isFinite(current) && Number.isFinite(baseline) ? current - baseline : null;
+}
+
+export function compareVerification(report, verification, now = Date.now()) {
+  const source = verification?.findingSource;
+  const baselineEngine = verification?.baselineEngine;
+  const measuredEngine = report?.engine;
+  const baselineMode = baselineEngine?.mode;
+  const comparable = Boolean(
+    source &&
+      baselineMode &&
+      measuredEngine?.mode === baselineMode &&
+      measuredEngine?.provider === baselineEngine?.provider &&
+      measuredEngine?.ruleSetVersion === baselineEngine?.ruleSetVersion &&
+      (baselineMode !== "live-lighthouse" ||
+        measuredEngine?.lighthouseVersion === baselineEngine?.lighthouseVersion),
+  );
+  const measuredRuleOutcome = outcomeForSource(report, source);
+  const ruleOutcome = comparable ? measuredRuleOutcome : "not-comparable";
+  const status = !comparable
+    ? "inconclusive"
+    : ruleOutcome === "failed"
+      ? "still-present"
+      : ruleOutcome === "passed"
+        ? "resolved"
+        : "inconclusive";
+  const baseline = verification.baseline ?? reportSnapshot(null, source);
+  const current = reportSnapshot(report, source);
+  const lineage = appendLineage(
+    verification.lineage ?? {
+      rootAuditId: baseline.auditId,
+      findingSource: source,
+      attemptCount: 0,
+      omitted: 0,
+      entries: [lineageEntry(baseline, 0)],
+    },
+    current,
+    status,
+  );
+  return {
+    baselineAuditId: verification.baselineAuditId,
+    repairId: verification.repairId,
+    repairRevision: verification.repairRevision,
+    findingId: verification.findingId,
+    findingTitle: verification.findingTitle,
+    findingSource: source,
+    deploymentAttestedAt: verification.deploymentAttestedAt,
+    status,
+    comparable,
+    ruleOutcome,
+    baselineEngine: baselineMode,
+    measuredEngine: report.engine.mode,
+    completedAt: now,
+    proof: {
+      baseline,
+      current,
+      deltas: {
+        score: metricDelta(current.score, baseline.score),
+        checksPassed: metricDelta(current.checks.passed, baseline.checks?.passed),
+        findings: metricDelta(current.findingCount, baseline.findingCount),
+      },
+    },
+    lineage,
+    message:
+      status === "resolved"
+        ? "The exact original rule explicitly passed in the fresh, comparable audit."
+        : status === "still-present"
+          ? "The exact original rule explicitly failed again in the fresh, comparable audit."
+          : comparable
+            ? "The fresh audit did not affirmatively evaluate the exact original rule, so Frontmend cannot claim it was resolved."
+            : "The fresh audit used a different evidence mode, so Frontmend cannot make a like-for-like repair claim.",
+  };
+}
+
+export function repairExportMarkdown({ report, repair }) {
+  if (repair?.status !== "approved") {
+    throw new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before exporting it.");
+  }
+  const lines = [
+    `# Frontmend repair: ${repair.findingTitle}`,
+    "",
+    `- Site: ${report.finalUrl ?? report.url}`,
+    `- Baseline audit: ${report.auditId}`,
+    `- Finding: ${repair.findingId}`,
+    `- Repair revision: ${Number.isFinite(repair.revision) ? repair.revision : 1}`,
+    `- Patch type: ${repair.patchType}`,
+    `- Risk: ${repair.risk}`,
+    `- Human reviewed: ${new Date(repair.reviewedAt).toISOString()}`,
+    `- Deployment handoff: ${Number.isFinite(repair.deploymentAttestedAt) ? `site owner attested ${new Date(repair.deploymentAttestedAt).toISOString()}` : "not yet attested"}`,
+    "",
+    "## Repair summary",
+    "",
+    repair.summary,
+    "",
+    "## Proposed patch",
+    "",
+    "```",
+    repair.patch,
+    "```",
+    "",
+    "## Verification plan",
+    "",
+    repair.verificationPlan,
+    "",
+    "> This artifact is a reviewed proposal. It does not claim the target site was changed or the finding was resolved.",
+    "",
+  ];
+  return lines.join("\n");
+}
+
+function receiptText(value, maximum = 240) {
+  return String(value ?? "—")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\|/g, "\\|")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maximum) || "—";
+}
+
+function signedMetric(value) {
+  return Number.isFinite(value) ? `${value > 0 ? "+" : ""}${value}` : "—";
+}
+
+function artifactMetric(value) {
+  return Number.isFinite(value) ? value : "—";
+}
+
+function reportTimestamp(value) {
+  if (!Number.isFinite(value)) return "—";
+  const timestamp = new Date(value);
+  return Number.isNaN(timestamp.getTime()) ? "—" : timestamp.toISOString();
+}
+
+export function auditReportMarkdown(report) {
+  if (!report?.auditId || !report?.engine?.mode || !report?.engine?.provider) {
+    throw new AuditError(
+      "AUDIT_REPORT_UNAVAILABLE",
+      "An audit report is available only after a completed audit.",
+    );
+  }
+
+  const retainedFindings = Array.isArray(report.findings) ? report.findings : [];
+  const findings = retainedFindings.slice(0, 20);
+  const providerFindingOmitted = Number.isFinite(report.findingsOmitted)
+    ? Math.max(0, Math.round(report.findingsOmitted))
+    : Math.max(0, (Number.isFinite(report.findingCount) ? report.findingCount : retainedFindings.length) - retainedFindings.length);
+  const findingOmitted =
+    providerFindingOmitted + Math.max(0, retainedFindings.length - findings.length);
+  const outcomes = Array.isArray(report.ruleOutcomes) ? report.ruleOutcomes.slice(0, 64) : [];
+  const outcomeOmitted = Math.max(0, (Array.isArray(report.ruleOutcomes) ? report.ruleOutcomes.length : 0) - outcomes.length);
+  const viewports = Array.isArray(report.viewports) ? report.viewports.slice(0, 8) : [];
+  const isDocumentAudit = report.engine.mode === "live-document";
+  const boundary = isDocumentAudit
+    ? "This run inspected the fetched HTML document and public response headers. It did not execute page scripts, exercise user journeys, capture screenshots, or measure rendered viewport behavior."
+    : report.engine.mode === "live-lighthouse"
+      ? "This run used Lighthouse lab evidence for the listed emulated strategies. It does not prove every device, user journey, network condition, or production state."
+      : "This report records only the public evidence observed by the named audit engine and does not extend beyond those measurements.";
+
+  const lines = [
+    "# Frontmend audit report",
+    "",
+    "> Evidence artifact only. Frontmend does not claim it deployed, changed, or gained source access to the target site.",
+    "",
+    `- Target: ${receiptText(report.url, 2_048)}`,
+    `- Final URL: ${receiptText(report.finalUrl ?? report.url, 2_048)}`,
+    `- Audit ID: \`${receiptText(report.auditId, 80)}\``,
+    `- Completed: ${reportTimestamp(report.completedAt)}`,
+    `- Evidence mode: ${receiptText(report.engine.mode)}`,
+    `- Provider: ${receiptText(report.engine.provider)}`,
+    `- Rule set: ${artifactMetric(report.engine.ruleSetVersion)}`,
+    ...(report.engine.lighthouseVersion
+      ? [`- Lighthouse: ${receiptText(report.engine.lighthouseVersion, 80)}`]
+      : []),
+    `- Provider notice: ${receiptText(report.engine.notice, 500)}`,
+    "",
+    "## Summary",
+    "",
+    "| Score | Checks passed | Warnings | Failed | Findings | Viewports measured |",
+    "| ---: | ---: | ---: | ---: | ---: | ---: |",
+    `| ${artifactMetric(report.score)} | ${artifactMetric(report.checks?.passed)} | ${artifactMetric(report.checks?.warnings)} | ${artifactMetric(report.checks?.failed)} | ${artifactMetric(report.findingCount)} | ${artifactMetric(report.viewportCount)} |`,
+  ];
+
+  if (report.exploration?.parentAuditId && Number.isFinite(report.exploration.depth)) {
+    const trail = Array.isArray(report.exploration.trail)
+      ? report.exploration.trail.slice(0, 5)
+      : [];
+    lines.push(
+      "",
+      "## Route journey",
+      "",
+      "> Provenance only. This trail records linked public audits; it does not claim navigation coverage beyond each fetched document.",
+      "",
+      `- Root audit: ${receiptText(report.exploration.rootAuditId, 80)}`,
+      `- Parent audit: ${receiptText(report.exploration.parentAuditId, 80)}`,
+      `- Route depth: ${Math.max(1, Math.min(5, Math.round(report.exploration.depth)))}`,
+      `- Observed path: ${receiptText(report.exploration.observedPath, 256)}`,
+    );
+    if (trail.length) {
+      lines.push(
+        "",
+        "### Linked ancestors",
+        "",
+        ...trail.map(
+          (entry, index) =>
+            `- ${index === 0 ? "Root" : `Hop ${index}`}: ${receiptText(entry?.path, 256)} — audit ${receiptText(entry?.auditId, 80)}`,
+        ),
+      );
+    }
+  }
+
+  if (viewports.length) {
+    lines.push(
+      "",
+      "### Recorded strategies",
+      "",
+      ...viewports.map((viewport) =>
+        `- ${receiptText(viewport?.label ?? viewport?.id, 120)} — ${receiptText(viewport?.detail, 160)}`,
+      ),
+    );
+  }
+
+  const profile = report.documentProfile?.type === "live-document-profile"
+    ? report.documentProfile
+    : null;
+  if (profile) {
+    const origins = Array.isArray(profile.externalOrigins)
+      ? profile.externalOrigins.slice(0, 12)
+      : [];
+    const routes = Array.isArray(profile.routes) ? profile.routes.slice(0, 8) : [];
+    lines.push(
+      "",
+      "## Live document profile",
+      "",
+      "| HTML read | Scripts | Stylesheets | Images | Links | External origins |",
+      "| ---: | ---: | ---: | ---: | ---: | ---: |",
+      `| ${artifactMetric(profile.htmlBytes)} bytes | ${artifactMetric(profile.elements?.scripts)} | ${artifactMetric(profile.elements?.stylesheets)} | ${artifactMetric(profile.elements?.images)} | ${artifactMetric(profile.elements?.links)} | ${origins.length} |`,
+      "",
+      `- Content type: ${receiptText(profile.headers?.contentType, 160)}`,
+      `- Content Security Policy: ${profile.headers?.contentSecurityPolicy ? "observed" : "not observed"}`,
+      `- X-Content-Type-Options nosniff: ${profile.headers?.nosniff ? "observed" : "not observed"}`,
+      `- Inline scripts: ${artifactMetric(profile.inline?.scripts)}`,
+      `- Inline styles: ${artifactMetric(profile.inline?.styles)}`,
+    );
+    if (origins.length) {
+      lines.push(
+        "",
+        "### External origins observed in markup",
+        "",
+        ...origins.map((origin) => `- ${receiptText(origin, 2_048)}`),
+      );
+    }
+    if (Number.isFinite(profile.externalOriginsOmitted) && profile.externalOriginsOmitted > 0) {
+      lines.push(
+        "",
+        `_${profile.externalOriginsOmitted} additional origin reference${profile.externalOriginsOmitted === 1 ? " was" : "s were"} omitted from this bounded profile._`,
+      );
+    }
+    if (routes.length) {
+      lines.push(
+        "",
+        "### Same-site routes observed in markup",
+        "",
+        ...routes.map((path) => `- ${receiptText(path, 256)}`),
+      );
+    }
+    if (Number.isFinite(profile.routesOmitted) && profile.routesOmitted > 0) {
+      lines.push(
+        "",
+        `_${profile.routesOmitted} additional route${profile.routesOmitted === 1 ? " was" : "s were"} omitted from this bounded profile._`,
+      );
+    }
+    if (routes.length && profile.routesCaveat) {
+      lines.push("", receiptText(profile.routesCaveat, 500));
+    }
+    lines.push("", receiptText(profile.caveat, 500));
+  }
+
+  lines.push("", "## Findings", "");
+  if (!findings.length) {
+    lines.push("No findings were emitted by this audit run.");
+  } else {
+    findings.forEach((finding, index) => {
+      lines.push(
+        `### ${index + 1}. ${receiptText(finding?.title, 180)}`,
+        "",
+        `- Severity: ${receiptText(finding?.severity, 40)}`,
+        `- Category: ${receiptText(finding?.category, 80)}`,
+        `- Provider: ${receiptText(finding?.source?.provider, 120)}`,
+        `- Rule: ${receiptText(finding?.source?.auditId ?? finding?.id, 120)}`,
+        `- Strategy: ${receiptText(finding?.source?.strategy ?? finding?.viewport, 120)}`,
+        "",
+        `Evidence: ${receiptText(finding?.evidence ?? finding?.summary, 600)}`,
+        "",
+        `Suggested repair: ${receiptText(finding?.repair, 700)}`,
+        "",
+      );
+    });
+  }
+  if (findingOmitted) lines.push(`_${findingOmitted} additional finding${findingOmitted === 1 ? " was" : "s were"} omitted from this bounded export._`, "");
+
+  lines.push("## Rule outcomes", "");
+  if (!outcomes.length) {
+    lines.push("No explicit rule outcomes were recorded for this run.", "");
+  } else {
+    lines.push(
+      "| Provider | Rule | Strategy | Outcome |",
+      "| --- | --- | --- | --- |",
+      ...outcomes.map((outcome) =>
+        `| ${receiptText(outcome?.source?.provider, 120)} | ${receiptText(outcome?.source?.auditId, 120)} | ${receiptText(outcome?.source?.strategy, 120)} | ${receiptText(outcome?.status, 40)} |`,
+      ),
+      "",
+    );
+  }
+  if (outcomeOmitted) lines.push(`_${outcomeOmitted} additional rule outcome${outcomeOmitted === 1 ? " was" : "s were"} omitted from this bounded export._`, "");
+
+  lines.push(
+    "## Evidence boundary",
+    "",
+    boundary,
+    "",
+    "The findings and suggested repairs are decision support based on public observations. A person must review, implement, deploy, and independently verify any change through the site's normal workflow.",
+    "",
+  );
+  return lines.join("\n");
+}
+
+export function verificationReceiptMarkdown(report) {
+  const verification = report?.verification;
+  const proof = verification?.proof;
+  if (!verification || !proof?.baseline?.auditId || !proof?.current?.auditId) {
+    throw new AuditError(
+      "VERIFICATION_RECEIPT_UNAVAILABLE",
+      "A verification receipt is available only after a completed repair verification.",
+    );
+  }
+  const lines = [
+    "# Frontmend verification receipt",
+    "",
+    "> Evidence artifact only. Frontmend does not claim it deployed or changed the target site.",
+    "",
+    `- Target: ${receiptText(report.finalUrl ?? report.url, 2_048)}`,
+    `- Result: ${receiptText(verification.status)}`,
+    `- Finding: ${receiptText(verification.findingTitle)}`,
+    `- Repair revision: ${Number.isFinite(verification.repairRevision) ? verification.repairRevision : 1}`,
+    `- Exact rule: ${receiptText(verification.findingSource?.auditId ?? verification.findingId)}`,
+    `- Exact rule outcome: ${receiptText(verification.ruleOutcome)}`,
+    `- Evidence comparison: ${verification.comparable ? "like for like" : "not comparable"}`,
+    `- Deployment attested by site owner: ${Number.isFinite(verification.deploymentAttestedAt) ? new Date(verification.deploymentAttestedAt).toISOString() : "—"}`,
+    `- Completed: ${Number.isFinite(verification.completedAt) ? new Date(verification.completedAt).toISOString() : "—"}`,
+    "",
+    "## Before and after",
+    "",
+    "| Metric | Baseline | Fresh audit | Delta |",
+    "| --- | ---: | ---: | ---: |",
+    `| Score | ${proof.baseline.score ?? "—"} | ${proof.current.score ?? "—"} | ${signedMetric(proof.deltas?.score)} |`,
+    `| Checks passed | ${proof.baseline.checks?.passed ?? "—"} | ${proof.current.checks?.passed ?? "—"} | ${signedMetric(proof.deltas?.checksPassed)} |`,
+    `| Findings | ${proof.baseline.findingCount ?? "—"} | ${proof.current.findingCount ?? "—"} | ${signedMetric(proof.deltas?.findings)} |`,
+    "",
+    `Baseline audit: \`${receiptText(proof.baseline.auditId, 80)}\`  `,
+    `Fresh audit: \`${receiptText(proof.current.auditId, 80)}\``,
+  ];
+  const entries = verification.lineage?.entries?.slice(0, MAX_LINEAGE_ENTRIES) ?? [];
+  if (entries.length) {
+    lines.push(
+      "",
+      "## Evidence trail",
+      "",
+      "| Attempt | Audit | Result | Score | Passed | Findings |",
+      "| --- | --- | --- | ---: | ---: | ---: |",
+      ...entries.map((entry) =>
+        `| ${entry.attempt === 0 ? "Baseline" : `Attempt ${entry.attempt}`} | \`${receiptText(entry.auditId, 80)}\` | ${receiptText(entry.status)} | ${entry.score ?? "—"} | ${entry.checksPassed ?? "—"} | ${entry.findingCount ?? "—"} |`,
+      ),
+    );
+  }
+  lines.push(
+    "",
+    "## Boundary",
+    "",
+    "The repair plan was human-reviewed inside Frontmend. Deployment remains the site owner's external responsibility. This receipt records only the public evidence observed by the named audits.",
+    "",
+  );
+  return lines.join("\n");
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "frontmend",
+  "compatibility_date": "2026-08-27",
+  "main": "./worker/index.js",
+  "workers_dev": false,
+  "preview_urls": false,
+  "routes": [
+    {
+      "pattern": "frontmend.test.knightware.xyz",
+      "custom_domain": true
+    }
+  ],
+  "durable_objects": {
+    "bindings": [
+      { "name": "AUDIT_GATE", "class_name": "FrontmendAuditGate" },
+      { "name": "AUDIT_JOBS", "class_name": "FrontmendAuditJob" }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["FrontmendAuditGate", "FrontmendAuditJob"]
+    }
+  ],
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "assets": {
+    "directory": "./dist/client",
+    "binding": "ASSETS",
+    "not_found_handling": "single-page-application",
+    "run_worker_first": true
+  }
+}
