@@ -9,7 +9,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Source provenance: standalone repository application commit `a20e1ff0edaa35538211129904c6ff746cf3525a`; push remains a separate action
-- Current local application: `ad18c7570b3a81301b71246bc7d94f15cfd91643`; adds a persisted human review/delegated-auto policy and is not deployed
+- Current local application: `900b5f9ae07b04d06b55bf796853b042ef9d5ac7`; adds a persisted human review/delegated-auto policy plus its visible capability language and is not deployed
 - Worker name: `frontmend`
 - Cloudflare version: `c04eb2e0-780b-4ee6-978f-876692784108`
 - Deployment created: `2026-08-28T21:26:28.048Z`
@@ -24,7 +24,7 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 97 passed, 0 failed on local application commit `ad18c75` |
+| Tests | `bun test` | PASS — 97 passed, 0 failed on local application commit `900b5f9` |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
 | Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 162.87 KiB raw / 36.61 KiB gzip Worker upload; no upload performed |
@@ -161,4 +161,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `a20e1ff`; it has not been pushed to a public remote. Local application commit `ad18c75` adds the human-controlled delegated repair policy, passes the fresh gates above, and is not part of the deployed Worker version.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `a20e1ff`; it has not been pushed to a public remote. Local application commit `900b5f9` adds the human-controlled delegated repair policy and visible protocol language, passes the fresh gates above, and is not part of the deployed Worker version.

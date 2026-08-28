@@ -102,7 +102,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Local application commit `ad18c75` adds the persisted review/delegated-auto mission policy and is newer than deployed application commit `a20e1ff`.
+2. Local application commit `900b5f9` adds the persisted review/delegated-auto mission policy and visible protocol language and is newer than deployed application commit `a20e1ff`.
 3. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
 4. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
 5. Video capture, narration, upload, and Devpost submission remain external deliverables.
