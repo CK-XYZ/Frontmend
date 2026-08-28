@@ -519,7 +519,13 @@ export function createLocalAuditRuntime(options = {}) {
             return sendError(response, new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
           }
           const { source, ...proposal } = input;
-          const repair = createRepairDraft({ auditId, finding, input: proposal, source });
+          const repair = createRepairDraft({
+            auditId,
+            finding,
+            report: baseline.report,
+            input: proposal,
+            source,
+          });
           baseline.repairs.push(repair);
           return sendJson(response, 201, { ok: true, data: repairWithMission(repair) });
         }

@@ -439,6 +439,101 @@ test("verification claims resolution only for comparable evidence", () => {
   );
 });
 
+test("verification requires every captured strategy for the rule to pass", () => {
+  const mobile = { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" };
+  const desktop = { provider: "Lighthouse", auditId: "color-contrast", strategy: "desktop" };
+  const baseline = {
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 100,
+    score: 80,
+    scoreBasis: "measured-lighthouse-viewports",
+    findingCount: 2,
+    checks: { passed: 10, warnings: 0, failed: 2 },
+    viewports: [{ id: "mobile" }, { id: "desktop" }],
+    engine: {
+      mode: "live-lighthouse",
+      provider: "PageSpeed Insights",
+      ruleSetVersion: 1,
+      lighthouseVersion: "13.4.1",
+    },
+    findings: [
+      {
+        id: "mobile-color-contrast",
+        title: "Text contrast is too low",
+        repair: "Adjust the shared colour token.",
+        source: mobile,
+      },
+      {
+        id: "desktop-color-contrast",
+        title: "Text contrast is too low",
+        repair: "Adjust the shared colour token.",
+        source: desktop,
+      },
+    ],
+    ruleOutcomes: [
+      { source: mobile, status: "failed" },
+      { source: desktop, status: "failed" },
+    ],
+  };
+  const repair = {
+    ...createRepairDraft({
+      auditId: baseline.auditId,
+      finding: baseline.findings[0],
+      report: baseline,
+    }),
+    status: "approved",
+    deploymentAttestedAt: 110,
+  };
+  assert.deepEqual(
+    repair.findingScope.sources.map((source) => source.strategy),
+    ["mobile", "desktop"],
+  );
+  const context = createVerificationContext(baseline, repair);
+  const fresh = {
+    ...baseline,
+    auditId: "c45d54ea-6884-4c86-b82d-b9048cff697f",
+    completedAt: 120,
+    score: 90,
+    findingCount: 1,
+    checks: { passed: 11, warnings: 0, failed: 1 },
+    ruleOutcomes: [
+      { source: mobile, status: "passed" },
+      { source: desktop, status: "failed" },
+    ],
+  };
+  const partialRepair = compareVerification(fresh, context, 130);
+  assert.equal(partialRepair.status, "still-present");
+  assert.equal(partialRepair.ruleOutcome, "failed");
+  assert.deepEqual(
+    partialRepair.scopeOutcomes.map((outcome) => [outcome.source.strategy, outcome.outcome]),
+    [["mobile", "passed"], ["desktop", "failed"]],
+  );
+  assert.match(partialRepair.message, /at least one captured rule occurrence failed/i);
+
+  const resolved = compareVerification({
+    ...fresh,
+    findingCount: 0,
+    checks: { passed: 12, warnings: 0, failed: 0 },
+    ruleOutcomes: [
+      { source: mobile, status: "passed" },
+      { source: desktop, status: "passed" },
+    ],
+  }, context, 140);
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.ruleOutcome, "passed");
+  assert.match(resolved.message, /every captured rule occurrence explicitly passed/i);
+
+  const incomplete = compareVerification({
+    ...fresh,
+    ruleOutcomes: [{ source: mobile, status: "passed" }],
+  }, context, 150);
+  assert.equal(incomplete.status, "inconclusive");
+  assert.equal(incomplete.ruleOutcome, "not-comparable");
+  assert.equal(incomplete.scopeOutcomes[1].comparisonReason, "exact-lighthouse-rule-not-evaluated");
+});
+
 test("partial verification separates exact-rule proof from whole-report metric comparability", () => {
   const lighthouseSource = {
     provider: "Lighthouse",
@@ -616,6 +711,7 @@ test("verification carries a bounded before and after proof receipt", () => {
     findingCount: 1,
     checks: { passed: 8, warnings: 1, failed: 0 },
     exactRuleOutcome: "failed",
+    scopeRuleOutcomes: [{ source: finding.source, status: "failed" }],
   });
   assert.equal(context.lineage.rootAuditId, baseline.auditId);
   assert.equal(context.lineage.attemptCount, 0);

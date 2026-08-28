@@ -331,7 +331,71 @@ export function createRepositoryFixBrief(report, findingId) {
   };
 }
 
-export function createRepairDraft({ auditId, finding, input = {}, source = "human", now = Date.now() }) {
+function sameRuleSource(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.provider === right.provider &&
+      left.auditId === right.auditId,
+  );
+}
+
+function boundedFindingSource(source) {
+  if (!source?.provider || !source?.auditId || !source?.strategy) return null;
+  return {
+    provider: briefText(source.provider, 120),
+    auditId: briefText(source.auditId, 160),
+    strategy: briefText(source.strategy, 40),
+  };
+}
+
+function findingScopeSources(scope, fallbackSource) {
+  const candidates = [
+    fallbackSource,
+    ...(Array.isArray(scope?.sources) ? scope.sources : []),
+  ];
+  const sources = [];
+  for (const candidate of candidates) {
+    const bounded = boundedFindingSource(candidate);
+    if (bounded && !sources.some((source) => sameFindingSource(source, bounded))) {
+      sources.push(bounded);
+    }
+  }
+  return sources.slice(0, 4);
+}
+
+function repairFindingScope(report, finding) {
+  const primary = boundedFindingSource(finding?.source);
+  const failedSources = Array.isArray(report?.ruleOutcomes)
+    ? report.ruleOutcomes
+        .filter(
+          (outcome) =>
+            outcome?.status === "failed" && sameRuleSource(outcome?.source, primary),
+        )
+        .map((outcome) => outcome.source)
+    : [];
+  const allSources = [];
+  for (const candidate of [primary, ...failedSources]) {
+    const bounded = boundedFindingSource(candidate);
+    if (bounded && !allSources.some((source) => sameFindingSource(source, bounded))) {
+      allSources.push(bounded);
+    }
+  }
+  return {
+    occurrenceCount: allSources.length,
+    occurrencesOmitted: Math.max(0, allSources.length - 4),
+    sources: allSources.slice(0, 4),
+  };
+}
+
+export function createRepairDraft({
+  auditId,
+  finding,
+  report = null,
+  input = {},
+  source = "human",
+  now = Date.now(),
+}) {
   if (!finding?.id) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
   const extra = Object.keys(input).find(
     (key) => !["findingId", "summary", "patchType", "patch", "verificationPlan", "risk"].includes(key),
@@ -352,6 +416,7 @@ export function createRepairDraft({ auditId, finding, input = {}, source = "huma
     findingId: finding.id,
     findingTitle: finding.title,
     findingSource: finding.source ?? null,
+    findingScope: repairFindingScope(report, finding),
     status: "draft",
     source: source === "agent" ? "agent" : "human",
     summary: boundedString(input.summary ?? finding.repair, "summary", 300),
@@ -671,6 +736,14 @@ function outcomeForSource(report, source) {
   )?.status ?? "missing";
 }
 
+function aggregateRuleOutcome(outcomes) {
+  if (!outcomes.length || outcomes.some((outcome) => outcome === "missing")) return "missing";
+  if (outcomes.some((outcome) => outcome === "failed")) return "failed";
+  if (outcomes.every((outcome) => outcome === "passed")) return "passed";
+  if (outcomes.every((outcome) => outcome === "not-applicable")) return "not-applicable";
+  return "not-evaluated";
+}
+
 function sameFindingSource(left, right) {
   return Boolean(
     left &&
@@ -681,7 +754,12 @@ function sameFindingSource(left, right) {
   );
 }
 
-function reportSnapshot(report, source) {
+function reportSnapshot(report, source, findingScope = null) {
+  const scopeSources = findingScopeSources(findingScope, source);
+  const scopeRuleOutcomes = scopeSources.map((candidate) => ({
+    source: candidate,
+    status: outcomeForSource(report, candidate),
+  }));
   return {
     auditId: report?.auditId ?? null,
     completedAt: reportMetric(report?.completedAt),
@@ -692,7 +770,8 @@ function reportSnapshot(report, source) {
       warnings: reportMetric(report?.checks?.warnings),
       failed: reportMetric(report?.checks?.failed),
     },
-    exactRuleOutcome: outcomeForSource(report, source),
+    exactRuleOutcome: aggregateRuleOutcome(scopeRuleOutcomes.map((outcome) => outcome.status)),
+    scopeRuleOutcomes,
   };
 }
 
@@ -717,10 +796,19 @@ function lineageEntry(
   };
 }
 
-function startingLineage(report, source) {
+function findingScopeKey(scope, fallbackSource) {
+  return findingScopeSources(scope, fallbackSource)
+    .map((source) => `${source.provider}\n${source.auditId}\n${source.strategy}`)
+    .sort()
+    .join("\n---\n");
+}
+
+function startingLineage(report, source, findingScope) {
   const previous = report?.verification?.lineage;
   if (
     sameFindingSource(report?.verification?.findingSource, source) &&
+    findingScopeKey(report?.verification?.findingScope, report?.verification?.findingSource) ===
+      findingScopeKey(findingScope, source) &&
     previous?.rootAuditId &&
     Array.isArray(previous.entries) &&
     previous.entries.length
@@ -728,15 +816,17 @@ function startingLineage(report, source) {
     return {
       rootAuditId: previous.rootAuditId,
       findingSource: source,
+      findingScope,
       attemptCount: reportMetric(previous.attemptCount) ?? previous.entries.length - 1,
       omitted: reportMetric(previous.omitted) ?? 0,
       entries: previous.entries.slice(0, MAX_LINEAGE_ENTRIES),
     };
   }
-  const snapshot = reportSnapshot(report, source);
+  const snapshot = reportSnapshot(report, source, findingScope);
   return {
     rootAuditId: snapshot.auditId,
     findingSource: source,
+    findingScope,
     attemptCount: 0,
     omitted: 0,
     entries: [lineageEntry(snapshot, 0, "baseline", reportEvidenceSignature(report), true)],
@@ -761,6 +851,7 @@ function appendLineage(lineage, snapshot, status, evidenceSignature, metricCompa
   return {
     rootAuditId: lineage?.rootAuditId ?? boundedEntries[0]?.auditId ?? snapshot.auditId,
     findingSource: lineage?.findingSource,
+    findingScope: lineage?.findingScope,
     attemptCount,
     omitted: Math.max(0, attemptCount + 1 - boundedEntries.length),
     entries: boundedEntries,
@@ -874,6 +965,15 @@ export function createVerificationContext(report, repair) {
       "A person must confirm the reviewed change was deployed before verification.",
     );
   }
+  const findingScope = {
+    occurrenceCount: Number.isFinite(repair.findingScope?.occurrenceCount)
+      ? Math.max(1, Math.round(repair.findingScope.occurrenceCount))
+      : 1,
+    occurrencesOmitted: Number.isFinite(repair.findingScope?.occurrencesOmitted)
+      ? Math.max(0, Math.round(repair.findingScope.occurrencesOmitted))
+      : 0,
+    sources: findingScopeSources(repair.findingScope, repair.findingSource),
+  };
   return {
     url: report.finalUrl ?? report.url,
     baselineAuditId: report.auditId,
@@ -882,10 +982,11 @@ export function createVerificationContext(report, repair) {
     findingId: repair.findingId,
     findingTitle: repair.findingTitle,
     findingSource: repair.findingSource,
+    findingScope,
     baselineEngine: report.engine,
     baselineEvidence: reportEvidenceSignature(report),
-    baseline: reportSnapshot(report, repair.findingSource),
-    lineage: startingLineage(report, repair.findingSource),
+    baseline: reportSnapshot(report, repair.findingSource, findingScope),
+    lineage: startingLineage(report, repair.findingSource, findingScope),
     implementationReceipt: implementationReceiptSnapshot(repair.implementationReceipt),
     deploymentAttestedAt: repair.deploymentAttestedAt,
   };
@@ -897,22 +998,41 @@ function metricDelta(current, baseline) {
 
 export function compareVerification(report, verification, now = Date.now()) {
   const source = verification?.findingSource;
+  const findingScope = {
+    occurrenceCount: Number.isFinite(verification?.findingScope?.occurrenceCount)
+      ? Math.max(1, Math.round(verification.findingScope.occurrenceCount))
+      : 1,
+    occurrencesOmitted: Number.isFinite(verification?.findingScope?.occurrencesOmitted)
+      ? Math.max(0, Math.round(verification.findingScope.occurrencesOmitted))
+      : 0,
+    sources: findingScopeSources(verification?.findingScope, source),
+  };
   const baselineEngine = verification?.baselineEngine;
   const measuredEngine = report?.engine;
-  const measuredRuleOutcome = outcomeForSource(report, source);
-  const ruleComparison = exactRuleComparison({
-    source,
-    baselineEngine,
-    measuredEngine,
-    measuredRuleOutcome,
+  const scopeOutcomes = findingScope.sources.map((candidate) => {
+    const outcome = outcomeForSource(report, candidate);
+    const comparison = exactRuleComparison({
+      source: candidate,
+      baselineEngine,
+      measuredEngine,
+      measuredRuleOutcome: outcome,
+    });
+    return {
+      source: candidate,
+      outcome: comparison.comparable ? outcome : "not-comparable",
+      comparable: comparison.comparable,
+      comparisonReason: comparison.reason,
+    };
   });
-  const comparable = ruleComparison.comparable;
+  const comparable = scopeOutcomes.length > 0 && scopeOutcomes.every((outcome) => outcome.comparable);
   const measuredEvidence = reportEvidenceSignature(report);
   const metricComparable = sameEvidenceSignature(
     verification?.baselineEvidence,
     measuredEvidence,
   );
-  const ruleOutcome = comparable ? measuredRuleOutcome : "not-comparable";
+  const ruleOutcome = comparable
+    ? aggregateRuleOutcome(scopeOutcomes.map((outcome) => outcome.outcome))
+    : "not-comparable";
   const status = !comparable
     ? "inconclusive"
     : ruleOutcome === "failed"
@@ -920,12 +1040,13 @@ export function compareVerification(report, verification, now = Date.now()) {
       : ruleOutcome === "passed"
         ? "resolved"
         : "inconclusive";
-  const baseline = verification.baseline ?? reportSnapshot(null, source);
-  const current = reportSnapshot(report, source);
+  const baseline = verification.baseline ?? reportSnapshot(null, source, findingScope);
+  const current = reportSnapshot(report, source, findingScope);
   const lineage = appendLineage(
     verification.lineage ?? {
       rootAuditId: baseline.auditId,
       findingSource: source,
+      findingScope,
       attemptCount: 0,
       omitted: 0,
       entries: [lineageEntry(baseline, 0, "baseline", verification?.baselineEvidence ?? null, true)],
@@ -942,6 +1063,8 @@ export function compareVerification(report, verification, now = Date.now()) {
     findingId: verification.findingId,
     findingTitle: verification.findingTitle,
     findingSource: source,
+    findingScope,
+    scopeOutcomes,
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
@@ -952,7 +1075,11 @@ export function compareVerification(report, verification, now = Date.now()) {
     baselineEvidence: verification?.baselineEvidence ?? null,
     measuredEvidence,
     metricComparable,
-    comparisonReason: ruleComparison.reason,
+    comparisonReason: comparable
+      ? scopeOutcomes.length > 1
+        ? "all-scoped-rules-comparable"
+        : scopeOutcomes[0]?.comparisonReason
+      : scopeOutcomes.find((outcome) => !outcome.comparable)?.comparisonReason ?? "exact-rule-not-evaluated",
     completedAt: now,
     proof: {
       baseline,
@@ -971,15 +1098,25 @@ export function compareVerification(report, verification, now = Date.now()) {
     message:
       status === "resolved"
         ? metricComparable
-          ? "The exact original rule explicitly passed in fresh evidence with like-for-like report metrics."
-          : "The exact original rule explicitly passed, but whole-report metrics are not like for like."
+          ? findingScope.sources.length > 1
+            ? "Every captured rule occurrence explicitly passed in fresh evidence with like-for-like report metrics."
+            : "The exact original rule explicitly passed in fresh evidence with like-for-like report metrics."
+          : findingScope.sources.length > 1
+            ? "Every captured rule occurrence explicitly passed, but whole-report metrics are not like for like."
+            : "The exact original rule explicitly passed, but whole-report metrics are not like for like."
         : status === "still-present"
           ? metricComparable
-            ? "The exact original rule explicitly failed again in fresh evidence with like-for-like report metrics."
-            : "The exact original rule explicitly failed again, but whole-report metrics are not like for like."
+            ? findingScope.sources.length > 1
+              ? "At least one captured rule occurrence failed again in fresh evidence with like-for-like report metrics."
+              : "The exact original rule explicitly failed again in fresh evidence with like-for-like report metrics."
+            : findingScope.sources.length > 1
+              ? "At least one captured rule occurrence failed again, but whole-report metrics are not like for like."
+              : "The exact original rule explicitly failed again, but whole-report metrics are not like for like."
           : comparable
-            ? "The fresh audit did not affirmatively evaluate the exact original rule, so Frontmend cannot claim it was resolved."
-            : inconclusiveComparisonMessage(ruleComparison.reason),
+            ? "The fresh audit did not affirmatively pass every captured rule occurrence, so Frontmend cannot claim it was resolved across the repair scope."
+            : inconclusiveComparisonMessage(
+                scopeOutcomes.find((outcome) => !outcome.comparable)?.comparisonReason,
+              ),
   };
 }
 

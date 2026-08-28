@@ -1303,6 +1303,8 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(verification.implementationReceipt.checks[1].status, "passed");
   assert.notEqual(verification.implementationReceipt, implementationRerun.implementationReceipt);
   assert.equal(verification.baselineEngine.mode, "live-document");
+  assert.equal(verification.findingScope.sources.length, 1);
+  assert.equal(verification.findingScope.sources[0].strategy, "document");
   assert.equal(verification.baseline.auditId, "b8b16bf0-913c-40ea-a741-bb4bf76d326b");
   assert.equal(verification.baseline.exactRuleOutcome, "missing");
   assert.equal(verification.lineage.rootAuditId, "b8b16bf0-913c-40ea-a741-bb4bf76d326b");

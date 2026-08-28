@@ -928,6 +928,7 @@ export class FrontmendAuditJob {
       const repair = createRepairDraft({
         auditId: state.id,
         finding,
+        report: state.report,
         input: proposal,
         source,
       });
