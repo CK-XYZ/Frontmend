@@ -655,11 +655,12 @@ function SeverityIcon({ severity }) {
 }
 
 function ProofMetric({ label, baseline, current, delta, lowerIsBetter = false }) {
-  const available = Number.isFinite(baseline) && Number.isFinite(current);
-  const improved = available && delta !== 0 && (lowerIsBetter ? delta < 0 : delta > 0);
-  const regressed = available && delta !== 0 && !improved;
-  const deltaText = !available
-    ? "No comparable metric"
+  const valuesAvailable = Number.isFinite(baseline) && Number.isFinite(current);
+  const comparable = valuesAvailable && Number.isFinite(delta);
+  const improved = comparable && delta !== 0 && (lowerIsBetter ? delta < 0 : delta > 0);
+  const regressed = comparable && delta !== 0 && !improved;
+  const deltaText = !comparable
+    ? "Not like for like"
     : delta === 0
       ? "No change"
       : `${delta > 0 ? "+" : ""}${delta}`;
@@ -671,7 +672,7 @@ function ProofMetric({ label, baseline, current, delta, lowerIsBetter = false })
         <ArrowRight size={15} weight="bold" aria-hidden="true" />
         <strong>{current ?? "—"}</strong>
       </div>
-      <em className={improved ? "improved" : regressed ? "regressed" : "unchanged"}>
+      <em className={improved ? "improved" : regressed ? "regressed" : comparable ? "unchanged" : "unavailable"}>
         {deltaText}
       </em>
     </article>
@@ -817,8 +818,12 @@ function VerificationBanner({ verification }) {
           <dd>{verification.findingTitle}</dd>
         </div>
         <div>
-          <dt>Comparison</dt>
-          <dd>{verification.comparable ? "Like for like" : "Different evidence modes"}</dd>
+          <dt>Exact rule evidence</dt>
+          <dd>{verification.comparable ? "Like for like" : `Not comparable · ${verification.comparisonReason ?? "evidence changed"}`}</dd>
+        </div>
+        <div>
+          <dt>Summary metrics</dt>
+          <dd>{verification.metricComparable ? "Like for like" : "Trend withheld · audit coverage changed"}</dd>
         </div>
         <div>
           <dt>Exact rule outcome</dt>

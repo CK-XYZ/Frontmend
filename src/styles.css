@@ -2998,7 +2998,8 @@ input:focus-visible,
   color: #aa5748;
 }
 
-.proof-metric .unchanged {
+.proof-metric .unchanged,
+.proof-metric .unavailable {
   color: var(--muted);
 }
 

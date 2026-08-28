@@ -32,6 +32,7 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 - [x] Approved plans export as Markdown with an explicit proposal-only notice.
 - [x] Completed audits export as bounded Markdown with escaped provider text, rule-level provenance, and evidence-mode limits through the visible report workspace.
 - [x] Repair verification uses a fresh replay-safe audit; `resolved` requires an explicit pass for the exact original rule.
+- [x] Verification separates exact-rule comparability from whole-report metric comparability: partial/hybrid Lighthouse proof requires the same version and strategy, while score/check/finding deltas are withheld whenever audit coverage differs.
 - [x] Verification emits a visible and agent-readable before/after receipt with audit provenance and metric deltas.
 - [x] Repeated same-rule repairs retain a bounded audit lineage with root preservation and compaction after eight receipts.
 - [x] Completed verification proof exports as bounded Markdown through both a human download and semantic WebMCP tool.
@@ -44,7 +45,7 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 91 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun test`: 92 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
 - [x] `bunx wrangler deploy --dry-run`: static assets plus both Durable Object bindings recognized.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.

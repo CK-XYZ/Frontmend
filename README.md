@@ -29,6 +29,7 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Approval-gated Markdown export with an explicit proposal-only honesty notice.
 - Portable verification-receipt export with exact-rule proof, metric deltas, audit lineage, and an explicit external-deployment boundary.
 - Fresh repair verification that reports `resolved`, `still-present`, or `inconclusive`; resolution requires an explicit `passed` outcome for the exact original provider rule under a comparable evidence engine.
+- Rule proof and summary-metric proof are deliberately separate: partial/hybrid verification requires the same Lighthouse version for an exact Lighthouse rule, while score/check/finding deltas appear only when the engine, measured strategies, score basis, and document-supplement coverage all match.
 - A before/after proof receipt with baseline and fresh audit IDs plus server-derived score, passed-check, and finding deltas; the same structure is returned through WebMCP.
 - A bounded audit-lineage trail that carries the exact rule across repeated repair attempts, preserves the root audit, and compacts older history after eight receipts.
 - A library of fourteen WebMCP tools covering audit start/progress/cancellation/results, repository handoff, single-route and multi-page exploration, verification receipts, repair staging/revision/implementation/workspace, and verification; only the capabilities valid for the visible page state are registered at any moment.
@@ -87,7 +88,7 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun run test` currently runs 91 contracts.
+`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun run test` currently runs 92 contracts.
 
 ```powershell
 bun install

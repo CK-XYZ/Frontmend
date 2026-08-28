@@ -23,10 +23,10 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 91 passed, 0 failed |
+| Tests | `bun test` | PASS — 92 passed, 0 failed |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --config wrangler.jsonc` | PASS — five assets; 136.50 KiB raw / 31.63 KiB gzip Worker upload; no upload performed |
+| Deploy bundle | `bunx wrangler deploy --dry-run --config wrangler.jsonc` | PASS — five assets; 141.73 KiB raw / 32.69 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 

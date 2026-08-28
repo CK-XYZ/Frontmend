@@ -968,6 +968,8 @@ test("audit jobs export portable receipts only for completed verification proof"
         },
         ruleOutcome: "failed",
         comparable: true,
+        metricComparable: true,
+        comparisonReason: "exact-document-rule",
         completedAt: 1_787_766_200_000,
         proof: {
           baseline: { auditId: "baseline-audit", score: 89, findingCount: 1, checks: { passed: 8 } },

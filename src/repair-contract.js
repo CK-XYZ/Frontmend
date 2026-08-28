@@ -679,6 +679,100 @@ function appendLineage(lineage, snapshot, status) {
   };
 }
 
+function reportEvidenceSignature(report) {
+  const engine = report?.engine ?? {};
+  return {
+    mode: briefText(engine.mode, 80) || null,
+    provider: briefText(engine.provider, 160) || null,
+    ruleSetVersion: Number.isFinite(engine.ruleSetVersion) ? engine.ruleSetVersion : null,
+    lighthouseVersion: briefText(engine.lighthouseVersion, 40) || null,
+    measuredStrategies: [...new Set(
+      (Array.isArray(report?.viewports) ? report.viewports : [])
+        .map((viewport) => briefText(viewport?.id, 40))
+        .filter(Boolean),
+    )].sort(),
+    scoreBasis: briefText(report?.scoreBasis, 80) || null,
+    documentSupplement: report?.documentSupplement
+      ? {
+          evaluatedRuleCount: reportMetric(report.documentSupplement.evaluatedRuleCount),
+          overlappingRulesOmitted: reportMetric(report.documentSupplement.overlappingRulesOmitted),
+        }
+      : null,
+  };
+}
+
+function sameEvidenceSignature(left, right) {
+  return Boolean(
+    left &&
+      right &&
+      left.mode === right.mode &&
+      left.provider === right.provider &&
+      left.ruleSetVersion === right.ruleSetVersion &&
+      left.lighthouseVersion === right.lighthouseVersion &&
+      left.scoreBasis === right.scoreBasis &&
+      JSON.stringify(left.measuredStrategies ?? []) === JSON.stringify(right.measuredStrategies ?? []) &&
+      JSON.stringify(left.documentSupplement ?? null) === JSON.stringify(right.documentSupplement ?? null),
+  );
+}
+
+function engineUsesLighthouse(engine) {
+  return typeof engine?.mode === "string" && engine.mode.includes("lighthouse");
+}
+
+function engineUsesDocument(engine) {
+  return ["live-document", "hybrid-lighthouse-document"].includes(engine?.mode);
+}
+
+function exactRuleComparison({ source, baselineEngine, measuredEngine, measuredRuleOutcome }) {
+  if (!source) return { comparable: false, reason: "exact-rule-not-evaluated" };
+  if (baselineEngine?.ruleSetVersion !== measuredEngine?.ruleSetVersion) {
+    return { comparable: false, reason: "rule-set-changed" };
+  }
+  if (source.provider === "Lighthouse") {
+    if (measuredRuleOutcome === "missing") {
+      return { comparable: false, reason: "exact-lighthouse-rule-not-evaluated" };
+    }
+    if (!engineUsesLighthouse(baselineEngine) || !engineUsesLighthouse(measuredEngine)) {
+      return { comparable: false, reason: "lighthouse-evidence-unavailable" };
+    }
+    if (
+      !baselineEngine?.lighthouseVersion ||
+      measuredEngine?.lighthouseVersion !== baselineEngine.lighthouseVersion
+    ) {
+      return { comparable: false, reason: "lighthouse-version-changed" };
+    }
+    return { comparable: true, reason: "exact-lighthouse-rule" };
+  }
+  if (source.provider === "Frontmend document audit") {
+    return engineUsesDocument(baselineEngine) && engineUsesDocument(measuredEngine)
+      ? { comparable: true, reason: "exact-document-rule" }
+      : { comparable: false, reason: "document-evidence-unavailable" };
+  }
+  const comparable = Boolean(
+    baselineEngine?.mode &&
+      measuredEngine?.mode === baselineEngine.mode &&
+      measuredEngine?.provider === baselineEngine.provider,
+  );
+  return { comparable, reason: comparable ? "exact-provider-rule" : "evidence-engine-changed" };
+}
+
+function inconclusiveComparisonMessage(reason) {
+  const messages = {
+    "exact-lighthouse-rule-not-evaluated":
+      "The fresh audit did not evaluate the exact original Lighthouse rule and strategy, so Frontmend cannot claim it was resolved.",
+    "lighthouse-version-changed":
+      "The Lighthouse version changed between audits, so Frontmend cannot make a like-for-like rule claim.",
+    "rule-set-changed":
+      "The Frontmend rule set changed between audits, so Frontmend cannot make a like-for-like rule claim.",
+    "lighthouse-evidence-unavailable":
+      "Comparable Lighthouse evidence was unavailable in the fresh audit.",
+    "document-evidence-unavailable":
+      "Comparable fetched-document evidence was unavailable in the fresh audit.",
+  };
+  return messages[reason]
+    ?? "The fresh audit used different rule evidence, so Frontmend cannot make a like-for-like repair claim.";
+}
+
 export function createVerificationContext(report, repair) {
   if (!report?.auditId || !repair?.id || !repair?.findingSource) {
     throw new AuditError("INVALID_REPAIR", "The verification context is incomplete.");
@@ -701,6 +795,7 @@ export function createVerificationContext(report, repair) {
     findingTitle: repair.findingTitle,
     findingSource: repair.findingSource,
     baselineEngine: report.engine,
+    baselineEvidence: reportEvidenceSignature(report),
     baseline: reportSnapshot(report, repair.findingSource),
     lineage: startingLineage(report, repair.findingSource),
     deploymentAttestedAt: repair.deploymentAttestedAt,
@@ -715,17 +810,19 @@ export function compareVerification(report, verification, now = Date.now()) {
   const source = verification?.findingSource;
   const baselineEngine = verification?.baselineEngine;
   const measuredEngine = report?.engine;
-  const baselineMode = baselineEngine?.mode;
-  const comparable = Boolean(
-    source &&
-      baselineMode &&
-      measuredEngine?.mode === baselineMode &&
-      measuredEngine?.provider === baselineEngine?.provider &&
-      measuredEngine?.ruleSetVersion === baselineEngine?.ruleSetVersion &&
-      (baselineMode !== "live-lighthouse" ||
-        measuredEngine?.lighthouseVersion === baselineEngine?.lighthouseVersion),
-  );
   const measuredRuleOutcome = outcomeForSource(report, source);
+  const ruleComparison = exactRuleComparison({
+    source,
+    baselineEngine,
+    measuredEngine,
+    measuredRuleOutcome,
+  });
+  const comparable = ruleComparison.comparable;
+  const measuredEvidence = reportEvidenceSignature(report);
+  const metricComparable = sameEvidenceSignature(
+    verification?.baselineEvidence,
+    measuredEvidence,
+  );
   const ruleOutcome = comparable ? measuredRuleOutcome : "not-comparable";
   const status = !comparable
     ? "inconclusive"
@@ -758,27 +855,39 @@ export function compareVerification(report, verification, now = Date.now()) {
     status,
     comparable,
     ruleOutcome,
-    baselineEngine: baselineMode,
+    baselineEngine: baselineEngine?.mode,
     measuredEngine: report.engine.mode,
+    baselineEvidence: verification?.baselineEvidence ?? null,
+    measuredEvidence,
+    metricComparable,
+    comparisonReason: ruleComparison.reason,
     completedAt: now,
     proof: {
       baseline,
       current,
       deltas: {
-        score: metricDelta(current.score, baseline.score),
-        checksPassed: metricDelta(current.checks.passed, baseline.checks?.passed),
-        findings: metricDelta(current.findingCount, baseline.findingCount),
+        score: metricComparable ? metricDelta(current.score, baseline.score) : null,
+        checksPassed: metricComparable
+          ? metricDelta(current.checks.passed, baseline.checks?.passed)
+          : null,
+        findings: metricComparable
+          ? metricDelta(current.findingCount, baseline.findingCount)
+          : null,
       },
     },
     lineage,
     message:
       status === "resolved"
-        ? "The exact original rule explicitly passed in the fresh, comparable audit."
+        ? metricComparable
+          ? "The exact original rule explicitly passed in fresh evidence with like-for-like report metrics."
+          : "The exact original rule explicitly passed, but whole-report metrics are not like for like."
         : status === "still-present"
-          ? "The exact original rule explicitly failed again in the fresh, comparable audit."
+          ? metricComparable
+            ? "The exact original rule explicitly failed again in fresh evidence with like-for-like report metrics."
+            : "The exact original rule explicitly failed again, but whole-report metrics are not like for like."
           : comparable
             ? "The fresh audit did not affirmatively evaluate the exact original rule, so Frontmend cannot claim it was resolved."
-            : "The fresh audit used a different evidence mode, so Frontmend cannot make a like-for-like repair claim.",
+            : inconclusiveComparisonMessage(ruleComparison.reason),
   };
 }
 
@@ -1090,6 +1199,7 @@ export function verificationReceiptMarkdown(report) {
       "A verification receipt is available only after a completed repair verification.",
     );
   }
+  const metricComparable = verification.metricComparable === true;
   const lines = [
     "# Frontmend verification receipt",
     "",
@@ -1101,7 +1211,9 @@ export function verificationReceiptMarkdown(report) {
     `- Repair revision: ${Number.isFinite(verification.repairRevision) ? verification.repairRevision : 1}`,
     `- Exact rule: ${receiptText(verification.findingSource?.auditId ?? verification.findingId)}`,
     `- Exact rule outcome: ${receiptText(verification.ruleOutcome)}`,
-    `- Evidence comparison: ${verification.comparable ? "like for like" : "not comparable"}`,
+    `- Exact rule comparison: ${verification.comparable ? "like for like" : "not comparable"}`,
+    `- Summary metric comparison: ${metricComparable ? "like for like" : "not comparable; deltas withheld"}`,
+    `- Comparison reason: ${receiptText(verification.comparisonReason, 120)}`,
     `- Deployment attested by site owner: ${Number.isFinite(verification.deploymentAttestedAt) ? new Date(verification.deploymentAttestedAt).toISOString() : "—"}`,
     `- Completed: ${Number.isFinite(verification.completedAt) ? new Date(verification.completedAt).toISOString() : "—"}`,
     "",
@@ -1109,9 +1221,9 @@ export function verificationReceiptMarkdown(report) {
     "",
     "| Metric | Baseline | Fresh audit | Delta |",
     "| --- | ---: | ---: | ---: |",
-    `| Score | ${proof.baseline.score ?? "—"} | ${proof.current.score ?? "—"} | ${signedMetric(proof.deltas?.score)} |`,
-    `| Checks passed | ${proof.baseline.checks?.passed ?? "—"} | ${proof.current.checks?.passed ?? "—"} | ${signedMetric(proof.deltas?.checksPassed)} |`,
-    `| Findings | ${proof.baseline.findingCount ?? "—"} | ${proof.current.findingCount ?? "—"} | ${signedMetric(proof.deltas?.findings)} |`,
+    `| Score | ${proof.baseline.score ?? "—"} | ${proof.current.score ?? "—"} | ${signedMetric(metricComparable ? proof.deltas?.score : null)} |`,
+    `| Checks passed | ${proof.baseline.checks?.passed ?? "—"} | ${proof.current.checks?.passed ?? "—"} | ${signedMetric(metricComparable ? proof.deltas?.checksPassed : null)} |`,
+    `| Findings | ${proof.baseline.findingCount ?? "—"} | ${proof.current.findingCount ?? "—"} | ${signedMetric(metricComparable ? proof.deltas?.findings : null)} |`,
     "",
     `Baseline audit: \`${receiptText(proof.baseline.auditId, 80)}\`  `,
     `Fresh audit: \`${receiptText(proof.current.auditId, 80)}\``,
@@ -1133,7 +1245,7 @@ export function verificationReceiptMarkdown(report) {
     "",
     "## Boundary",
     "",
-    "The repair plan was human-reviewed inside Frontmend. Deployment remains the site owner's external responsibility. This receipt records only the public evidence observed by the named audits.",
+    `The repair plan was human-reviewed inside Frontmend. Deployment remains the site owner's external responsibility. This receipt records only the public evidence observed by the named audits.${metricComparable ? "" : " Summary metric deltas are withheld because audit coverage changed."}`,
     "",
   );
   return lines.join("\n");

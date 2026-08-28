@@ -374,6 +374,97 @@ test("verification claims resolution only for comparable evidence", () => {
   );
 });
 
+test("partial verification separates exact-rule proof from whole-report metric comparability", () => {
+  const lighthouseSource = {
+    provider: "Lighthouse",
+    auditId: "color-contrast",
+    strategy: "mobile",
+  };
+  const baseline = {
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 100,
+    score: 80,
+    scoreBasis: "measured-lighthouse-viewports",
+    findingCount: 1,
+    checks: { passed: 7, warnings: 0, failed: 1 },
+    viewports: [
+      { id: "mobile" },
+      { id: "document" },
+    ],
+    documentSupplement: { evaluatedRuleCount: 8, overlappingRulesOmitted: 1 },
+    engine: {
+      mode: "hybrid-lighthouse-document",
+      provider: "PageSpeed Insights + Frontmend document audit",
+      ruleSetVersion: 1,
+      lighthouseVersion: "13.4.1",
+    },
+    ruleOutcomes: [{ source: lighthouseSource, status: "failed" }],
+  };
+  const repair = {
+    id: "3e8fe191-1f46-4f1b-92ac-492a5d73bb24",
+    findingId: "mobile-color-contrast",
+    findingTitle: "Text contrast is too low",
+    findingSource: lighthouseSource,
+    status: "approved",
+    deploymentAttestedAt: 110,
+  };
+  const context = createVerificationContext(baseline, repair);
+  const sameEvidence = {
+    ...baseline,
+    auditId: "c45d54ea-6884-4c86-b82d-b9048cff697f",
+    score: 90,
+    findingCount: 0,
+    checks: { passed: 8, warnings: 0, failed: 0 },
+    ruleOutcomes: [{ source: lighthouseSource, status: "passed" }],
+  };
+  const resolved = compareVerification(sameEvidence, context, 120);
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.metricComparable, true);
+  assert.equal(resolved.proof.deltas.score, 10);
+
+  const differentStrategy = compareVerification({
+    ...sameEvidence,
+    viewports: [{ id: "desktop" }, { id: "document" }],
+    ruleOutcomes: [{
+      source: { ...lighthouseSource, strategy: "desktop" },
+      status: "passed",
+    }],
+  }, context, 121);
+  assert.equal(differentStrategy.status, "inconclusive");
+  assert.equal(differentStrategy.comparable, false);
+  assert.equal(differentStrategy.metricComparable, false);
+  assert.equal(differentStrategy.comparisonReason, "exact-lighthouse-rule-not-evaluated");
+
+  const differentVersion = compareVerification({
+    ...sameEvidence,
+    engine: { ...sameEvidence.engine, lighthouseVersion: "13.5.0" },
+  }, context, 122);
+  assert.equal(differentVersion.status, "inconclusive");
+  assert.equal(differentVersion.comparisonReason, "lighthouse-version-changed");
+
+  const documentSource = {
+    provider: "Frontmend document audit",
+    auditId: "content-security-policy",
+    strategy: "document",
+  };
+  const documentContext = createVerificationContext(
+    { ...baseline, ruleOutcomes: [{ source: documentSource, status: "failed" }] },
+    { ...repair, findingId: "document-content-security-policy", findingSource: documentSource },
+  );
+  const documentResolved = compareVerification({
+    ...sameEvidence,
+    viewports: [{ id: "desktop" }, { id: "document" }],
+    ruleOutcomes: [{ source: documentSource, status: "passed" }],
+  }, documentContext, 123);
+  assert.equal(documentResolved.status, "resolved");
+  assert.equal(documentResolved.comparable, true);
+  assert.equal(documentResolved.metricComparable, false);
+  assert.equal(documentResolved.proof.deltas.score, null);
+  assert.match(documentResolved.message, /metrics are not like for like/);
+});
+
 test("verification stays inconclusive when the exact rule has no affirmative outcome", () => {
   const verification = {
     baselineAuditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
@@ -560,6 +651,8 @@ test("exports a bounded honest verification receipt", () => {
       findingSource: finding.source,
       ruleOutcome: "failed",
       comparable: true,
+      metricComparable: true,
+      comparisonReason: "exact-document-rule",
       deploymentAttestedAt: 1_787_766_100_000,
       completedAt: 1_787_766_200_000,
       proof: {

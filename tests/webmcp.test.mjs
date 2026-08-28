@@ -449,6 +449,8 @@ test("verification receipt tool returns the same bounded proof artifact", async 
       },
       ruleOutcome: "passed",
       comparable: true,
+      metricComparable: true,
+      comparisonReason: "exact-document-rule",
       completedAt: 1_787_766_200_000,
       proof: {
         baseline: { auditId: "baseline-audit", score: 88, findingCount: 1, checks: { passed: 8 } },

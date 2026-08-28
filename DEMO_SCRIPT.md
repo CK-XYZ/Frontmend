@@ -54,6 +54,8 @@ Only on a controlled target where the reviewed change has genuinely been deploye
 
 Open or download the reviewed repair-plan Markdown and point out its baseline audit ID and proposal-only honesty notice. Contrast it with the earlier audit-report export: measured evidence first, reviewed proposal second, fresh verification proof last. After the controlled target has been updated and the deployment handoff recorded, start **Verify live site**. Show the before/after proof receipt: deployment-attestation time, baseline and fresh audit IDs, the exact rule outcome, and server-derived score, passed-check, and finding deltas.
 
+If audit coverage changes between baseline and verification, point out the two comparison rows: the exact rule may still be comparable, but summary deltas are withheld unless the engine, Lighthouse version, measured strategies, score basis, and document supplement match. Never narrate non-like-for-like numbers as an improvement.
+
 If demonstrating more than one repair attempt, point to the evidence trail. It keeps the original baseline and every recent verification together, so neither a human nor an agent can quietly replace an inconvenient result.
 
 Never rehearse a fake resolution. If the finding remains, use that truthful result to demonstrate why verification matters.
