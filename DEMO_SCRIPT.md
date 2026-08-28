@@ -2,9 +2,11 @@
 
 Target length: 2 minutes 30 seconds. Show the real deployed application and keep the browser address visible at the beginning and end.
 
-Natural fresh-task prompt for the repository-aware version:
+Natural fresh-task prompt:
 
-> Audit the deployed site and fix the most important issue you can prove is owned by this repository. Use Frontmend for public evidence. If it opens a diagnostic mission, reproduce the issue in the browser, trace it to the owning repository code, and contribute that diagnosis before proposing a repair. Show me the evidence and plan before editing unless my visible Frontmend auto-mode grant explicitly authorises it. Run the agreed checks, never deploy, and don’t claim the live site is fixed until a fresh Frontmend verification proves it.
+> Hey Codex, please use Frontmend to audit my site for accessibility and SEO issues.
+
+That is deliberately the whole prompt. Frontmend should return a small ranked focus set, open diagnostic missions where deeper browser/repository evidence is needed, and keep editing, approval, deployment, and verification authority explicit through its contextual tools. Do not make the user narrate the product's internal protocol.
 
 Auto-mode variant after the person visibly enables **Delegated auto mode** in Frontmend:
 

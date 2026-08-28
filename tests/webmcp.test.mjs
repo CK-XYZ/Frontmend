@@ -429,6 +429,51 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.deepEqual(calls.at(-1), ["verify", repair.auditId, repair.id]);
 });
 
+test("natural accessibility and SEO requests return three deduplicated priorities", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const finding = (id, auditIdValue, strategy, severity, focusAreas) => ({
+    id,
+    title: id.includes("contrast") ? "Text contrast is too low" : "The page is missing a meta description",
+    severity,
+    category: focusAreas.includes("accessibility") ? "Accessibility" : "SEO",
+    focusAreas,
+    evidence: "Measured failure",
+    repair: "Repair the measured rule.",
+    source: { provider: "Lighthouse", auditId: auditIdValue, strategy },
+    ...(id.includes("contrast") ? { diagnosticEvidence: { kind: "contrast-nodes" } } : {}),
+  });
+  const report = {
+    auditId,
+    findings: [
+      finding("mobile-color-contrast", "color-contrast", "mobile", "medium", ["accessibility"]),
+      finding("desktop-color-contrast", "color-contrast", "desktop", "medium", ["accessibility"]),
+      finding("mobile-meta-description", "meta-description", "mobile", "medium", ["seo"]),
+    ],
+    viewports: [
+      { id: "mobile", scores: { accessibility: 92, seo: 88 } },
+      { id: "desktop", scores: { accessibility: 96, seo: 100 } },
+    ],
+  };
+  const service = { getActiveAudit: () => ({ id: auditId }), getResults: async () => report };
+  const result = await findTool(createFrontmendTools(service), "get_site_audit_results").execute({
+    focusAreas: ["accessibility", "seo"],
+    maxPriorities: 3,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.data.requestedFocusAreas, ["accessibility", "seo"]);
+  assert.equal(result.data.priorities.length, 2);
+  assert.equal(result.data.priorities[0].occurrenceCount, 2);
+  assert.deepEqual(result.data.priorities[0].affectedStrategies, ["mobile", "desktop"]);
+  assert.equal(result.data.priorities[0].diagnosticMissionRequired, true);
+  assert.deepEqual(result.data.recommendedNextAction, {
+    tool: "open_diagnostic_mission",
+    findingId: "mobile-color-contrast",
+    reason: "The top measured symptom needs browser reproduction and repository ownership before an agent repair proposal.",
+  });
+  assert.deepEqual(result.data.focusSummary.categoryScores, { accessibility: 94, seo: 94 });
+});
+
 test("staged repair tools disclose delegated auto authority and the next agent action", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";

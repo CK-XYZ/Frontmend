@@ -46,7 +46,7 @@ const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
   cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
-  get_site_audit_results: ["Read audit evidence", "Inspect the bounded findings and measured rule outcomes."],
+  get_site_audit_results: ["Read focused audit evidence", "Return up to three deduplicated priorities for requested areas such as accessibility and SEO."],
   get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
   open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into browser, repository, and verification investigations."],
   submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Attach clearly labelled browser observations and repository ownership before proposing a repair."],

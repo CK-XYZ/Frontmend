@@ -101,7 +101,77 @@ const RULES = Object.freeze({
     summary: "Long tasks prevent the page from responding promptly during load.",
     repair: "Split long tasks, defer non-critical JavaScript, and reduce third-party execution cost.",
   },
+  "meta-description": {
+    category: "SEO",
+    title: "The page is missing a meta description",
+    summary: "Search results may not have a useful page-specific summary.",
+    repair: "Add a concise, page-specific meta description that accurately describes the visible content.",
+  },
+  "link-text": {
+    category: "SEO",
+    title: "Links do not have descriptive text",
+    summary: "Some link labels do not explain their destination to people or search engines.",
+    repair: "Replace vague link text with a concise description of the destination or action.",
+  },
+  "crawlable-anchors": {
+    category: "SEO",
+    title: "Links are not crawlable",
+    summary: "Some navigation targets cannot be followed as standard links.",
+    repair: "Use valid href destinations for navigation and reserve scripted controls for actions.",
+  },
+  "robots-txt": {
+    category: "SEO",
+    title: "robots.txt is invalid",
+    summary: "Search crawlers may not interpret the site's crawl directives reliably.",
+    repair: "Correct invalid robots.txt directives and verify the intended public crawl policy.",
+  },
+  hreflang: {
+    category: "SEO",
+    title: "Language annotations are invalid",
+    summary: "Alternate-language links do not form a valid hreflang set.",
+    repair: "Use valid language and region codes with reciprocal canonical alternate URLs.",
+  },
+  canonical: {
+    category: "SEO",
+    title: "The canonical URL is invalid",
+    summary: "Search engines may not receive a clear canonical URL for this page.",
+    repair: "Add one valid absolute canonical URL that resolves to the intended public page.",
+  },
+  "is-crawlable": {
+    category: "SEO",
+    title: "The page is blocked from indexing",
+    summary: "Search engines are instructed not to index the audited page.",
+    repair: "Remove unintended noindex directives while preserving deliberate private-page exclusions.",
+  },
+  "http-status-code": {
+    category: "SEO",
+    title: "The page returned an unsuccessful status",
+    summary: "Search engines did not receive a successful response for the audited page.",
+    repair: "Return a successful status for the canonical public page and repair unintended redirect or error paths.",
+  },
 });
+
+const ACCESSIBILITY_AUDITS = new Set([
+  "color-contrast", "tap-targets", "image-alt", "label", "button-name", "link-name",
+  "heading-order", "document-title", "html-has-lang", "html-lang", "missing-h1", "multiple-h1",
+  "main-landmark",
+]);
+const SEO_AUDITS = new Set([
+  "document-title", "html-has-lang", "html-lang", "image-alt", "heading-order", "missing-h1",
+  "multiple-h1", "meta-description",
+  "link-text", "crawlable-anchors", "robots-txt", "hreflang", "canonical", "is-crawlable",
+  "http-status-code",
+]);
+
+function focusAreasFor(id, category) {
+  const areas = [];
+  if (ACCESSIBILITY_AUDITS.has(id)) areas.push("accessibility");
+  if (SEO_AUDITS.has(id)) areas.push("seo");
+  if (category === "Performance") areas.push("performance");
+  if (category === "Security") areas.push("security");
+  if (category === "Reliability") areas.push("reliability");
+  return areas;
+}
 
 function providerError(code, message, recoverable = true) {
   const error = new Error(message);
@@ -283,7 +353,7 @@ function severityFor(id, audit) {
   if (id === "largest-contentful-paint") return numeric > 4000 ? "high" : "medium";
   if (id === "cumulative-layout-shift") return numeric > 0.25 ? "high" : "medium";
   if (id === "total-blocking-time") return numeric > 600 ? "high" : "medium";
-  if (["button-name", "link-name", "label", "is-on-https"].includes(id)) return "high";
+  if (["button-name", "link-name", "label", "is-on-https", "is-crawlable", "http-status-code"].includes(id)) return "high";
   return score < 0.5 ? "medium" : "low";
 }
 
@@ -297,6 +367,7 @@ function findingFromAudit(id, audit, strategy, audits) {
     id: `${strategy}-${id}`,
     severity: severityFor(id, audit),
     category: rule.category,
+    focusAreas: focusAreasFor(id, rule.category),
     title: rule.title,
     summary: rule.summary,
     selector,
@@ -625,6 +696,7 @@ function documentFinding({ id, severity, category, title, summary, evidence, rep
     id: `document-${id}`,
     severity,
     category,
+    focusAreas: focusAreasFor(id, category),
     title,
     summary,
     selector: "Document",
@@ -672,6 +744,18 @@ function inspectDocument(html, headers, finalUrl) {
     summary: "The fetched HTML does not provide a useful page title.",
     evidence: "No non-empty title element was found.",
     repair: "Add a concise, page-specific title element.",
+  });
+  const metaDescriptionTag = html.match(/<meta\b[^>]*name\s*=\s*["']description["'][^>]*>/i)?.[0]
+    ?? html.match(/<meta\b[^>]*content\s*=\s*["'][^"']+["'][^>]*name\s*=\s*["']description["'][^>]*>/i)?.[0];
+  const metaDescription = bounded(metaDescriptionTag?.match(/\bcontent\s*=\s*["']([^"']+)["']/i)?.[1], 240);
+  addCheck(Boolean(metaDescription), {
+    id: "meta-description",
+    severity: "medium",
+    category: "SEO",
+    title: "The page is missing a meta description",
+    summary: "The fetched HTML does not provide a page-specific search summary.",
+    evidence: "No non-empty meta description was found in the document head.",
+    repair: "Add a concise, page-specific meta description that accurately describes the visible content.",
   });
   const viewport = html.match(/<meta\b[^>]*name\s*=\s*["']viewport["'][^>]*>/i)?.[0]
     ?? html.match(/<meta\b[^>]*content\s*=\s*["'][^"']+["'][^>]*name\s*=\s*["']viewport["'][^>]*>/i)?.[0];

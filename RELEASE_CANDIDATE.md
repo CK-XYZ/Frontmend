@@ -24,10 +24,10 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 104 passed, 0 failed on the local application candidate |
+| Tests | `bun test` | PASS — 106 passed, 0 failed on the local application candidate |
 | Production build | `bun run build` | PASS — 4,575 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 190.82 KiB raw / 42.54 KiB gzip Worker upload; no upload performed |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 194.80 KiB raw / 43.44 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -93,11 +93,11 @@ This is the strongest end-to-end product demonstration because the coding agent 
 
 1. Start a new Codex task rooted at the controlled target repository. Record `git status --short` before the demo so pre-existing work is attributable.
 2. Open `FRONTMEND_URL` as a top-level page in Codex's browser and confirm the landing page exposes only `start_site_audit`.
-3. Send this natural demo prompt, replacing the target once:
+3. Send this natural demo prompt:
 
-   > Audit `CONTROLLED_TARGET_URL` and fix the most important issue you can prove is owned by this repository. Use Frontmend for public evidence. If it opens a diagnostic mission, reproduce the issue in the browser, trace it to the owning repository code, and contribute that diagnosis before proposing a repair. Show me the evidence and plan before editing unless my visible Frontmend auto-mode grant explicitly authorises it. Run the agreed checks, never deploy, and don’t claim the live site is fixed until a fresh Frontmend verification proves it.
+   > Hey Codex, please use Frontmend to audit my site for accessibility and SEO issues.
 
-4. Confirm the agent uses Frontmend for the public audit and `get_repository_fix_brief` for the selected finding, but uses Codex repository tools—not Frontmend—to inspect source. The brief must contain only public evidence, search hints, acceptance criteria, and authority boundaries; it must not contain absolute local paths or source uploads.
+4. Confirm the agent carries the requested `accessibility` and `seo` focus into `get_site_audit_results`, receives no more than three deduplicated priorities, and uses `get_repository_fix_brief` for its selected finding. It must use Codex repository tools—not Frontmend—to inspect source. The brief must contain only public evidence, search hints, acceptance criteria, and authority boundaries; it must not contain absolute local paths or source uploads.
 5. For a console-error, contrast-node, or main-thread-blocking finding, confirm the contextual tool set exposes `open_diagnostic_mission` but withholds agent repair staging. The agent must reproduce the issue in the browser, inspect the owning repository code, and call `submit_runtime_diagnosis` with bounded observations, repository-relative locations, and planned checks. Confirm the UI labels the Lighthouse symptom **measured** and the causal diagnosis **agent-reported**. Only then may `stage_site_repair` become available for that finding. Do not accept a diagnosis inferred from Lighthouse alone.
 6. Confirm `stage_site_repair` creates the same visible proposal the agent describes and includes only the exact repository-relative target files plus planned checks discovered by Codex. The visible **Coding-agent plan**, structured tool result, and reviewed-plan Markdown must match; no source contents, absolute paths, command output, credentials, or environment values may appear. If necessary, request one revision in the UI and verify `revise_site_repair` preserves the earlier plan in the revision trail while showing the new plan for review.
 7. Review the exact proposal and approve it manually in Frontmend. Then send:

@@ -189,6 +189,29 @@ test("retains bounded actionable diagnostics for console, contrast, and long tas
   assert.equal(blockingFinding.diagnosticEvidence.longTasks[0].sourceUrl, "https://cdn.example.com/app.js");
 });
 
+test("retains supported SEO findings with explicit accessibility and SEO focus areas", async () => {
+  const output = await runPageSpeedAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    fetchImpl: async (url) => {
+      const fixture = lighthouseFixture(url.searchParams.get("strategy"));
+      fixture.lighthouseResult.audits = {
+        "meta-description": { score: 0, scoreDisplayMode: "binary", displayValue: "No meta description" },
+        "document-title": { score: 0, scoreDisplayMode: "binary", displayValue: "No title" },
+        "robots-txt": { score: 1, scoreDisplayMode: "binary" },
+      };
+      return Response.json(fixture);
+    },
+  });
+
+  assert.equal(output.report.findingCount, 4);
+  const meta = output.report.findings.find((finding) => finding.id === "mobile-meta-description");
+  assert.deepEqual(meta.focusAreas, ["seo"]);
+  const title = output.report.findings.find((finding) => finding.id === "mobile-document-title");
+  assert.deepEqual(title.focusAreas, ["accessibility", "seo"]);
+  assert.equal(output.report.ruleOutcomes.some((outcome) => outcome.source.auditId === "robots-txt" && outcome.status === "passed"), true);
+});
+
 test("reports the full Lighthouse failure total while bounding detailed findings", async () => {
   const failingAuditIds = [
     "color-contrast",
@@ -322,7 +345,7 @@ test("falls back to bounded live document evidence when Lighthouse is rate limit
       calls += 1;
       if (calls === 1) return new Response("quota", { status: 429 });
       return new Response(
-        '<!doctype html><html lang="en"><head><title>Remove My EXIF</title><meta name="viewport" content="width=device-width"></head><body><main><h1>Remove metadata</h1><img src="hero.png"></main></body></html>',
+        '<!doctype html><html lang="en"><head><title>Remove My EXIF</title><meta name="description" content="Remove image metadata privately."><meta name="viewport" content="width=device-width"></head><body><main><h1>Remove metadata</h1><img src="hero.png"></main></body></html>',
         {
           status: 200,
           headers: {
@@ -376,7 +399,7 @@ test("retains one successful Lighthouse viewport and supplements it with documen
       }
       calls.push("document");
       return new Response(
-        '<!doctype html><html lang="en"><head><title>Remove My EXIF</title><meta name="viewport" content="width=device-width"></head><body><main><h1>Remove metadata</h1><img class="hero" src="/hero.jpg"></main></body></html>',
+        '<!doctype html><html lang="en"><head><title>Remove My EXIF</title><meta name="description" content="Remove image metadata privately."><meta name="viewport" content="width=device-width"></head><body><main><h1>Remove metadata</h1><img class="hero" src="/hero.jpg"></main></body></html>',
         {
           status: 200,
           headers: {
@@ -404,11 +427,11 @@ test("retains one successful Lighthouse viewport and supplements it with documen
   assert.equal(output.report.scoreBasis, "measured-lighthouse-viewports");
   assert.equal(output.report.documentProfile.type, "live-document-profile");
   assert.deepEqual(output.report.documentSupplement, {
-    evaluatedRuleCount: 8,
+    evaluatedRuleCount: 9,
     overlappingRulesOmitted: 1,
     caveat: "Fetched-document rules already evaluated by the retained Lighthouse strategy were omitted from hybrid totals. Document evidence does not replace the unavailable viewport.",
   });
-  assert.deepEqual(output.report.checks, { passed: 7, warnings: 1, failed: 3 });
+  assert.deepEqual(output.report.checks, { passed: 8, warnings: 1, failed: 3 });
   assert.equal(output.report.findingCount, 4);
   assert.equal(output.report.findings.some((finding) => finding.id === "mobile-color-contrast"), true);
   assert.equal(output.report.findings.some((finding) => finding.id === "mobile-image-alt"), true);
@@ -459,6 +482,7 @@ test("builds a bounded static CSP resource inventory without claiming runtime co
       return new Response(
         `<!doctype html><html lang="en"><head>
           <title>Remove My EXIF</title>
+          <meta name="description" content="Remove image metadata privately.">
           <meta name="viewport" content="width=device-width">
           <link rel="stylesheet" href="https://styles.example.net/site.css">
           <link rel="preload" as="font" href="https://fonts.example.net/site.woff2">

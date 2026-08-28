@@ -12,6 +12,7 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Real audit cancellation shared by the human control and WebMCP: the active provider request is aborted, `cancelled` is persisted as a terminal state, repeated cancellation is safe, and the same stable audit can be restarted as a numbered attempt.
 - Fresh retry semantics for failed jobs: a repeated human or agent start keeps the stable workspace ID, consumes the normal rate budget, increments the visible attempt, clears stale failure state, and actually runs the provider again.
 - Independent PageSpeed Insights/Lighthouse evidence for mobile and desktop, including bounded screenshots when supplied by the provider. One failed viewport no longer discards the other viewport's measured result.
+- Natural intent handoff for requests such as “audit my site for accessibility and SEO”: the result tool accepts the requested focus areas, retains category scores, and returns up to three severity-ranked priorities deduplicated across mobile and desktop instead of making the person restate Frontmend's workflow.
 - A truthful live-document fallback when Lighthouse is unavailable, plus a hybrid mode that supplements a retained single-viewport Lighthouse result with bounded public HTML and response-header evidence. Every report names unavailable strategies instead of flattening partial evidence into a total failure.
 - Bounded same-site route discovery from fetched anchor paths, with explicit unvisited-route caveats and a shared human/WebMCP action whose server-authoritative parent job starts a real follow-up audit only for an observed path.
 - Durable route journeys with bounded root, parent, depth, and ancestor provenance in job snapshots, reports, Markdown exports, WebMCP results, and a visible back-to-parent trail.
@@ -97,7 +98,7 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 104 contracts.
+`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 106 contracts.
 
 ```powershell
 bun install
