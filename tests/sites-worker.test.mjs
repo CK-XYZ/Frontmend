@@ -1319,6 +1319,69 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(verification.lineage.entries.length, 1);
 });
 
+test("audit jobs persist a scoped auto policy and authorise only an eligible agent mission", async () => {
+  const values = new Map([["state", {
+    id: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    source: "human",
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      engine: { mode: "live-lighthouse", provider: "PageSpeed Insights", ruleSetVersion: 1 },
+      findings: [{
+        id: "mobile-color-contrast-1",
+        title: "A control has insufficient contrast",
+        severity: "medium",
+        repair: "Adjust the control colour tokens.",
+        source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+      }],
+    },
+  }]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+
+  const policyResponse = await job.fetch(new Request("https://frontmend.internal/repair-policy", {
+    method: "POST",
+    body: JSON.stringify({ mode: "auto-low-risk" }),
+  }));
+  const policy = (await policyResponse.json()).data;
+  assert.equal(policy.mode, "auto-low-risk");
+  assert.equal(policy.remainingAutoApprovals, 3);
+
+  const stageResponse = await job.fetch(new Request("https://frontmend.internal/repairs", {
+    method: "POST",
+    body: JSON.stringify({
+      findingId: "mobile-color-contrast-1",
+      source: "agent",
+      summary: "Adjust the measured control token without changing hierarchy.",
+      patchType: "css",
+      patch: "Update the foreground token used by the affected control.",
+      verificationPlan: "Rerun color-contrast in every captured strategy and check focus states.",
+      risk: "low",
+      repositoryFiles: ["src/styles.css"],
+      repositoryChecks: ["bun test", "bun run build"],
+    }),
+  }));
+  const repair = (await stageResponse.json()).data;
+  assert.equal(repair.status, "approved");
+  assert.equal(repair.approval.mode, "delegated-auto");
+  assert.equal(repair.mission.approvalEvidence, "prior-human-auto-policy");
+  assert.equal(repair.mission.deploymentEvidence, "none");
+  assert.equal(values.get("repairPolicy").remainingAutoApprovals, 2);
+
+  const workspace = (await (await job.fetch(new Request("https://frontmend.internal/repairs"))).json()).data;
+  assert.equal(workspace.policy.remainingAutoApprovals, 2);
+  assert.equal(workspace.repairs[0].approval.mode, "delegated-auto");
+});
+
 test("builds and emits the files required by Sites packaging", { timeout: 30_000 }, async () => {
   await ensureSitesBuild();
   await access(new URL("../dist/client/index.html", import.meta.url));

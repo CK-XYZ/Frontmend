@@ -1191,6 +1191,7 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
   }
 
   const approved = repair.status === "approved";
+  const autoApproved = approved && repair.approval?.mode === "delegated-auto";
   const changesRequested = repair.status === "changes-requested";
   const deploymentAttested = approved && Number.isFinite(repair.deploymentAttestedAt);
   return (
@@ -1205,7 +1206,9 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
             {changesRequested
               ? "Changes requested · awaiting agent revision"
               : approved
-                ? "Human-approved repair"
+                ? autoApproved
+                  ? "Auto-authorised by your policy"
+                  : "Human-approved repair"
                 : "Draft · awaiting human review"}
           </p>
           <h3>{repair.summary}</h3>
@@ -1221,6 +1224,18 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
         mode="repair"
       />
       <RepositoryPlanCard plan={repair.repositoryPlan} />
+      {autoApproved ? (
+        <div className="delegated-approval-receipt" role="status">
+          <ShieldCheck size={19} weight="fill" aria-hidden="true" />
+          <div>
+            <strong>Scoped human delegation applied</strong>
+            <p>
+              This agent-authored low-risk {repair.patchType} plan met the audit policy: repository files and checks were supplied.
+              Frontmend did not approve deployment and cannot attest that the public site changed.
+            </p>
+          </div>
+        </div>
+      ) : null}
       <div className="patch-preview">
         <div>
           <Code size={16} weight="bold" aria-hidden="true" />
@@ -1560,6 +1575,83 @@ function RouteJourney({ exploration, currentPath }) {
   );
 }
 
+function RepairPolicyControl({ auditId, policy, onPolicyChange }) {
+  const [confirmed, setConfirmed] = useState(false);
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const auto = policy?.mode === "auto-low-risk";
+
+  const update = async (mode) => {
+    setBusy(mode);
+    setError("");
+    try {
+      const next = await auditService.setRepairPolicy(auditId, mode);
+      onPolicyChange(next);
+      setConfirmed(false);
+    } catch (cause) {
+      setError(cause instanceof AuditError ? cause.message : "The repair policy could not be updated.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  return (
+    <section className={`repair-policy ${auto ? "auto" : "review"}`} aria-labelledby="repair-policy-title">
+      <div className="repair-policy-heading">
+        <span aria-hidden="true"><Robot size={22} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Human-agent operating policy</p>
+          <h2 id="repair-policy-title">Choose how repository missions enter implementation</h2>
+          <p>This grant belongs to this audit workspace and is persisted with its repair state.</p>
+        </div>
+      </div>
+      <div className="repair-policy-options">
+        <button
+          type="button"
+          className={!auto ? "active" : ""}
+          aria-pressed={!auto}
+          disabled={Boolean(busy)}
+          onClick={() => update("review")}
+        >
+          <strong>Review each plan</strong>
+          <span>Every agent proposal waits for your visible approval.</span>
+        </button>
+        <button
+          type="button"
+          className={auto ? "active" : ""}
+          aria-pressed={auto}
+          disabled={Boolean(busy) || (!auto && !confirmed)}
+          onClick={() => update("auto-low-risk")}
+        >
+          <strong>{busy === "auto-low-risk" ? "Enabling…" : "Delegated auto mode"}</strong>
+          <span>Auto-authorise up to three eligible low-risk HTML or CSS plans.</span>
+        </button>
+      </div>
+      {!auto ? (
+        <label className="repair-policy-confirmation">
+          <input
+            type="checkbox"
+            checked={confirmed}
+            onChange={(event) => setConfirmed(event.target.checked)}
+          />
+          <span>
+            I authorise agent-submitted low-risk HTML or CSS plans that name repository files and checks.
+          </span>
+        </label>
+      ) : (
+        <div className="repair-policy-receipt" role="status">
+          <ShieldCheck size={18} weight="fill" aria-hidden="true" />
+          <span>
+            {policy.remainingAutoApprovals} delegated approval{policy.remainingAutoApprovals === 1 ? "" : "s"} remain.
+            JavaScript, headers, configuration, medium/high risk, deployment and deployment attestation stay gated.
+          </span>
+        </div>
+      )}
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
 function SiteExploration({ report }) {
   const routes = Array.isArray(report.documentProfile?.routes) ? report.documentProfile.routes : [];
   const [selected, setSelected] = useState([]);
@@ -1747,6 +1839,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   );
   const [selectedFindingId, setSelectedFindingId] = useState(report.findings[0]?.id ?? null);
   const [repairs, setRepairs] = useState(() => auditService.getRepairs(report.auditId));
+  const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
   const [shareState, setShareState] = useState("idle");
   const shareInputRef = useRef(null);
   const shareUrl = new URL(auditWorkspacePath(report.auditId), window.location.origin).href;
@@ -1771,7 +1864,10 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   useEffect(() => {
     let active = true;
     const refresh = () => {
-      if (active) setRepairs([...auditService.getRepairs(report.auditId)]);
+      if (active) {
+        setRepairs([...auditService.getRepairs(report.auditId)]);
+        setRepairPolicy(auditService.getRepairPolicy(report.auditId));
+      }
     };
     const unsubscribe = auditService.subscribe(refresh);
     void auditService.listRepairs(report.auditId).then(refresh).catch(() => {});
@@ -1783,6 +1879,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
 
   const rememberRepair = (repair) => {
     setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
+    setRepairPolicy(auditService.getRepairPolicy(report.auditId));
   };
 
   const copyShareLink = async () => {
@@ -1920,6 +2017,14 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
       ) : null}
 
       <VerificationBanner verification={report.verification} />
+
+      {report.findings.length ? (
+        <RepairPolicyControl
+          auditId={report.auditId}
+          policy={repairPolicy}
+          onPolicyChange={setRepairPolicy}
+        />
+      ) : null}
 
       <RouteJourney
         exploration={report.exploration}

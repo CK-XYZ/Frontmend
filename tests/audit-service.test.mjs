@@ -309,9 +309,23 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
     source: "verification",
     status: "queued",
   };
+  const reviewPolicy = {
+    version: 1,
+    mode: "review",
+    remainingAutoApprovals: 0,
+    deploymentAttestation: "person-only",
+  };
+  const autoPolicy = {
+    version: 1,
+    mode: "auto-low-risk",
+    remainingAutoApprovals: 3,
+    deploymentAttestation: "person-only",
+  };
   const service = createAuditService({
     transport: {
-      listRepairs: async () => ({ auditId: AUDIT_ID, repairs: [draft] }),
+      listRepairs: async () => ({ auditId: AUDIT_ID, repairs: [draft], policy: reviewPolicy }),
+      getRepairPolicy: async () => reviewPolicy,
+      setRepairPolicy: async (_auditId, mode) => mode === "auto-low-risk" ? autoPolicy : reviewPolicy,
       stageRepair: async () => draft,
       requestRepairChanges: async (_auditId, _repairId, feedback) => ({
         ...draft,
@@ -348,6 +362,9 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
 
   await service.listRepairs(AUDIT_ID);
   assert.equal(service.getRepairs(AUDIT_ID)[0].status, "draft");
+  assert.equal(service.getRepairPolicy(AUDIT_ID).mode, "review");
+  await service.setRepairPolicy(AUDIT_ID, "auto-low-risk");
+  assert.equal(service.getRepairPolicy(AUDIT_ID).remainingAutoApprovals, 3);
   await service.stageRepair(AUDIT_ID, { findingId: draft.findingId });
   await service.requestRepairChanges(AUDIT_ID, repairId, "Add a report endpoint.");
   assert.equal(service.getRepairs(AUDIT_ID)[0].status, "changes-requested");

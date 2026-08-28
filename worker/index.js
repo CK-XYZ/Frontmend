@@ -9,13 +9,16 @@ import {
   siteExplorationSnapshot,
 } from "../src/site-exploration-contract.js";
 import {
+  applyRepairPolicy,
   auditReportMarkdown,
   compareVerification,
+  createRepairPolicy,
   createVerificationContext,
   createRepairDraft,
   recordRepositoryImplementation,
   requestRepairChanges,
   repairExportMarkdown,
+  repairPolicySnapshot,
   repairWithMission,
   reviseRepairDraft,
   verificationReceiptMarkdown,
@@ -504,6 +507,25 @@ async function routeApi(request, env, url) {
     );
   }
 
+  const repairPolicyMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
+  if (repairPolicyMatch) {
+    if (!["GET", "POST"].includes(request.method)) {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair policy operation is not supported."));
+    }
+    let body;
+    if (request.method === "POST") {
+      assertSameOrigin(request);
+      body = await readJsonBody(request);
+    }
+    const response = await proxyJobRequest(
+      jobFromId(env, repairPolicyMatch[1]),
+      "/repair-policy",
+      request,
+      body,
+    );
+    return new Response(response.body, response);
+  }
+
   const repairMatch = url.pathname.match(
     /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
   );
@@ -746,6 +768,19 @@ export class FrontmendAuditJob {
       await this.scheduleRetention();
       return json({ ok: true, data: auditSnapshot(cancelled) });
     }
+    if (url.pathname === "/repair-policy") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before changing repair policy."));
+      }
+      const current = repairPolicySnapshot(await this.ctx.storage.get("repairPolicy"));
+      if (request.method === "GET") return json({ ok: true, data: current });
+      if (request.method === "POST") {
+        const policy = createRepairPolicy(await readJsonBody(request));
+        await this.ctx.storage.put("repairPolicy", policy);
+        return json({ ok: true, data: policy });
+      }
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair policy operation is not supported."));
+    }
     if (url.pathname.startsWith("/repairs")) {
       return this.handleRepairs(request, url, state);
     }
@@ -905,11 +940,12 @@ export class FrontmendAuditJob {
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That repair route does not exist."));
     const [, rawRepairId, action] = match;
     const repairs = (await this.ctx.storage.get("repairs")) ?? [];
+    let repairPolicy = repairPolicySnapshot(await this.ctx.storage.get("repairPolicy"));
 
     if (!rawRepairId && request.method === "GET") {
       return json({
         ok: true,
-        data: { auditId: state.id, repairs: repairs.map(repairWithMission) },
+        data: { auditId: state.id, repairs: repairs.map(repairWithMission), policy: repairPolicy },
       });
     }
     if (!rawRepairId && request.method === "POST") {
@@ -925,15 +961,19 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
       }
       const { source, ...proposal } = input;
-      const repair = createRepairDraft({
+      let repair = createRepairDraft({
         auditId: state.id,
         finding,
         report: state.report,
         input: proposal,
         source,
       });
+      const policyResult = applyRepairPolicy(repair, repairPolicy);
+      repair = policyResult.repair;
+      repairPolicy = policyResult.policy;
       repairs.push(repair);
       await this.ctx.storage.put("repairs", repairs);
+      await this.ctx.storage.put("repairPolicy", repairPolicy);
       return json({ ok: true, data: repairWithMission(repair) }, { status: 201 });
     }
 
@@ -954,7 +994,14 @@ export class FrontmendAuditJob {
         );
       }
       if (repair.status !== "approved") {
-        repairs[repairIndex] = { ...repair, status: "approved", reviewedAt: Date.now() };
+        const approvedAt = Date.now();
+        repairs[repairIndex] = {
+          ...repair,
+          status: "approved",
+          requiresHumanReview: false,
+          reviewedAt: approvedAt,
+          approval: { mode: "explicit-review", grantedBy: "person", approvedAt },
+        };
         await this.ctx.storage.put("repairs", repairs);
       }
       return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });

@@ -13,6 +13,97 @@ const MAX_LINEAGE_ENTRIES = 8;
 const MAX_REPAIR_REVISIONS = 5;
 const MAX_IMPLEMENTATION_RECEIPTS = 5;
 const IMPLEMENTATION_CHECK_STATUSES = Object.freeze(["passed", "failed", "not-run"]);
+const AUTO_APPROVAL_LIMIT = 3;
+const AUTO_APPROVED_PATCH_TYPES = Object.freeze(["html", "css"]);
+
+export function repairPolicySnapshot(policy = null) {
+  const auto = policy?.mode === "auto-low-risk";
+  return {
+    version: 1,
+    mode: auto ? "auto-low-risk" : "review",
+    grantedBy: auto ? "person" : null,
+    enabledAt: auto && Number.isFinite(policy?.enabledAt) ? policy.enabledAt : null,
+    remainingAutoApprovals: auto && Number.isInteger(policy?.remainingAutoApprovals)
+      ? Math.max(0, Math.min(AUTO_APPROVAL_LIMIT, policy.remainingAutoApprovals))
+      : 0,
+    riskCeiling: auto ? "low" : null,
+    allowedPatchTypes: auto ? [...AUTO_APPROVED_PATCH_TYPES] : [],
+    requiresRepositoryPlan: auto,
+    deploymentAttestation: "person-only",
+  };
+}
+
+export function createRepairPolicy(input = {}, now = Date.now()) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new AuditError("INVALID_REPAIR_POLICY", "The repair policy must be an object.");
+  }
+  const extra = Object.keys(input).find((key) => key !== "mode");
+  if (extra || !["review", "auto-low-risk"].includes(input.mode)) {
+    throw new AuditError(
+      "INVALID_REPAIR_POLICY",
+      "mode must be review or auto-low-risk and no other policy fields are accepted.",
+    );
+  }
+  if (input.mode === "review") return repairPolicySnapshot();
+  return repairPolicySnapshot({
+    mode: "auto-low-risk",
+    enabledAt: now,
+    remainingAutoApprovals: AUTO_APPROVAL_LIMIT,
+  });
+}
+
+export function applyRepairPolicy(repair, policy, now = Date.now()) {
+  const currentPolicy = repairPolicySnapshot(policy);
+  const reasons = [];
+  if (currentPolicy.mode !== "auto-low-risk") reasons.push("auto mode is not enabled");
+  if (currentPolicy.remainingAutoApprovals < 1) reasons.push("the auto-approval allowance is exhausted");
+  if (repair?.source !== "agent") reasons.push("the proposal was not submitted by an agent");
+  if (repair?.risk !== "low") reasons.push("only low-risk proposals are eligible");
+  if (!AUTO_APPROVED_PATCH_TYPES.includes(repair?.patchType)) {
+    reasons.push("only HTML and CSS proposals are eligible");
+  }
+  if (!repair?.repositoryPlan?.files?.length || !repair?.repositoryPlan?.checks?.length) {
+    reasons.push("an agent-authored repository plan is required");
+  }
+  if (reasons.length) {
+    return {
+      repair: {
+        ...repair,
+        automation: {
+          eligible: false,
+          evaluatedAt: now,
+          reasons,
+          policyMode: currentPolicy.mode,
+        },
+      },
+      policy: currentPolicy,
+    };
+  }
+  return {
+    repair: {
+      ...repair,
+      status: "approved",
+      requiresHumanReview: false,
+      reviewedAt: now,
+      approval: {
+        mode: "delegated-auto",
+        grantedBy: "person",
+        policyEnabledAt: currentPolicy.enabledAt,
+        approvedAt: now,
+      },
+      automation: {
+        eligible: true,
+        evaluatedAt: now,
+        reasons: [],
+        policyMode: currentPolicy.mode,
+      },
+    },
+    policy: {
+      ...currentPolicy,
+      remainingAutoApprovals: currentPolicy.remainingAutoApprovals - 1,
+    },
+  };
+}
 
 function boundedString(value, field, maximum, { required = true } = {}) {
   if (typeof value !== "string") {
@@ -495,6 +586,8 @@ export function createRepairDraft({
     implementationReceipt: null,
     implementationHistory: [],
     deploymentAttestedAt: null,
+    approval: null,
+    automation: null,
   };
 }
 
@@ -514,6 +607,8 @@ export function requestRepairChanges(repair, feedback, now = Date.now()) {
     implementationReceipt: null,
     implementationHistory: [],
     deploymentAttestedAt: null,
+    approval: null,
+    automation: null,
     updatedAt: now,
   };
 }
@@ -598,6 +693,8 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     implementationReceipt: null,
     implementationHistory: [],
     deploymentAttestedAt: null,
+    approval: null,
+    automation: null,
     updatedAt: now,
   };
 }
@@ -698,6 +795,26 @@ function repositoryPlanSnapshot(plan) {
   };
 }
 
+function approvalSnapshot(repair) {
+  if (repair?.approval?.mode === "delegated-auto") {
+    return {
+      mode: "delegated-auto",
+      grantedBy: "person",
+      policyEnabledAt: repair.approval.policyEnabledAt,
+      approvedAt: repair.approval.approvedAt ?? repair.reviewedAt,
+    };
+  }
+  if (repair?.status === "approved") {
+    return {
+      mode: "explicit-review",
+      grantedBy: "person",
+      policyEnabledAt: null,
+      approvedAt: repair?.approval?.approvedAt ?? repair.reviewedAt,
+    };
+  }
+  return null;
+}
+
 function implementationEvidenceState(repair) {
   const receipt = repair?.implementationReceipt;
   if (!receipt?.agentReported) return "none";
@@ -712,6 +829,7 @@ function implementationEvidenceState(repair) {
 export function repairMissionState(repair) {
   const hasDraft = Boolean(repair?.id);
   const approved = repair?.status === "approved";
+  const delegatedApproval = approved && repair?.approval?.mode === "delegated-auto";
   const changesRequested = repair?.status === "changes-requested";
   const implementationEvidence = implementationEvidenceState(repair);
   const implemented = approved && implementationEvidence === "checks-passed";
@@ -729,8 +847,9 @@ export function repairMissionState(repair) {
     },
     {
       id: "review",
-      label: "Review",
-      owner: "Person",
+      label: delegatedApproval ? "Delegated review" : "Review",
+      owner: delegatedApproval ? "Person policy" : "Person",
+      detail: delegatedApproval ? "Auto-authorised by a prior human grant" : undefined,
       status: approved ? "complete" : changesRequested ? "blocked" : hasDraft ? "current" : "blocked",
     },
     {
@@ -793,6 +912,11 @@ export function repairMissionState(repair) {
     targetMutation: "external-only",
     implementationEvidence,
     deploymentEvidence: deploymentAttested ? "site-owner-attestation" : "none",
+    approvalEvidence: delegatedApproval
+      ? "prior-human-auto-policy"
+      : approved
+        ? "explicit-human-review"
+        : "none",
   };
 }
 
@@ -1075,6 +1199,7 @@ export function createVerificationContext(report, repair) {
     baseline: reportSnapshot(report, repair.findingSource, findingScope),
     lineage: startingLineage(report, repair.findingSource, findingScope),
     repositoryPlan: repositoryPlanSnapshot(repair.repositoryPlan),
+    approval: approvalSnapshot(repair),
     implementationReceipt: implementationReceiptSnapshot(repair.implementationReceipt),
     deploymentAttestedAt: repair.deploymentAttestedAt,
   };
@@ -1154,6 +1279,7 @@ export function compareVerification(report, verification, now = Date.now()) {
     findingScope,
     scopeOutcomes,
     repositoryPlan: repositoryPlanSnapshot(verification.repositoryPlan),
+    approval: verification.approval ?? null,
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
@@ -1231,7 +1357,8 @@ export function repairExportMarkdown({ report, repair }) {
     `- Risk: ${repair.risk}`,
     `- Captured rule occurrences: ${occurrenceCount}`,
     `- Occurrences omitted by bound: ${occurrencesOmitted}`,
-    `- Human reviewed: ${new Date(repair.reviewedAt).toISOString()}`,
+    `- Approval: ${repair.approval?.mode === "delegated-auto" ? "delegated auto mode under a prior human grant" : "explicit human review"}`,
+    `- Approval recorded: ${new Date(repair.reviewedAt).toISOString()}`,
     `- Deployment handoff: ${Number.isFinite(repair.deploymentAttestedAt) ? `site owner attested ${new Date(repair.deploymentAttestedAt).toISOString()}` : "not yet attested"}`,
     "",
     "## Captured repair scope",
@@ -1579,6 +1706,7 @@ export function verificationReceiptMarkdown(report) {
     `- Occurrences omitted by bound: ${occurrencesOmitted}`,
     `- Summary metric comparison: ${metricComparable ? "like for like" : "not comparable; deltas withheld"}`,
     `- Comparison reason: ${receiptText(verification.comparisonReason, 120)}`,
+    `- Repair approval: ${verification.approval?.mode === "delegated-auto" ? "delegated auto mode under a prior human grant" : "explicit human review"}`,
     `- Repository implementation: ${verification.implementationReceipt ? `agent-reported receipt revision ${verification.implementationReceipt.revision ?? 1}` : "not recorded (optional)"}`,
     `- Deployment attested by site owner: ${Number.isFinite(verification.deploymentAttestedAt) ? new Date(verification.deploymentAttestedAt).toISOString() : "—"}`,
     `- Completed: ${Number.isFinite(verification.completedAt) ? new Date(verification.completedAt).toISOString() : "—"}`,

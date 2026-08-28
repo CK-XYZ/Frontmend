@@ -414,7 +414,7 @@ export function createFrontmendTools(service) {
       name: "stage_site_repair",
       title: "Stage site repair",
       description:
-        "Stage a bounded repair proposal for one completed audit finding, freeze every measured strategy sharing that failed rule, and optionally attach source-safe repository-relative target files plus planned checks for human review. Omit auditId to use the visible audit. Never include source contents, absolute paths, credentials, or environment values. This never changes the target site or approves the draft.",
+        "Submit a bounded repository repair mission for one completed audit finding, freezing every measured strategy sharing that failed rule and optionally attaching source-safe repository-relative target files plus planned checks. In review mode it waits for visible human approval. If a person previously enabled delegated auto mode, an eligible low-risk HTML or CSS mission with a complete repository plan is auto-authorised under that recorded grant. This never changes the target site, deploys, or bypasses the person-only deployment attestation.",
       inputSchema: {
         type: "object",
         properties: {
@@ -485,9 +485,13 @@ export function createFrontmendTools(service) {
           risk: repair.risk,
           findingScope: repair.findingScope,
           repositoryPlan: repair.repositoryPlan,
-          requiresHumanReview: true,
+          requiresHumanReview: repair.requiresHumanReview,
+          approval: repair.approval,
+          automation: repair.automation,
           mission: repair.mission ?? repairMissionState(repair),
-          nextAction: "Ask the person to review and approve the visible draft in Frontmend.",
+          nextAction: repair.status === "approved" && repair.approval?.mode === "delegated-auto"
+            ? "This low-risk mission was auto-authorised by the person's prior scoped grant. Implement the reviewed repository plan, run its checks, and record the implementation receipt."
+            : "Ask the person to review and approve the visible draft in Frontmend.",
         };
       },
     }),
@@ -598,6 +602,7 @@ export function createFrontmendTools(service) {
         }
         return {
           auditId,
+          policy: workspace.policy ?? service.getRepairPolicy?.(auditId),
           repairs: repairs.map((repair) => ({
             id: repair.id,
             findingId: repair.findingId,
@@ -614,6 +619,8 @@ export function createFrontmendTools(service) {
             verificationPlan: repairId ? repair.verificationPlan : undefined,
             risk: repair.risk,
             requiresHumanReview: repair.requiresHumanReview,
+            approval: repair.approval,
+            automation: repair.automation,
             reviewedAt: repair.reviewedAt,
             implementationReceipt: repair.implementationReceipt
               ? {

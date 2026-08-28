@@ -2139,6 +2139,112 @@ input:focus-visible,
   text-transform: uppercase;
 }
 
+.repair-policy {
+  margin: 1.25rem 0 1.5rem;
+  padding: 1.1rem;
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  background: color-mix(in srgb, var(--surface) 94%, var(--accent) 6%);
+}
+
+.repair-policy.auto {
+  border-color: color-mix(in srgb, var(--good) 46%, var(--line));
+  background: color-mix(in srgb, var(--surface) 90%, var(--good) 10%);
+}
+
+.repair-policy-heading,
+.repair-policy-heading > div {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.repair-policy-heading > div {
+  display: block;
+}
+
+.repair-policy-heading h2 {
+  margin: 0.15rem 0 0.25rem;
+  font-size: clamp(1.05rem, 2vw, 1.35rem);
+}
+
+.repair-policy-heading p:last-child {
+  margin: 0;
+  color: var(--muted);
+}
+
+.repair-policy-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.7rem;
+  margin-top: 1rem;
+}
+
+.repair-policy-options button {
+  display: grid;
+  gap: 0.3rem;
+  padding: 0.85rem;
+  text-align: left;
+  color: var(--ink);
+  border: 1px solid var(--line);
+  border-radius: 0.85rem;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.repair-policy-options button.active {
+  border-color: var(--accent);
+  box-shadow: inset 0 0 0 1px var(--accent);
+}
+
+.repair-policy-options button:disabled {
+  cursor: not-allowed;
+  opacity: 0.62;
+}
+
+.repair-policy-options span,
+.repair-policy-confirmation,
+.repair-policy-receipt {
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.repair-policy-confirmation,
+.repair-policy-receipt {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  margin-top: 0.8rem;
+}
+
+.repair-policy-confirmation input {
+  margin-top: 0.2rem;
+  accent-color: var(--accent);
+}
+
+.repair-policy-receipt svg,
+.delegated-approval-receipt svg {
+  flex: 0 0 auto;
+  color: var(--good);
+}
+
+.delegated-approval-receipt {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--good) 40%, var(--line));
+  border-radius: 0.85rem;
+  background: color-mix(in srgb, var(--surface) 88%, var(--good) 12%);
+}
+
+.delegated-approval-receipt p {
+  margin: 0.25rem 0 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
 .repair-workbench {
   margin-top: 15px;
   padding: 22px 24px 24px;
@@ -4119,6 +4225,10 @@ input:focus-visible,
 }
 
 @media (max-width: 620px) {
+  .repair-policy-options {
+    grid-template-columns: 1fr;
+  }
+
   .site-header {
     padding: 20px 17px;
   }

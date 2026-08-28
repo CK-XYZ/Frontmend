@@ -268,7 +268,11 @@ test("repair tools use visible audit context while preserving explicit repair ID
     },
     listRepairs: async (auditId) => {
       calls.push(["list", auditId]);
-      return { auditId, repairs: [repair] };
+      return {
+        auditId,
+        repairs: [repair],
+        policy: { mode: "review", remainingAutoApprovals: 0, deploymentAttestation: "person-only" },
+      };
     },
     reviseRepair: async (auditId, repairId, input) => {
       calls.push(["revise", auditId, repairId, input]);
@@ -324,6 +328,7 @@ test("repair tools use visible audit context while preserving explicit repair ID
     repairId: repair.id,
   });
   assert.equal(workspace.data.repairs[0].patch, repair.patch);
+  assert.equal(workspace.data.policy.mode, "review");
   assert.equal(workspace.data.repairs[0].findingScope.occurrenceCount, 2);
   assert.deepEqual(workspace.data.repairs[0].repositoryPlan.checks, ["bun test", "bun run build"]);
   assert.equal(
@@ -420,6 +425,50 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.equal(verification.ok, true);
   assert.match(verification.data.workspacePath, /^\/audits\//);
   assert.deepEqual(calls.at(-1), ["verify", repair.auditId, repair.id]);
+});
+
+test("staged repair tools disclose delegated auto authority and the next agent action", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const autoRepair = {
+    id: repairId,
+    auditId,
+    findingId: "mobile-color-contrast-1",
+    status: "approved",
+    source: "agent",
+    risk: "low",
+    patchType: "css",
+    summary: "Adjust the measured control token.",
+    repositoryPlan: {
+      files: ["src/styles.css"],
+      checks: ["bun test", "bun run build"],
+      source: "agent",
+      sourceChangedByFrontmend: false,
+    },
+    requiresHumanReview: false,
+    approval: { mode: "delegated-auto", grantedBy: "person", approvedAt: 20 },
+    automation: { eligible: true, policyMode: "auto-low-risk", reasons: [] },
+  };
+  const result = await findTool(createFrontmendTools({
+    getActiveAudit: () => ({ id: auditId }),
+    stageRepair: async () => autoRepair,
+  }), "stage_site_repair").execute({
+    findingId: autoRepair.findingId,
+    summary: autoRepair.summary,
+    patchType: "css",
+    patch: "Update the affected foreground token.",
+    verificationPlan: "Rerun the exact contrast rule.",
+    risk: "low",
+    repositoryFiles: ["src/styles.css"],
+    repositoryChecks: ["bun test", "bun run build"],
+  });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.requiresHumanReview, false);
+  assert.equal(result.data.approval.mode, "delegated-auto");
+  assert.equal(result.data.mission.approvalEvidence, "prior-human-auto-policy");
+  assert.match(result.data.nextAction, /Implement the reviewed repository plan/);
+  assert.match(result.data.nextAction, /record the implementation receipt/);
 });
 
 test("implementation receipt tool reports bounded repository evidence only", async () => {

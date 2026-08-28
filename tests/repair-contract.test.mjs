@@ -1,8 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  applyRepairPolicy,
   auditReportMarkdown,
   compareVerification,
+  createRepairPolicy,
   createRepositoryFixBrief,
   createVerificationContext,
   createRepairDraft,
@@ -54,6 +56,57 @@ test("creates a source-safe repository handoff from measured evidence", () => {
   assert.equal(brief.authority.frontmendChangedTarget, false);
   assert.equal(brief.authority.sourceAccess, "coding-agent-only");
   assert.match(brief.authority.privacy, /absolute paths/);
+});
+
+test("delegated auto mode consumes a bounded human grant only for eligible repository plans", () => {
+  const policy = createRepairPolicy({ mode: "auto-low-risk" }, 100);
+  assert.equal(policy.remainingAutoApprovals, 3);
+  assert.equal(policy.deploymentAttestation, "person-only");
+
+  const eligible = createRepairDraft({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    finding,
+    input: {
+      summary: "Repair the measured markup.",
+      patchType: "html",
+      patch: "Add the missing accessible label.",
+      verificationPlan: "Rerun the exact rule in every captured strategy.",
+      risk: "low",
+      repositoryFiles: ["src/App.jsx"],
+      repositoryChecks: ["bun test"],
+    },
+    source: "agent",
+    now: 110,
+  });
+  const authorised = applyRepairPolicy(eligible, policy, 120);
+  assert.equal(authorised.repair.status, "approved");
+  assert.equal(authorised.repair.requiresHumanReview, false);
+  assert.equal(authorised.repair.approval.mode, "delegated-auto");
+  assert.equal(authorised.repair.approval.policyEnabledAt, 100);
+  assert.equal(authorised.policy.remainingAutoApprovals, 2);
+  assert.equal(repairMissionState(authorised.repair).approvalEvidence, "prior-human-auto-policy");
+  assert.equal(repairMissionState(authorised.repair).deploymentEvidence, "none");
+
+  const ineligible = createRepairDraft({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    finding: { ...finding, id: "console-errors" },
+    input: {
+      summary: "Change runtime behaviour.",
+      patchType: "javascript",
+      patch: "Change the initialisation path.",
+      verificationPlan: "Rerun the production console audit.",
+      risk: "low",
+      repositoryFiles: ["src/main.jsx"],
+      repositoryChecks: ["bun test"],
+    },
+    source: "agent",
+    now: 130,
+  });
+  const gated = applyRepairPolicy(ineligible, authorised.policy, 140);
+  assert.equal(gated.repair.status, "draft");
+  assert.equal(gated.repair.requiresHumanReview, true);
+  assert.match(gated.repair.automation.reasons.join(" "), /HTML and CSS/);
+  assert.equal(gated.policy.remainingAutoApprovals, 2);
 });
 
 test("repository handoff carries every failing strategy for the same measured rule", () => {
@@ -1150,7 +1203,8 @@ test("exports only human-approved repair proposals with an honesty notice", () =
     },
     repair: rerun,
   });
-  assert.match(markdown, /Human reviewed:/);
+  assert.match(markdown, /Approval: explicit human review/);
+  assert.match(markdown, /Approval recorded:/);
   assert.match(markdown, /Deployment handoff: not yet attested/);
   assert.match(markdown, /does not claim the target site was changed/i);
   assert.match(markdown, /Repository implementation receipt/);

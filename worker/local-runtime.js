@@ -8,13 +8,16 @@ import {
   siteExplorationSnapshot,
 } from "../src/site-exploration-contract.js";
 import {
+  applyRepairPolicy,
   auditReportMarkdown,
   compareVerification,
+  createRepairPolicy,
   createVerificationContext,
   createRepairDraft,
   recordRepositoryImplementation,
   requestRepairChanges,
   repairExportMarkdown,
+  repairPolicySnapshot,
   repairWithMission,
   reviseRepairDraft,
   verificationReceiptMarkdown,
@@ -237,6 +240,7 @@ export function createLocalAuditRuntime(options = {}) {
         report: null,
         screenshots: {},
         repairs: [],
+        repairPolicy: repairPolicySnapshot(),
         error: null,
         abortController: new AbortController(),
         createdAt: now,
@@ -261,6 +265,7 @@ export function createLocalAuditRuntime(options = {}) {
       report: null,
       screenshots: {},
       repairs: [],
+      repairPolicy: repairPolicySnapshot(),
       error: null,
       abortController: new AbortController(),
       createdAt: now,
@@ -486,6 +491,30 @@ export function createLocalAuditRuntime(options = {}) {
         return sendJson(response, 200, { ok: true, data: aggregate });
       }
 
+      const repairPolicyMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
+      if (repairPolicyMatch) {
+        const baseline = jobs.get(repairPolicyMatch[1]);
+        if (!baseline) {
+          return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        }
+        if (baseline.status !== "complete" || !baseline.report) {
+          return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the audit before changing repair policy."), 409);
+        }
+        if (request.method === "GET") {
+          return sendJson(response, 200, { ok: true, data: repairPolicySnapshot(baseline.repairPolicy) });
+        }
+        if (request.method === "POST") {
+          assertSameOrigin(request);
+          baseline.repairPolicy = createRepairPolicy(await readBody(request));
+          return sendJson(response, 200, { ok: true, data: baseline.repairPolicy });
+        }
+        return sendError(
+          response,
+          new AuditError("METHOD_NOT_ALLOWED", "That repair policy operation is not supported."),
+          405,
+        );
+      }
+
       const repairMatch = requestUrl.pathname.match(
         /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
       );
@@ -501,7 +530,11 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawRepairId && request.method === "GET") {
           return sendJson(response, 200, {
             ok: true,
-            data: { auditId, repairs: baseline.repairs.map(repairWithMission) },
+            data: {
+              auditId,
+              repairs: baseline.repairs.map(repairWithMission),
+              policy: repairPolicySnapshot(baseline.repairPolicy),
+            },
           });
         }
         if (!rawRepairId && request.method === "POST") {
@@ -519,13 +552,16 @@ export function createLocalAuditRuntime(options = {}) {
             return sendError(response, new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
           }
           const { source, ...proposal } = input;
-          const repair = createRepairDraft({
+          let repair = createRepairDraft({
             auditId,
             finding,
             report: baseline.report,
             input: proposal,
             source,
           });
+          const policyResult = applyRepairPolicy(repair, baseline.repairPolicy);
+          repair = policyResult.repair;
+          baseline.repairPolicy = policyResult.policy;
           baseline.repairs.push(repair);
           return sendJson(response, 201, { ok: true, data: repairWithMission(repair) });
         }
@@ -549,7 +585,13 @@ export function createLocalAuditRuntime(options = {}) {
             );
           }
           if (repair.status !== "approved") {
-            Object.assign(repair, { status: "approved", reviewedAt: Date.now() });
+            const approvedAt = Date.now();
+            Object.assign(repair, {
+              status: "approved",
+              requiresHumanReview: false,
+              reviewedAt: approvedAt,
+              approval: { mode: "explicit-review", grantedBy: "person", approvedAt },
+            });
           }
           return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
         }

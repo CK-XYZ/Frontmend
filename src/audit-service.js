@@ -111,6 +111,24 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
+    async getRepairPolicy(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repair-policy`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async setRepairPolicy(auditId, mode) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repair-policy`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ mode }),
+        }),
+      );
+    },
+
     async stageRepair(auditId, input) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs`, {
@@ -222,6 +240,7 @@ export function createAuditService(options = {}) {
   const now = options.now ?? Date.now;
   const jobs = new Map();
   const repairs = new Map();
+  const repairPolicies = new Map();
   const explorations = new Map();
   const listeners = new Set();
   let agentActivities = [];
@@ -379,6 +398,7 @@ export function createAuditService(options = {}) {
       const workspace = await transport.listRepairs(auditId);
       if (expectedGeneration === generation) {
         repairs.set(auditId, workspace.repairs ?? []);
+        if (workspace.policy) repairPolicies.set(auditId, workspace.policy);
         emit();
       }
       return workspace;
@@ -390,6 +410,22 @@ export function createAuditService(options = {}) {
       }
       const expectedGeneration = generation;
       return rememberRepair(await transport.stageRepair(auditId, input), expectedGeneration);
+    },
+
+    async setRepairPolicy(auditId, mode) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      if (!["review", "auto-low-risk"].includes(mode)) {
+        throw new AuditError("INVALID_INPUT", "mode must be review or auto-low-risk.");
+      }
+      const expectedGeneration = generation;
+      const policy = await transport.setRepairPolicy(auditId, mode);
+      if (expectedGeneration === generation) {
+        repairPolicies.set(auditId, policy);
+        emit();
+      }
+      return policy;
     },
 
     async approveRepair(auditId, repairId) {
@@ -451,6 +487,20 @@ export function createAuditService(options = {}) {
 
     getRepairs(auditId) {
       return repairs.get(auditId) ?? [];
+    },
+
+    getRepairPolicy(auditId) {
+      return repairPolicies.get(auditId) ?? {
+        version: 1,
+        mode: "review",
+        grantedBy: null,
+        enabledAt: null,
+        remainingAutoApprovals: 0,
+        riskCeiling: null,
+        allowedPatchTypes: [],
+        requiresRepositoryPlan: false,
+        deploymentAttestation: "person-only",
+      };
     },
 
     getRepairExportUrl(auditId, repairId) {
@@ -525,6 +575,7 @@ export function createAuditService(options = {}) {
       generation += 1;
       activeAuditId = null;
       repairs.clear();
+      repairPolicies.clear();
       explorations.clear();
       emit();
     },
