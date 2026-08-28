@@ -1283,6 +1283,10 @@ test("audit jobs persist one repair per finding and require human approval befor
   const verification = (await verificationInput.json()).data;
   assert.equal(verification.repairId, first.id);
   assert.equal(verification.deploymentAttestedAt, deployedRepair.deploymentAttestedAt);
+  assert.equal(verification.implementationReceipt.revision, 2);
+  assert.equal(verification.implementationReceipt.source, "agent");
+  assert.equal(verification.implementationReceipt.checks[1].status, "passed");
+  assert.notEqual(verification.implementationReceipt, implementationRerun.implementationReceipt);
   assert.equal(verification.baselineEngine.mode, "live-document");
   assert.equal(verification.baseline.auditId, "b8b16bf0-913c-40ea-a741-bb4bf76d326b");
   assert.equal(verification.baseline.exactRuleOutcome, "missing");

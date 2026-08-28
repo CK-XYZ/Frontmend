@@ -497,6 +497,23 @@ export function recordRepositoryImplementation(repair, input = {}, now = Date.no
   };
 }
 
+function implementationReceiptSnapshot(receipt) {
+  if (!receipt?.agentReported) return null;
+  return {
+    revision: Number.isFinite(receipt.revision) ? receipt.revision : 1,
+    summary: receipt.summary,
+    files: Array.isArray(receipt.files) ? receipt.files.map((file) => file) : [],
+    checks: Array.isArray(receipt.checks)
+      ? receipt.checks.map((check) => ({ name: check.name, status: check.status }))
+      : [],
+    commitSha: receipt.commitSha ?? null,
+    source: "agent",
+    reportedAt: receipt.reportedAt,
+    agentReported: true,
+    sourceChangedByFrontmend: false,
+  };
+}
+
 export function repairMissionState(repair) {
   const hasDraft = Boolean(repair?.id);
   const approved = repair?.status === "approved";
@@ -812,6 +829,7 @@ export function createVerificationContext(report, repair) {
     baselineEvidence: reportEvidenceSignature(report),
     baseline: reportSnapshot(report, repair.findingSource),
     lineage: startingLineage(report, repair.findingSource),
+    implementationReceipt: implementationReceiptSnapshot(repair.implementationReceipt),
     deploymentAttestedAt: repair.deploymentAttestedAt,
   };
 }
@@ -867,6 +885,7 @@ export function compareVerification(report, verification, now = Date.now()) {
     findingId: verification.findingId,
     findingTitle: verification.findingTitle,
     findingSource: source,
+    implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
     comparable,
@@ -1230,6 +1249,7 @@ export function verificationReceiptMarkdown(report) {
     `- Exact rule comparison: ${verification.comparable ? "like for like" : "not comparable"}`,
     `- Summary metric comparison: ${metricComparable ? "like for like" : "not comparable; deltas withheld"}`,
     `- Comparison reason: ${receiptText(verification.comparisonReason, 120)}`,
+    `- Repository implementation: ${verification.implementationReceipt ? `agent-reported receipt revision ${verification.implementationReceipt.revision ?? 1}` : "not recorded (optional)"}`,
     `- Deployment attested by site owner: ${Number.isFinite(verification.deploymentAttestedAt) ? new Date(verification.deploymentAttestedAt).toISOString() : "—"}`,
     `- Completed: ${Number.isFinite(verification.completedAt) ? new Date(verification.completedAt).toISOString() : "—"}`,
     "",
@@ -1244,6 +1264,22 @@ export function verificationReceiptMarkdown(report) {
     `Baseline audit: \`${receiptText(proof.baseline.auditId, 80)}\`  `,
     `Fresh audit: \`${receiptText(proof.current.auditId, 80)}\``,
   ];
+  const implementation = verification.implementationReceipt;
+  if (implementation) {
+    lines.push(
+      "",
+      "## Repository implementation provenance",
+      "",
+      "> Agent-reported repository metadata. Frontmend did not inspect the source, execute these checks, or deploy this Git object.",
+      "",
+      `- Receipt revision: ${Number.isFinite(implementation.revision) ? implementation.revision : 1}`,
+      `- Reported: ${Number.isFinite(implementation.reportedAt) ? new Date(implementation.reportedAt).toISOString() : "—"}`,
+      `- Summary: ${receiptText(implementation.summary, 300)}`,
+      `- Files: ${implementation.files?.length ? implementation.files.map((file) => `\`${receiptText(file, 200)}\``).join(", ") : "—"}`,
+      `- Checks: ${implementation.checks?.length ? implementation.checks.map((check) => `${receiptText(check.name, 120)} — ${receiptText(check.status, 20)}`).join("; ") : "—"}`,
+      `- Git object: ${receiptText(implementation.commitSha, 64)}`,
+    );
+  }
   const entries = verification.lineage?.entries?.slice(0, MAX_LINEAGE_ENTRIES) ?? [];
   if (entries.length) {
     lines.push(

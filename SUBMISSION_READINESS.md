@@ -28,12 +28,12 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Approval is absent from WebMCP and requires explicit confirmation in the visible UI.
 - [x] Verification remains blocked after approval until a person explicitly attests the reviewed change was deployed; WebMCP cannot grant or bypass that attestation.
 - [x] Repair missions expose the same step ownership and allowed next actions through HTTP, WebMCP, and the visible UI.
-- [x] After human approval, a coding agent can attach a bounded implementation receipt containing only repository-relative files, check outcomes, a summary, and optional Git object ID; repeated reports retain five prior receipts so failed checks cannot be silently overwritten, and none can approve, deploy, or claim resolution.
+- [x] After human approval, a coding agent can attach a bounded implementation receipt containing only repository-relative files, check outcomes, a summary, and optional Git object ID; repeated reports retain five prior receipts so failed checks cannot be silently overwritten, and the latest receipt is frozen into verification without being promoted to source, check, deployment, or resolution proof.
 - [x] Approved plans export as Markdown with an explicit proposal-only notice.
 - [x] Completed audits export as bounded Markdown with escaped provider text, rule-level provenance, and evidence-mode limits through the visible report workspace.
 - [x] Repair verification uses a fresh replay-safe audit; `resolved` requires an explicit pass for the exact original rule.
 - [x] Verification separates exact-rule comparability from whole-report metric comparability: partial/hybrid Lighthouse proof requires the same version and strategy, while score/check/finding deltas are withheld whenever audit coverage differs.
-- [x] Verification emits a visible and agent-readable before/after receipt with audit provenance and metric deltas.
+- [x] Verification emits a visible and agent-readable before/after receipt with audit provenance, metric deltas, and the frozen repository implementation receipt when one was recorded.
 - [x] Repeated same-rule repairs retain a bounded audit lineage with root preservation, per-attempt evidence signatures and baseline metric-comparability verdicts, plus compaction after eight receipts.
 - [x] Completed verification proof exports as bounded Markdown through both a human download and semantic WebMCP tool.
 - [x] Browser-agent calls emit a bounded, session-only visible activity ledger that excludes inputs, URLs, patches, prompts, and secrets.

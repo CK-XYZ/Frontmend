@@ -799,6 +799,7 @@ function VerificationBanner({ verification }) {
     "not-comparable": "Not comparable",
   };
   const proof = verification.proof;
+  const implementation = verification.implementationReceipt;
   const hasBaseline = Boolean(proof?.baseline?.auditId);
   return (
     <section
@@ -839,6 +840,10 @@ function VerificationBanner({ verification }) {
           <dd>{outcomeLabels[verification.ruleOutcome] ?? "Unknown"}</dd>
         </div>
         <div>
+          <dt>Repository handoff</dt>
+          <dd>{implementation ? `Agent receipt r${implementation.revision ?? 1} carried forward` : "Not recorded · optional"}</dd>
+        </div>
+        <div>
           <dt>Deployment handoff</dt>
           <dd>
             {Number.isFinite(verification.deploymentAttestedAt)
@@ -851,6 +856,41 @@ function VerificationBanner({ verification }) {
           <dd>{verification.repairRevision ?? 1}</dd>
         </div>
       </dl>
+      {implementation ? (
+        <section className="implementation-receipt verification-implementation" aria-labelledby="verification-implementation-title">
+          <div className="implementation-receipt-heading">
+            <span aria-hidden="true"><Robot size={20} weight="duotone" /></span>
+            <div>
+              <p className="kicker">Repository provenance</p>
+              <strong id="verification-implementation-title">Implementation receipt carried into proof</strong>
+              <p>Revision {implementation.revision ?? 1} · {implementation.summary}</p>
+            </div>
+          </div>
+          <dl>
+            <div>
+              <dt>Files</dt>
+              <dd>{implementation.files?.join(", ") || "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Agent-reported checks</dt>
+              <dd>
+                {implementation.checks?.length
+                  ? implementation.checks.map((check) => `${check.name}: ${check.status}`).join(" · ")
+                  : "Not recorded"}
+              </dd>
+            </div>
+            {implementation.commitSha ? (
+              <div>
+                <dt>Git object</dt>
+                <dd><code>{implementation.commitSha}</code></dd>
+              </div>
+            ) : null}
+          </dl>
+          <small>
+            Agent-reported metadata only · Frontmend did not inspect source, run repository checks, or deploy this Git object
+          </small>
+        </section>
+      ) : null}
       {hasBaseline ? (
         <div className="proof-receipt">
           <div className="proof-receipt-heading">

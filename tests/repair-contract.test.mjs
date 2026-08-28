@@ -524,11 +524,26 @@ test("verification carries a bounded before and after proof receipt", () => {
     findingTitle: finding.title,
     findingSource: finding.source,
     status: "approved",
+    implementationReceipt: {
+      revision: 2,
+      summary: "Updated the response header and its contract coverage.",
+      files: ["src/worker.js", "tests/worker.test.mjs"],
+      checks: [{ name: "bun test", status: "passed" }],
+      commitSha: "691defd",
+      source: "agent",
+      reportedAt: 1_787_766_040_000,
+      agentReported: true,
+      sourceChangedByFrontmend: false,
+    },
     deploymentAttestedAt: 1_787_766_050_000,
   };
   const context = createVerificationContext(baseline, repair);
   assert.equal(context.deploymentAttestedAt, repair.deploymentAttestedAt);
   assert.equal(context.repairRevision, 1);
+  assert.equal(context.implementationReceipt.revision, 2);
+  assert.equal(context.implementationReceipt.commitSha, "691defd");
+  assert.notEqual(context.implementationReceipt, repair.implementationReceipt);
+  assert.notEqual(context.implementationReceipt.checks, repair.implementationReceipt.checks);
   assert.deepEqual(context.baseline, {
     auditId: baseline.auditId,
     completedAt: baseline.completedAt,
@@ -556,6 +571,7 @@ test("verification carries a bounded before and after proof receipt", () => {
   };
   const result = compareVerification(fresh, context, 1_787_766_100_000);
   assert.equal(result.status, "resolved");
+  assert.deepEqual(result.implementationReceipt, context.implementationReceipt);
   assert.equal(result.proof.current.exactRuleOutcome, "passed");
   assert.deepEqual(result.proof.deltas, { score: 11, checksPassed: 1, findings: -1 });
   assert.equal(result.lineage.attemptCount, 1);
@@ -662,6 +678,20 @@ test("exports a bounded honest verification receipt", () => {
       comparable: true,
       metricComparable: false,
       comparisonReason: "exact-document-rule",
+      implementationReceipt: {
+        revision: 2,
+        summary: "Updated the Worker response header.",
+        files: ["src/worker.js", "tests/worker.test.mjs"],
+        checks: [
+          { name: "bun test", status: "passed" },
+          { name: "bun run build", status: "passed" },
+        ],
+        commitSha: "691defd",
+        source: "agent",
+        reportedAt: 1_787_766_090_000,
+        agentReported: true,
+        sourceChangedByFrontmend: false,
+      },
       deploymentAttestedAt: 1_787_766_100_000,
       completedAt: 1_787_766_200_000,
       proof: {
@@ -710,6 +740,11 @@ test("exports a bounded honest verification receipt", () => {
   assert.match(receipt, /Metric coverage/);
   assert.match(receipt, /Exact rule comparison: like for like/);
   assert.match(receipt, /Attempt 1.*Changed; deltas withheld/);
+  assert.match(receipt, /Repository implementation provenance/);
+  assert.match(receipt, /agent-reported receipt revision 2/);
+  assert.match(receipt, /Frontmend did not inspect the source, execute these checks, or deploy this Git object/);
+  assert.match(receipt, /`src\/worker\.js`/);
+  assert.match(receipt, /Git object: 691defd/);
   assert.match(receipt, /Repair revision: 3/);
   assert.match(receipt, /Deployment attested by site owner: 2026-/);
   assert.match(receipt, /Unsafe &lt;script&gt; \\| title/);

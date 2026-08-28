@@ -2480,6 +2480,30 @@ input:focus-visible,
   background: #f4f8ef;
 }
 
+.verification-implementation {
+  grid-column: 1 / -1;
+  margin: 0;
+  background: rgb(255 255 252 / 62%);
+}
+
+.verification-banner .verification-implementation dl {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.verification-banner .verification-implementation dl div {
+  display: block;
+  padding: 9px 10px;
+}
+
+.verification-banner .verification-implementation dd {
+  max-width: none;
+  overflow: visible;
+  text-align: left;
+  text-overflow: clip;
+  white-space: normal;
+}
+
 .implementation-receipt-heading {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
@@ -4135,7 +4159,8 @@ input:focus-visible,
     display: flex;
   }
 
-  .implementation-receipt dl {
+  .implementation-receipt dl,
+  .verification-banner .verification-implementation dl {
     grid-template-columns: 1fr;
   }
 
