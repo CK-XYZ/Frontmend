@@ -27,8 +27,8 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - A shared repair-mission state machine that assigns measure, draft, review, implement, deploy, and verify steps to Frontmend, the coding agent/person, or the external site owner and exposes allowed next actions through WebMCP.
 - A human-only deployment-handoff gate: approval unlocks export, but a site-owner attestation is required before human or WebMCP verification can start.
 - Approval-gated Markdown export with an explicit proposal-only honesty notice.
-- Portable verification-receipt export with exact-rule proof, metric deltas, repository implementation provenance when recorded, audit lineage, and explicit source/check/deployment boundaries.
-- Fresh repair verification that reports `resolved`, `still-present`, or `inconclusive`; resolution requires an explicit `passed` outcome for the exact original provider rule under a comparable evidence engine.
+- Portable verification-receipt export with a bounded rule-scope outcome table, metric deltas, repository implementation provenance when recorded, audit lineage, and explicit source/check/deployment boundaries.
+- Fresh repair verification that reports `resolved`, `still-present`, or `inconclusive`; a repair freezes every measured strategy sharing the original failed provider rule, and resolution requires an explicit comparable `passed` outcome for every captured occurrence.
 - Rule proof and summary-metric proof are deliberately separate: partial/hybrid verification requires the same Lighthouse version for an exact Lighthouse rule, while score/check/finding deltas appear only when the engine, measured strategies, score basis, and document-supplement coverage all match.
 - A before/after proof receipt with baseline and fresh audit IDs plus server-derived score, passed-check, and finding deltas; the same structure is returned through WebMCP.
 - A bounded audit-lineage trail that carries the exact rule across repeated repair attempts, preserves the root audit, stores each attempt's evidence signature, labels whether its summary metrics are comparable to the baseline, and compacts older history after eight receipts.
@@ -77,12 +77,12 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 | `start_related_page_audit` | Start a real audit for an exact same-site path observed in the visible report. |
 | `start_site_exploration` | Atomically start one to three observed page audits under one durable mission. |
 | `get_site_exploration` | Read mission progress and bounded recurring evidence across selected pages. |
-| `get_verification_receipt` | Return portable Markdown proof for a completed verification. |
-| `stage_site_repair` | Create a visible draft without changing the target site. |
+| `get_verification_receipt` | Return portable Markdown plus structured per-strategy outcomes for a completed verification. |
+| `stage_site_repair` | Create a visible draft and freeze its measured-rule scope without changing the target site. |
 | `revise_site_repair` | Submit a complete new version only after visible human feedback. |
-| `get_repair_workspace` | Inspect drafts, mission progress, ownership boundaries, and allowed next actions. |
+| `get_repair_workspace` | Inspect drafts, frozen rule scope, mission progress, ownership boundaries, and allowed next actions. |
 | `record_repository_implementation` | Attach bounded agent-reported filenames and check outcomes after human approval. |
-| `start_repair_verification` | Re-audit an approved repair and compare the measured rule. |
+| `start_repair_verification` | Re-audit an approved repair and compare every captured occurrence of the measured rule. |
 
 ## Development
 

@@ -9,6 +9,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Source provenance: standalone repository application commit `b94e6cb8fb9419145f7340c77de0882eb015d891`; push remains a separate action
+- Current local application: `2c1ff900c1b9be975d918ce4e0273c825b694735`; adds visible and agent-readable per-strategy repair proof and is not deployed
 - Worker name: `frontmend`
 - Cloudflare version: `59677b80-ed0d-4851-8f66-403a31cc1985`
 - Deployment created: `2026-08-28T20:55:12.233Z`
@@ -23,10 +24,10 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 94 passed, 0 failed on deployed application commit `b94e6cb` |
+| Tests | `bun test` | PASS — 94 passed, 0 failed on local application commit `2c1ff90` |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 150.69 KiB raw / 34.32 KiB gzip Worker upload; no upload performed |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 153.05 KiB raw / 34.70 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -143,4 +144,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC2 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `b94e6cb`; it has not been pushed to a public remote.
+The deployed version may be labelled **RC2 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `b94e6cb`; it has not been pushed to a public remote. Local application commit `2c1ff90` is newer, passes the fresh gates above, and is not part of the deployed Worker version.
