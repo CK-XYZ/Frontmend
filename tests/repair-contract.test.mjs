@@ -484,6 +484,7 @@ test("verification requires every captured strategy for the rule to pass", () =>
       report: baseline,
     }),
     status: "approved",
+    reviewedAt: 105,
     deploymentAttestedAt: 110,
   };
   assert.deepEqual(
@@ -524,6 +525,23 @@ test("verification requires every captured strategy for the rule to pass", () =>
   assert.equal(resolved.status, "resolved");
   assert.equal(resolved.ruleOutcome, "passed");
   assert.match(resolved.message, /every captured rule occurrence explicitly passed/i);
+  const resolvedReceipt = verificationReceiptMarkdown({
+    ...fresh,
+    finalUrl: baseline.finalUrl,
+    verification: resolved,
+  });
+  assert.match(resolvedReceipt, /Captured rule occurrences: 2/);
+  assert.match(resolvedReceipt, /Rule-scope outcomes/);
+  assert.match(resolvedReceipt, /\| Lighthouse \| color-contrast \| mobile \| Yes \| passed \|/);
+  assert.match(resolvedReceipt, /\| Lighthouse \| color-contrast \| desktop \| Yes \| passed \|/);
+  assert.match(resolvedReceipt, /passing strategy cannot hide a sibling failure/i);
+
+  const repairArtifact = repairExportMarkdown({ report: baseline, repair });
+  assert.match(repairArtifact, /Captured rule occurrences: 2/);
+  assert.match(repairArtifact, /Captured repair scope/);
+  assert.match(repairArtifact, /\| Lighthouse \| color-contrast \| mobile \|/);
+  assert.match(repairArtifact, /\| Lighthouse \| color-contrast \| desktop \|/);
+  assert.match(repairArtifact, /Every listed occurrence must explicitly pass/i);
 
   const incomplete = compareVerification({
     ...fresh,

@@ -228,6 +228,19 @@ test("repair tools use visible audit context while preserving explicit repair ID
     auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
     findingId: "document-content-security-policy",
     findingTitle: "No Content Security Policy header was observed",
+    findingSource: {
+      provider: "Lighthouse",
+      auditId: "color-contrast",
+      strategy: "mobile",
+    },
+    findingScope: {
+      occurrenceCount: 2,
+      occurrencesOmitted: 0,
+      sources: [
+        { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+        { provider: "Lighthouse", auditId: "color-contrast", strategy: "desktop" },
+      ],
+    },
     status: "draft",
     source: "agent",
     summary: "Introduce a tested report-only policy first.",
@@ -291,6 +304,8 @@ test("repair tools use visible audit context while preserving explicit repair ID
   });
   assert.equal(staged.ok, true);
   assert.equal(staged.data.requiresHumanReview, true);
+  assert.equal(staged.data.findingScope.occurrenceCount, 2);
+  assert.deepEqual(staged.data.findingScope.sources.map((source) => source.strategy), ["mobile", "desktop"]);
   assert.equal("patch" in staged.data, false);
   assert.equal(staged.data.mission.state, "awaiting-human-review");
   assert.deepEqual(staged.data.mission.nextActions, [{ id: "review_in_ui", actor: "person" }]);
@@ -300,6 +315,7 @@ test("repair tools use visible audit context while preserving explicit repair ID
     repairId: repair.id,
   });
   assert.equal(workspace.data.repairs[0].patch, repair.patch);
+  assert.equal(workspace.data.repairs[0].findingScope.occurrenceCount, 2);
   assert.equal(
     workspace.data.repairs[0].mission.steps.find((step) => step.id === "review").status,
     "current",
@@ -337,6 +353,7 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.equal(revised.ok, true);
   assert.equal(revised.data.revision, 2);
   assert.equal(revised.data.status, "draft");
+  assert.equal(revised.data.findingScope.occurrenceCount, 2);
   assert.equal(revised.data.mission.state, "awaiting-human-review");
   assert.equal(calls.at(-1)[0], "revise");
 
@@ -467,10 +484,32 @@ test("verification receipt tool returns the same bounded proof artifact", async 
       findingId: "document-image-alt",
       findingTitle: "Images are missing text alternatives",
       findingSource: {
-        provider: "Frontmend document audit",
-        auditId: "image-alt",
-        strategy: "document",
+        provider: "Lighthouse",
+        auditId: "color-contrast",
+        strategy: "mobile",
       },
+      findingScope: {
+        occurrenceCount: 2,
+        occurrencesOmitted: 0,
+        sources: [
+          { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+          { provider: "Lighthouse", auditId: "color-contrast", strategy: "desktop" },
+        ],
+      },
+      scopeOutcomes: [
+        {
+          source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+          outcome: "passed",
+          comparable: true,
+          comparisonReason: "exact-lighthouse-rule",
+        },
+        {
+          source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "desktop" },
+          outcome: "passed",
+          comparable: true,
+          comparisonReason: "exact-lighthouse-rule",
+        },
+      ],
       ruleOutcome: "passed",
       comparable: true,
       metricComparable: true,
@@ -490,9 +529,12 @@ test("verification receipt tool returns the same bounded proof artifact", async 
   ).execute({});
   assert.equal(receipt.ok, true);
   assert.equal(receipt.data.status, "resolved");
+  assert.equal(receipt.data.findingScope.occurrenceCount, 2);
+  assert.deepEqual(receipt.data.scopeOutcomes.map((outcome) => outcome.source.strategy), ["mobile", "desktop"]);
   assert.equal(receipt.data.format, "text/markdown");
   assert.equal(receipt.data.downloadPath, `/api/audits/${auditId}/receipt`);
   assert.match(receipt.data.receipt, /\| Score \| 88 \| 100 \| \+12 \|/);
+  assert.match(receipt.data.receipt, /Rule-scope outcomes/);
 });
 
 test("audit-scoped schemas make only the current audit ID optional", async () => {

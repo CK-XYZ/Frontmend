@@ -385,7 +385,7 @@ export function createFrontmendTools(service) {
       name: "get_verification_receipt",
       title: "Get verification receipt",
       description:
-        "Return a portable Markdown evidence receipt for a completed repair verification, including exact-rule outcome, before/after metrics, and bounded audit lineage. Omit auditId to use the visible verification audit. This does not change or deploy the target site.",
+        "Return a portable Markdown evidence receipt for a completed repair verification, including every captured rule occurrence and its fresh outcome, before/after metrics, and bounded audit lineage. Omit auditId to use the visible verification audit. This does not change or deploy the target site.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -401,6 +401,8 @@ export function createFrontmendTools(service) {
         return {
           auditId,
           status: report.verification?.status,
+          findingScope: report.verification?.findingScope,
+          scopeOutcomes: report.verification?.scopeOutcomes,
           format: "text/markdown",
           downloadPath: `/api/audits/${encodeURIComponent(auditId)}/receipt`,
           receipt: verificationReceiptMarkdown(report),
@@ -411,7 +413,7 @@ export function createFrontmendTools(service) {
       name: "stage_site_repair",
       title: "Stage site repair",
       description:
-        "Stage a bounded repair proposal for one completed audit finding. Omit auditId to use the visible audit. This creates a visible draft for human review; it never changes the target site or approves the draft.",
+        "Stage a bounded repair proposal for one completed audit finding and freeze every measured strategy sharing that failed rule into its verification scope. Omit auditId to use the visible audit. This creates a visible draft for human review; it never changes the target site or approves the draft.",
       inputSchema: {
         type: "object",
         properties: {
@@ -462,6 +464,7 @@ export function createFrontmendTools(service) {
           summary: repair.summary,
           patchType: repair.patchType,
           risk: repair.risk,
+          findingScope: repair.findingScope,
           requiresHumanReview: true,
           mission: repair.mission ?? repairMissionState(repair),
           nextAction: "Ask the person to review and approve the visible draft in Frontmend.",
@@ -521,6 +524,7 @@ export function createFrontmendTools(service) {
           summary: repair.summary,
           patchType: repair.patchType,
           risk: repair.risk,
+          findingScope: repair.findingScope,
           requiresHumanReview: true,
           mission: repair.mission ?? repairMissionState(repair),
           nextAction: "Ask the person to review the revised proposal in Frontmend.",
@@ -531,7 +535,7 @@ export function createFrontmendTools(service) {
       name: "get_repair_workspace",
       title: "Get repair workspace",
       description:
-        "Read repair drafts, human-review status, and the external deployment handoff for a completed audit. Omit auditId to use the visible audit. This does not stage, approve, attest deployment, export, or verify a repair.",
+        "Read repair drafts, their frozen measured-rule scope, human-review status, and the external deployment handoff for a completed audit. Omit auditId to use the visible audit. This does not stage, approve, attest deployment, export, or verify a repair.",
       inputSchema: {
         type: "object",
         properties: {
@@ -559,6 +563,7 @@ export function createFrontmendTools(service) {
             id: repair.id,
             findingId: repair.findingId,
             findingTitle: repair.findingTitle,
+            findingScope: repair.findingScope,
             status: repair.status,
             revision: repair.revision ?? 1,
             source: repair.source,

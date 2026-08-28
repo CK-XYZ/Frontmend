@@ -1124,6 +1124,13 @@ export function repairExportMarkdown({ report, repair }) {
   if (repair?.status !== "approved") {
     throw new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before exporting it.");
   }
+  const scopeSources = findingScopeSources(repair.findingScope, repair.findingSource);
+  const occurrenceCount = Number.isFinite(repair.findingScope?.occurrenceCount)
+    ? Math.max(scopeSources.length, Math.round(repair.findingScope.occurrenceCount))
+    : scopeSources.length;
+  const occurrencesOmitted = Number.isFinite(repair.findingScope?.occurrencesOmitted)
+    ? Math.max(0, Math.round(repair.findingScope.occurrencesOmitted))
+    : 0;
   const lines = [
     `# Frontmend repair: ${repair.findingTitle}`,
     "",
@@ -1133,8 +1140,20 @@ export function repairExportMarkdown({ report, repair }) {
     `- Repair revision: ${Number.isFinite(repair.revision) ? repair.revision : 1}`,
     `- Patch type: ${repair.patchType}`,
     `- Risk: ${repair.risk}`,
+    `- Captured rule occurrences: ${occurrenceCount}`,
+    `- Occurrences omitted by bound: ${occurrencesOmitted}`,
     `- Human reviewed: ${new Date(repair.reviewedAt).toISOString()}`,
     `- Deployment handoff: ${Number.isFinite(repair.deploymentAttestedAt) ? `site owner attested ${new Date(repair.deploymentAttestedAt).toISOString()}` : "not yet attested"}`,
+    "",
+    "## Captured repair scope",
+    "",
+    "| Provider | Rule | Strategy |",
+    "| --- | --- | --- |",
+    ...scopeSources.map((source) =>
+      `| ${receiptText(source.provider, 120)} | ${receiptText(source.auditId, 160)} | ${receiptText(source.strategy, 40)} |`,
+    ),
+    "",
+    "> Every listed occurrence must explicitly pass in a fresh audit before Frontmend can mark this repair resolved.",
     "",
     "## Repair summary",
     "",
@@ -1429,6 +1448,21 @@ export function verificationReceiptMarkdown(report) {
     );
   }
   const metricComparable = verification.metricComparable === true;
+  const scopeSources = findingScopeSources(verification.findingScope, verification.findingSource);
+  const occurrenceCount = Number.isFinite(verification.findingScope?.occurrenceCount)
+    ? Math.max(scopeSources.length, Math.round(verification.findingScope.occurrenceCount))
+    : scopeSources.length;
+  const occurrencesOmitted = Number.isFinite(verification.findingScope?.occurrencesOmitted)
+    ? Math.max(0, Math.round(verification.findingScope.occurrencesOmitted))
+    : 0;
+  const scopeOutcomes = Array.isArray(verification.scopeOutcomes)
+    ? verification.scopeOutcomes.slice(0, 4)
+    : scopeSources.map((source) => ({
+        source,
+        outcome: verification.ruleOutcome,
+        comparable: verification.comparable,
+        comparisonReason: verification.comparisonReason,
+      }));
   const lines = [
     "# Frontmend verification receipt",
     "",
@@ -1441,11 +1475,23 @@ export function verificationReceiptMarkdown(report) {
     `- Exact rule: ${receiptText(verification.findingSource?.auditId ?? verification.findingId)}`,
     `- Exact rule outcome: ${receiptText(verification.ruleOutcome)}`,
     `- Exact rule comparison: ${verification.comparable ? "like for like" : "not comparable"}`,
+    `- Captured rule occurrences: ${occurrenceCount}`,
+    `- Occurrences omitted by bound: ${occurrencesOmitted}`,
     `- Summary metric comparison: ${metricComparable ? "like for like" : "not comparable; deltas withheld"}`,
     `- Comparison reason: ${receiptText(verification.comparisonReason, 120)}`,
     `- Repository implementation: ${verification.implementationReceipt ? `agent-reported receipt revision ${verification.implementationReceipt.revision ?? 1}` : "not recorded (optional)"}`,
     `- Deployment attested by site owner: ${Number.isFinite(verification.deploymentAttestedAt) ? new Date(verification.deploymentAttestedAt).toISOString() : "—"}`,
     `- Completed: ${Number.isFinite(verification.completedAt) ? new Date(verification.completedAt).toISOString() : "—"}`,
+    "",
+    "## Rule-scope outcomes",
+    "",
+    "| Provider | Rule | Strategy | Comparable | Outcome |",
+    "| --- | --- | --- | --- | --- |",
+    ...scopeOutcomes.map((outcome) =>
+      `| ${receiptText(outcome?.source?.provider, 120)} | ${receiptText(outcome?.source?.auditId, 160)} | ${receiptText(outcome?.source?.strategy, 40)} | ${outcome?.comparable ? "Yes" : "No"} | ${receiptText(outcome?.outcome ?? "missing", 40)} |`,
+    ),
+    "",
+    "> Resolution requires an explicit pass for every captured occurrence. A passing strategy cannot hide a sibling failure or missing comparison.",
     "",
     "## Before and after",
     "",

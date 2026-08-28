@@ -788,10 +788,16 @@ function RepairMissionRail({ repair }) {
 
 function VerificationBanner({ verification }) {
   if (!verification) return null;
+  const scopeSources = Array.isArray(verification.findingScope?.sources)
+    ? verification.findingScope.sources
+    : verification.findingSource
+      ? [verification.findingSource]
+      : [];
+  const scoped = scopeSources.length > 1;
   const labels = {
-    resolved: "Original rule explicitly passed",
-    "still-present": "Original finding still present",
-    inconclusive: "Comparison is inconclusive",
+    resolved: scoped ? "Every captured rule occurrence passed" : "Original rule explicitly passed",
+    "still-present": scoped ? "A captured rule occurrence still fails" : "Original finding still present",
+    inconclusive: scoped ? "Rule-scope comparison is inconclusive" : "Comparison is inconclusive",
   };
   const outcomeLabels = {
     passed: "Passed",
@@ -831,7 +837,7 @@ function VerificationBanner({ verification }) {
           <dd>{verification.findingTitle}</dd>
         </div>
         <div>
-          <dt>Exact rule evidence</dt>
+          <dt>{scoped ? "Rule-scope evidence" : "Exact rule evidence"}</dt>
           <dd>{verification.comparable ? "Like for like" : `Not comparable · ${verification.comparisonReason ?? "evidence changed"}`}</dd>
         </div>
         <div>
@@ -839,7 +845,7 @@ function VerificationBanner({ verification }) {
           <dd>{verification.metricComparable ? "Like for like" : "Trend withheld · audit coverage changed"}</dd>
         </div>
         <div>
-          <dt>Exact rule outcome</dt>
+          <dt>{scoped ? "Aggregate rule outcome" : "Exact rule outcome"}</dt>
           <dd>{outcomeLabels[verification.ruleOutcome] ?? "Unknown"}</dd>
         </div>
         <div>
@@ -859,6 +865,15 @@ function VerificationBanner({ verification }) {
           <dd>{verification.repairRevision ?? 1}</dd>
         </div>
       </dl>
+      {scopeSources.length ? (
+        <RuleScopeReceipt
+          scope={verification.findingScope}
+          fallbackSource={verification.findingSource}
+          outcomes={verification.scopeOutcomes}
+          outcomeLabels={outcomeLabels}
+          mode="verification"
+        />
+      ) : null}
       {implementation ? (
         <section className="implementation-receipt verification-implementation" aria-labelledby="verification-implementation-title">
           <div className="implementation-receipt-heading">
@@ -902,7 +917,9 @@ function VerificationBanner({ verification }) {
               <code>{proof.baseline.auditId.slice(0, 8)}</code>
             </div>
             <span className="proof-rule">
-              {verification.findingSource?.auditId ?? verification.findingId}
+              {scoped
+                ? `${scopeSources.length} captured occurrences`
+                : verification.findingSource?.auditId ?? verification.findingId}
               <ArrowRight size={14} weight="bold" aria-hidden="true" />
               {outcomeLabels[verification.ruleOutcome] ?? "Unknown"}
             </span>
@@ -944,6 +961,60 @@ function VerificationBanner({ verification }) {
           <span>Portable Markdown · bounded public evidence</span>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+function RuleScopeReceipt({ scope, fallbackSource, outcomes = [], outcomeLabels = {}, mode }) {
+  const sources = Array.isArray(scope?.sources) && scope.sources.length
+    ? scope.sources
+    : fallbackSource
+      ? [fallbackSource]
+      : [];
+  if (!sources.length) return null;
+  const occurrenceCount = Number.isFinite(scope?.occurrenceCount)
+    ? Math.max(sources.length, scope.occurrenceCount)
+    : sources.length;
+  const omitted = Number.isFinite(scope?.occurrencesOmitted)
+    ? Math.max(0, scope.occurrencesOmitted)
+    : 0;
+  const outcomeFor = (source) => outcomes.find((candidate) =>
+    candidate?.source?.provider === source.provider &&
+    candidate?.source?.auditId === source.auditId &&
+    candidate?.source?.strategy === source.strategy,
+  );
+  return (
+    <section className={`rule-scope-receipt rule-scope-${mode}`} aria-label="Captured repair rule scope">
+      <header>
+        <div>
+          <p className="kicker">Frozen rule scope</p>
+          <strong>{occurrenceCount} measured occurrence{occurrenceCount === 1 ? "" : "s"}</strong>
+        </div>
+        <span>{mode === "verification" ? "Fresh outcomes" : "All must pass"}</span>
+      </header>
+      <ol>
+        {sources.map((source) => {
+          const result = outcomeFor(source);
+          const outcome = result?.outcome ?? result?.status;
+          return (
+            <li key={`${source.provider}-${source.auditId}-${source.strategy}`}>
+              <span>{source.strategy}</span>
+              <code title={`${source.provider} · ${source.auditId}`}>{source.provider} · {source.auditId}</code>
+              <strong className={`scope-outcome scope-outcome-${outcome ?? "required"}`}>
+                {mode === "verification"
+                  ? outcomeLabels[outcome] ?? "No explicit outcome"
+                  : "Required"}
+              </strong>
+            </li>
+          );
+        })}
+      </ol>
+      <p>
+        {mode === "verification"
+          ? "Resolution requires an explicit pass for every listed strategy."
+          : "This scope is carried into verification; one passing strategy cannot hide another failure."}
+        {omitted ? ` ${omitted} additional occurrence${omitted === 1 ? " was" : "s were"} omitted by the evidence bound.` : ""}
+      </p>
     </section>
   );
 }
@@ -1107,6 +1178,11 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
           <span className={`repair-risk risk-${repair.risk}`}>{repair.risk} risk</span>
         </div>
       </div>
+      <RuleScopeReceipt
+        scope={repair.findingScope}
+        fallbackSource={repair.findingSource}
+        mode="repair"
+      />
       <div className="patch-preview">
         <div>
           <Code size={16} weight="bold" aria-hidden="true" />
