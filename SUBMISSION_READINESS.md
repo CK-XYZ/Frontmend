@@ -26,7 +26,8 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Coding agents can request a source-safe repository fix brief with measured evidence, bounded same-rule occurrences, every failing measured strategy, ownership hints, and cross-viewport acceptance criteria; the visible report exposes the same repair scope, while Frontmend does not receive repository source or absolute paths.
 - [x] Coding agents can attach a bounded pre-approval repository plan containing only relative target files and planned checks; it is visible to the person, revisioned, agent-readable, exported with the reviewed proposal, and frozen into final verification provenance. Human-authored metadata, absolute paths, source contents, credentials, and environment values are rejected or excluded.
 - [x] People can request bounded, visible changes; agents can revise only after that request, and each new proposal re-enters human review with a five-version history cap.
-- [x] Approval is absent from WebMCP and requires explicit confirmation in the visible UI.
+- [x] In review mode, approval is absent from WebMCP and requires explicit confirmation in the visible UI.
+- [x] A person may instead enable an audit-scoped delegated-auto policy in the visible UI. It is capped at three agent-authored low-risk HTML/CSS plans with repository files and checks; the agent cannot create or widen the grant, and deployment attestation remains person-only.
 - [x] Verification remains blocked after approval until a person explicitly attests the reviewed change was deployed; WebMCP cannot grant or bypass that attestation.
 - [x] Repair missions expose the same step ownership and allowed next actions through HTTP, WebMCP, and the visible UI.
 - [x] After human approval, a coding agent can attach a bounded implementation receipt containing only repository-relative files, check outcomes, a summary, and optional Git object ID; only all-passed reported checks complete the implementation mission step, while failed/not-run evidence stays in an attention state with a corrective agent action. Repeated reports retain five prior receipts so failures cannot be silently overwritten, and the latest receipt is frozen into verification without being promoted to source, check, deployment, or resolution proof.
@@ -101,6 +102,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
-3. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
-4. Video capture, narration, upload, and Devpost submission remain external deliverables.
+2. Local application commit `ad18c75` adds the persisted review/delegated-auto mission policy and is newer than deployed application commit `a20e1ff`.
+3. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
+4. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
+5. Video capture, narration, upload, and Devpost submission remain external deliverables.

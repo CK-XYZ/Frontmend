@@ -53,10 +53,10 @@ const WEBMCP_TOOL_COPY = {
   start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
   get_site_exploration: ["Read site exploration", "Inspect mission progress and recurring evidence across selected pages."],
   get_verification_receipt: ["Read verification proof", "Retrieve the portable before-and-after receipt."],
-  stage_site_repair: ["Stage a repair", "Create a visible proposal without changing the target site."],
+  stage_site_repair: ["Submit a repository mission", "Share a bounded plan with the person or use their scoped auto grant."],
   revise_site_repair: ["Revise a repair", "Respond to the specific change request left by a person."],
   get_repair_workspace: ["Inspect repair state", "Read proposal versions, ownership, and allowed next actions."],
-  start_repair_verification: ["Verify a deployed repair", "Run fresh evidence after human approval and deployment attestation."],
+  start_repair_verification: ["Verify a deployed repair", "Run fresh evidence after recorded authorisation and human deployment attestation."],
 };
 
 function auditIdFromPathname(pathname) {
@@ -230,7 +230,7 @@ function WebMcpCapabilitySheet({ status, onClose }) {
           <Stamp size={20} weight="duotone" aria-hidden="true" />
           <div>
             <strong>Human authority stays visible</strong>
-            <p>Agents cannot approve a proposal or attest that a change was deployed. Frontmend adds and removes tools as those visible decisions change the mission.</p>
+            <p>Agents cannot grant themselves approval or attest deployment. A person may review each plan or visibly delegate a bounded low-risk policy; Frontmend records which authority advanced the mission.</p>
           </div>
         </div>
         <p className="webmcp-library-note">
@@ -2156,8 +2156,9 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
           <div className="agent-handoff">
             <Sparkle size={18} weight="fill" aria-hidden="true" />
             <p>
-              An agent can inspect these findings and stage a repair draft through WebMCP. You
-              approve it through an explicit confirmation in the visible workspace.
+              {repairPolicy.mode === "auto-low-risk"
+                ? "An agent can inspect the repository and submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
+                : "An agent can inspect the repository and submit a repair mission through WebMCP. You approve it in this shared workspace."}
             </p>
           </div>
         </aside>

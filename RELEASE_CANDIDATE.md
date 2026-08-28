@@ -9,6 +9,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Source provenance: standalone repository application commit `a20e1ff0edaa35538211129904c6ff746cf3525a`; push remains a separate action
+- Current local application: `ad18c7570b3a81301b71246bc7d94f15cfd91643`; adds a persisted human review/delegated-auto policy and is not deployed
 - Worker name: `frontmend`
 - Cloudflare version: `c04eb2e0-780b-4ee6-978f-876692784108`
 - Deployment created: `2026-08-28T21:26:28.048Z`
@@ -23,10 +24,10 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 94 passed, 0 failed on local application commit `a20e1ff` |
+| Tests | `bun test` | PASS — 97 passed, 0 failed on local application commit `ad18c75` |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 156.46 KiB raw / 35.36 KiB gzip Worker upload; no upload performed |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 162.87 KiB raw / 36.61 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -108,6 +109,23 @@ This is the strongest end-to-end product demonstration because the coding agent 
 
 Failure conditions: Frontmend receives source contents or absolute paths; the agent edits before approval; unrelated files change; failed or skipped checks are reported as passed; Frontmend approves, deploys, or claims resolution; or the visible receipt differs from the repository evidence.
 
+## Fresh-session Codex delegated-auto verification
+
+Use a fresh controlled audit with at least one genuine low-risk HTML or CSS finding. Do not reuse the review-mode repair above.
+
+1. Open the completed audit workspace and personally select **Delegated auto mode**. Check the authorisation statement first; confirm the visible receipt says three approvals remain, low risk only, HTML/CSS only, repository plan required, and deployment person-only.
+2. In a fresh Codex task rooted at the controlled repository, send:
+
+   > Use the visible Frontmend audit and my recorded delegated-auto policy. Choose one eligible low-risk HTML or CSS finding, inspect this repository, submit the exact repository-relative files and planned checks, implement only if Frontmend reports the mission was auto-authorised, run the checks, and attach the implementation receipt. Stop before deployment.
+
+3. Confirm `stage_site_repair` returns `approval.mode: "delegated-auto"`, `requiresHumanReview: false`, `approvalEvidence: "prior-human-auto-policy"`, and an implementation next action. The page must show **Auto-authorised by your policy**, the same files/checks, and two approvals remaining.
+4. Confirm Codex edits only the authorised files, runs the named checks, and calls `record_repository_implementation`. Failed or unrun checks must remain an attention state. **Deploy** stays site-owner-owned and no deployment evidence exists.
+5. Submit a separate JavaScript, headers, configuration, medium-risk, high-risk, or repository-plan-free mission. Confirm it remains a draft awaiting explicit review and does not consume another allowance.
+6. Switch the visible policy back to **Review each plan**. Confirm a later eligible low-risk plan also waits for explicit review; the agent cannot re-enable auto mode through WebMCP.
+7. Save screenshots of the human grant, auto-authorised mission, consumed allowance, repository diff/checks, implementation receipt, ineligible draft, and still-locked deployment gate.
+
+Failure conditions: the agent enables or widens the policy; an ineligible or plan-free proposal is auto-authorised; more than three approvals are consumed; deployment becomes automatic; allowance/state differs between UI and WebMCP; or repository work begins without an explicit or delegated authorisation receipt.
+
 ## Fresh-session Chrome verification
 
 Chrome's public WebMCP origin trial begins with Chrome 149. This exact inspector-based procedure uses Chrome 150.0.7861.0 or newer because that is the current minimum stated by Google's inspector extension. Until the production origin is enrolled in the WebMCP origin trial, use Chrome's explicit testing flag for this verification.
@@ -143,4 +161,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `a20e1ff`; it has not been pushed to a public remote. The newer repository commit contains documentation receipts only and does not change the deployed application.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `a20e1ff`; it has not been pushed to a public remote. Local application commit `ad18c75` adds the human-controlled delegated repair policy, passes the fresh gates above, and is not part of the deployed Worker version.
