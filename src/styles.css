@@ -350,7 +350,7 @@ input:focus-visible,
   align-items: center;
   gap: 7px;
   min-height: 38px;
-  color: #727c73;
+  color: var(--muted);
   font-size: 12px;
 }
 
@@ -372,7 +372,7 @@ input:focus-visible,
 .search-message {
   min-height: 22px;
   margin: 12px 0 0;
-  color: #7c857f;
+  color: var(--muted);
   font-size: 12px;
 }
 
