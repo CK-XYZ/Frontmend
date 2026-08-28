@@ -132,7 +132,7 @@ input:focus-visible,
   border: 0;
   border-radius: 9px;
   background: transparent;
-  color: #7a827d;
+  color: #66706a;
   font-family: inherit;
   font-size: 12px;
   font-weight: 650;
@@ -151,8 +151,8 @@ input:focus-visible,
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #adb3af;
-  box-shadow: 0 0 0 4px rgba(173, 179, 175, 0.14);
+  background: #7c8580;
+  box-shadow: 0 0 0 4px rgba(124, 133, 128, 0.14);
 }
 
 .webmcp-status.ready {
@@ -160,8 +160,8 @@ input:focus-visible,
 }
 
 .webmcp-status.ready .status-dot {
-  background: #8dbc3d;
-  box-shadow: 0 0 0 4px rgba(141, 188, 61, 0.15);
+  background: #688d2e;
+  box-shadow: 0 0 0 4px rgba(104, 141, 46, 0.15);
 }
 
 .webmcp-status.error {
@@ -169,8 +169,8 @@ input:focus-visible,
 }
 
 .webmcp-status.error .status-dot {
-  background: #d79b3f;
-  box-shadow: 0 0 0 4px rgba(215, 155, 63, 0.15);
+  background: #a66c20;
+  box-shadow: 0 0 0 4px rgba(166, 108, 32, 0.15);
 }
 
 .agent-activity-trigger {
@@ -239,7 +239,7 @@ input:focus-visible,
 
 .kicker {
   margin: 0 0 14px;
-  color: #75806c;
+  color: #66705f;
   font-size: 11px;
   font-weight: 740;
   letter-spacing: 0.17em;

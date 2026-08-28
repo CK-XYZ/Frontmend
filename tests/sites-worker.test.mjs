@@ -90,6 +90,14 @@ test("falls back to index.html for an unknown app route", async () => {
   assert.equal(response.status, 200);
   assert.deepEqual(calls, ["/audits/demo?source=share", "/index.html"]);
   assert.match(response.headers.get("content-security-policy"), /script-src 'self'/);
+  assert.match(
+    response.headers.get("content-security-policy"),
+    /script-src 'self' https:\/\/static\.cloudflareinsights\.com/,
+  );
+  assert.match(
+    response.headers.get("content-security-policy"),
+    /connect-src 'self' https:\/\/cloudflareinsights\.com/,
+  );
   assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
 });
 

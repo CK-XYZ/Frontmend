@@ -12,6 +12,6 @@ Frontmend is licensed under Apache-2.0. Its direct JavaScript dependencies are r
 
 Exact versions and transitive packages are pinned by `bun.lock`. Their package metadata and licence files remain the authoritative redistribution terms.
 
-Frontmend calls Google PageSpeed Insights when available. That remote service is not redistributed with this project; use is subject to Google's applicable API terms and quota policies. The production runtime targets Cloudflare Workers and Durable Objects, which are likewise external services governed by their own terms.
+Frontmend calls Google PageSpeed Insights when available. That remote service is not redistributed with this project; use is subject to Google's applicable API terms and quota policies. The production runtime targets Cloudflare Workers and Durable Objects, which are likewise external services governed by their own terms. The production domain also uses Cloudflare Web Analytics, delivered from `static.cloudflareinsights.com` with telemetry sent to `cloudflareinsights.com`; those are the only analytics origins permitted by the app's Content Security Policy.
 
 The interface direction was independently implemented for Frontmend. No third-party screenshots, site captures, fonts, logos, or private product source are bundled.

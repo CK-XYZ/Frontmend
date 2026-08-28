@@ -582,7 +582,7 @@ function withSecurityHeaders(response) {
   if (headers.get("content-type")?.includes("text/html")) {
     headers.set(
       "content-security-policy",
-      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self'; form-action 'self'; upgrade-insecure-requests",
+      "default-src 'self'; base-uri 'self'; object-src 'none'; frame-ancestors 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://cloudflareinsights.com; form-action 'self'; upgrade-insecure-requests",
     );
   }
   return new Response(response.body, {
