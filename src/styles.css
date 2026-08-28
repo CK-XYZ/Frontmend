@@ -3131,6 +3131,18 @@ input:focus-visible,
   white-space: nowrap;
 }
 
+.trail-card .trail-coverage,
+.trail-card .trail-coverage-changed {
+  margin-top: 6px;
+  font-weight: 700;
+  letter-spacing: 0.035em;
+  text-transform: uppercase;
+}
+
+.trail-card .trail-coverage-changed {
+  color: #9b563f;
+}
+
 .proof-actions {
   display: flex;
   grid-column: 1 / -1;

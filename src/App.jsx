@@ -687,6 +687,12 @@ function EvidenceTrail({ lineage }) {
     "still-present": "Rule still failing",
     inconclusive: "Inconclusive",
   };
+  const coverageLabel = (entry) => {
+    if (entry.attempt === 0) return "Reference coverage";
+    if (entry.metricComparableToBaseline === true) return "Comparable coverage";
+    if (entry.metricComparableToBaseline === false) return "Coverage changed · deltas withheld";
+    return "Coverage not recorded";
+  };
   return (
     <section className="evidence-trail" aria-labelledby="evidence-trail-title">
       <div className="evidence-trail-heading">
@@ -725,6 +731,9 @@ function EvidenceTrail({ lineage }) {
               <span>{statusLabels[entry.status] ?? "Measured"}</span>
               <small>
                 {entry.score ?? "—"} score · {entry.checksPassed ?? "—"} passed · {entry.findingCount ?? "—"} findings
+              </small>
+              <small className={entry.metricComparableToBaseline === false ? "trail-coverage-changed" : "trail-coverage"}>
+                {coverageLabel(entry)}
               </small>
             </div>
           </li>

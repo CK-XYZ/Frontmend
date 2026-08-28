@@ -461,6 +461,11 @@ test("partial verification separates exact-rule proof from whole-report metric c
   assert.equal(documentResolved.status, "resolved");
   assert.equal(documentResolved.comparable, true);
   assert.equal(documentResolved.metricComparable, false);
+  assert.equal(documentResolved.lineage.entries[1].metricComparableToBaseline, false);
+  assert.deepEqual(
+    documentResolved.lineage.entries[1].evidenceSignature.measuredStrategies,
+    ["desktop", "document"],
+  );
   assert.equal(documentResolved.proof.deltas.score, null);
   assert.match(documentResolved.message, /metrics are not like for like/);
 });
@@ -534,6 +539,8 @@ test("verification carries a bounded before and after proof receipt", () => {
   });
   assert.equal(context.lineage.rootAuditId, baseline.auditId);
   assert.equal(context.lineage.attemptCount, 0);
+  assert.equal(context.lineage.entries[0].metricComparableToBaseline, true);
+  assert.equal(context.lineage.entries[0].evidenceSignature.mode, "live-document");
   assert.deepEqual(
     context.lineage.entries.map((entry) => [entry.attempt, entry.status, entry.auditId]),
     [[0, "baseline", baseline.auditId]],
@@ -552,6 +559,8 @@ test("verification carries a bounded before and after proof receipt", () => {
   assert.equal(result.proof.current.exactRuleOutcome, "passed");
   assert.deepEqual(result.proof.deltas, { score: 11, checksPassed: 1, findings: -1 });
   assert.equal(result.lineage.attemptCount, 1);
+  assert.equal(result.lineage.entries[1].metricComparableToBaseline, true);
+  assert.deepEqual(result.lineage.entries[1].evidenceSignature, result.measuredEvidence);
   assert.deepEqual(
     result.lineage.entries.map((entry) => [entry.attempt, entry.status, entry.auditId]),
     [
@@ -651,7 +660,7 @@ test("exports a bounded honest verification receipt", () => {
       findingSource: finding.source,
       ruleOutcome: "failed",
       comparable: true,
-      metricComparable: true,
+      metricComparable: false,
       comparisonReason: "exact-document-rule",
       deploymentAttestedAt: 1_787_766_100_000,
       completedAt: 1_787_766_200_000,
@@ -668,7 +677,7 @@ test("exports a bounded honest verification receipt", () => {
           findingCount: 1,
           checks: { passed: 8 },
         },
-        deltas: { score: 0, checksPassed: 0, findings: 0 },
+        deltas: { score: null, checksPassed: null, findings: null },
       },
       lineage: {
         entries: [
@@ -679,6 +688,7 @@ test("exports a bounded honest verification receipt", () => {
             score: 89,
             checksPassed: 8,
             findingCount: 1,
+            metricComparableToBaseline: true,
           },
           {
             auditId: "c1de4f26-c222-4e44-a7e5-884ba6d9fe9a",
@@ -687,6 +697,7 @@ test("exports a bounded honest verification receipt", () => {
             score: 89,
             checksPassed: 8,
             findingCount: 1,
+            metricComparableToBaseline: false,
           },
         ],
       },
@@ -696,6 +707,9 @@ test("exports a bounded honest verification receipt", () => {
   assert.match(receipt, /# Frontmend verification receipt/);
   assert.match(receipt, /Frontmend does not claim it deployed or changed the target site/);
   assert.match(receipt, /Attempt 1/);
+  assert.match(receipt, /Metric coverage/);
+  assert.match(receipt, /Exact rule comparison: like for like/);
+  assert.match(receipt, /Attempt 1.*Changed; deltas withheld/);
   assert.match(receipt, /Repair revision: 3/);
   assert.match(receipt, /Deployment attested by site owner: 2026-/);
   assert.match(receipt, /Unsafe &lt;script&gt; \\| title/);

@@ -6,7 +6,7 @@ This is an evidence ledger, not a launch claim. A checked item identifies the pr
 
 The current local candidate receipt, deployment prerequisites, and exact fresh-session verification procedures are in [RELEASE_CANDIDATE.md](./RELEASE_CANDIDATE.md).
 
-Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](https://webmcp.devpost.com/rules), [Devpost challenge page](https://webmcp.devpost.com/), and [OpenAI challenge page](https://openai.com/webmcp-challenge/). The Official Rules and Devpost deadline currently say **3 September 2026 at 1:00 p.m. PT**; they prevail over the later time displayed on one OpenAI promotional section.
+Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](https://webmcp.devpost.com/rules), [Devpost challenge page](https://webmcp.devpost.com/), and [OpenAI challenge page](https://openai.com/webmcp-challenge/). The Official Rules and Devpost deadline currently say **3 September 2026 at 1:00 p.m. PT**; they prevail over the later time displayed on one OpenAI promotional section.
 
 ## Core product
 
@@ -34,7 +34,7 @@ Authoritative sources rechecked on 27 August 2026: [Devpost Official Rules](http
 - [x] Repair verification uses a fresh replay-safe audit; `resolved` requires an explicit pass for the exact original rule.
 - [x] Verification separates exact-rule comparability from whole-report metric comparability: partial/hybrid Lighthouse proof requires the same version and strategy, while score/check/finding deltas are withheld whenever audit coverage differs.
 - [x] Verification emits a visible and agent-readable before/after receipt with audit provenance and metric deltas.
-- [x] Repeated same-rule repairs retain a bounded audit lineage with root preservation and compaction after eight receipts.
+- [x] Repeated same-rule repairs retain a bounded audit lineage with root preservation, per-attempt evidence signatures and baseline metric-comparability verdicts, plus compaction after eight receipts.
 - [x] Completed verification proof exports as bounded Markdown through both a human download and semantic WebMCP tool.
 - [x] Browser-agent calls emit a bounded, session-only visible activity ledger that excludes inputs, URLs, patches, prompts, and secrets.
 - [x] Provider payloads are byte-bounded, evidence images are passively allowlisted, jobs expire, and the provider has per-client plus service-wide budgets.

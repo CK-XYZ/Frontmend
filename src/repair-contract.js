@@ -622,7 +622,13 @@ function reportSnapshot(report, source) {
   };
 }
 
-function lineageEntry(snapshot, attempt, status = "baseline") {
+function lineageEntry(
+  snapshot,
+  attempt,
+  status = "baseline",
+  evidenceSignature = null,
+  metricComparableToBaseline = attempt === 0 ? true : null,
+) {
   return {
     auditId: snapshot.auditId,
     completedAt: snapshot.completedAt,
@@ -630,6 +636,8 @@ function lineageEntry(snapshot, attempt, status = "baseline") {
     findingCount: snapshot.findingCount,
     checksPassed: snapshot.checks?.passed ?? null,
     exactRuleOutcome: snapshot.exactRuleOutcome,
+    evidenceSignature,
+    metricComparableToBaseline,
     attempt,
     status,
   };
@@ -657,15 +665,21 @@ function startingLineage(report, source) {
     findingSource: source,
     attemptCount: 0,
     omitted: 0,
-    entries: [lineageEntry(snapshot, 0)],
+    entries: [lineageEntry(snapshot, 0, "baseline", reportEvidenceSignature(report), true)],
   };
 }
 
-function appendLineage(lineage, snapshot, status) {
+function appendLineage(lineage, snapshot, status, evidenceSignature, metricComparableToBaseline) {
   const attemptCount = (reportMetric(lineage?.attemptCount) ?? 0) + 1;
   const entries = [
     ...(Array.isArray(lineage?.entries) ? lineage.entries : []),
-    lineageEntry(snapshot, attemptCount, status),
+    lineageEntry(
+      snapshot,
+      attemptCount,
+      status,
+      evidenceSignature,
+      metricComparableToBaseline,
+    ),
   ];
   const boundedEntries = entries.length <= MAX_LINEAGE_ENTRIES
     ? entries
@@ -839,10 +853,12 @@ export function compareVerification(report, verification, now = Date.now()) {
       findingSource: source,
       attemptCount: 0,
       omitted: 0,
-      entries: [lineageEntry(baseline, 0)],
+      entries: [lineageEntry(baseline, 0, "baseline", verification?.baselineEvidence ?? null, true)],
     },
     current,
     status,
+    measuredEvidence,
+    metricComparable,
   );
   return {
     baselineAuditId: verification.baselineAuditId,
@@ -1234,10 +1250,10 @@ export function verificationReceiptMarkdown(report) {
       "",
       "## Evidence trail",
       "",
-      "| Attempt | Audit | Result | Score | Passed | Findings |",
-      "| --- | --- | --- | ---: | ---: | ---: |",
+      "| Attempt | Audit | Result | Metric coverage | Score | Passed | Findings |",
+      "| --- | --- | --- | --- | ---: | ---: | ---: |",
       ...entries.map((entry) =>
-        `| ${entry.attempt === 0 ? "Baseline" : `Attempt ${entry.attempt}`} | \`${receiptText(entry.auditId, 80)}\` | ${receiptText(entry.status)} | ${entry.score ?? "—"} | ${entry.checksPassed ?? "—"} | ${entry.findingCount ?? "—"} |`,
+        `| ${entry.attempt === 0 ? "Baseline" : `Attempt ${entry.attempt}`} | \`${receiptText(entry.auditId, 80)}\` | ${receiptText(entry.status)} | ${entry.attempt === 0 ? "Reference" : entry.metricComparableToBaseline === true ? "Like for like" : entry.metricComparableToBaseline === false ? "Changed; deltas withheld" : "Not recorded"} | ${entry.score ?? "—"} | ${entry.checksPassed ?? "—"} | ${entry.findingCount ?? "—"} |`,
       ),
     );
   }
