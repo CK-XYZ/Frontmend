@@ -33,7 +33,7 @@ import {
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
 
-const BODY_LIMIT_BYTES = 4096;
+const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
 const RATE_LIMIT = 5;
 const GLOBAL_RATE_LIMIT = 60;

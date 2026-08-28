@@ -626,6 +626,57 @@ test("audit-scoped schemas make only the current audit ID optional", async () =>
   assert.match(withoutContext.error.message, /Provide auditId or open the audit workspace/);
 });
 
+test("diagnostic tools keep measured evidence separate from agent-reported repository diagnosis", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const missionId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  let mission = {
+    id: missionId,
+    auditId,
+    findingId: "lighthouse-errors-in-console-mobile",
+    measuredEvidence: { kind: "console-errors", provenance: "measured-lighthouse", completeness: "actionable" },
+    requiredInvestigations: ["Reproduce the exact console or network failure"],
+    diagnosis: null,
+    state: { state: "awaiting-diagnosis" },
+  };
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    openDiagnosticMission: async (receivedAuditId, findingId) => {
+      assert.equal(receivedAuditId, auditId);
+      assert.equal(findingId, mission.findingId);
+      return mission;
+    },
+    submitDiagnosticEvidence: async (receivedAuditId, receivedMissionId, input, source) => {
+      assert.equal(receivedAuditId, auditId);
+      assert.equal(receivedMissionId, missionId);
+      assert.equal(source, "agent");
+      mission = {
+        ...mission,
+        diagnosis: { ...input, source: "agent", agentReported: true, reportedAt: 20 },
+        state: { state: "ready-for-repair" },
+      };
+      return mission;
+    },
+  };
+  const tools = createFrontmendTools(service);
+  const opened = await findTool(tools, "open_diagnostic_mission").execute({ findingId: mission.findingId });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.data.measuredEvidence.provenance, "measured-lighthouse");
+
+  const diagnosed = await findTool(tools, "submit_runtime_diagnosis").execute({
+    missionId,
+    summary: "The initial request rejects without an expected error boundary.",
+    reproduction: "Reload the page, open Console, and observe the first-party rejection.",
+    observations: [{ kind: "console", detail: "The error occurs once before interaction." }],
+    sourceLocations: [{ file: "src/load.js", line: 12, symbol: "loadData", reason: "Owns the rejected request." }],
+    verificationChecks: ["bun test", "Reload with an empty console"],
+    confidence: "high",
+  });
+  assert.equal(diagnosed.ok, true);
+  assert.equal(diagnosed.data.diagnosis.agentReported, true);
+  assert.equal(diagnosed.data.measuredEvidence.provenance, "measured-lighthouse");
+  assert.equal(diagnosed.data.state.state, "ready-for-repair");
+});
+
 test("tools reject unknown fields without mutating state", async () => {
   const service = createAuditService();
   const result = await findTool(createFrontmendTools(service), "start_site_audit").execute({
@@ -661,7 +712,9 @@ test("contextual tool availability follows the visible audit and human review st
     getActiveAudit: () => audit,
     getRepairs: () => repairs,
     getSiteExplorations: () => explorations,
+    getDiagnosticMissions: () => diagnosticMissions,
   };
+  let diagnosticMissions = [];
 
   assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit"]);
 
@@ -739,6 +792,35 @@ test("contextual tool availability follows the visible audit and human review st
     "stage_site_repair",
     "get_repair_workspace",
     "start_repair_verification",
+  ]);
+
+  repairs = [];
+  audit = {
+    id: "audit-1",
+    status: "complete",
+    report: { findings: [{ id: "console", diagnosticEvidence: { kind: "console-errors" } }] },
+  };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "open_diagnostic_mission",
+    "get_repair_workspace",
+  ]);
+  diagnosticMissions = [{ state: { state: "awaiting-diagnosis" } }];
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "open_diagnostic_mission",
+    "submit_runtime_diagnosis",
+    "get_repair_workspace",
+  ]);
+  diagnosticMissions = [{ state: { state: "ready-for-repair" } }];
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "open_diagnostic_mission",
+    "stage_site_repair",
+    "get_repair_workspace",
   ]);
 });
 
