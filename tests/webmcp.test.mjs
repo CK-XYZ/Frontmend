@@ -356,6 +356,8 @@ test("repair tools use visible audit context while preserving explicit repair ID
       commitSha: "94a2827",
       source: "agent",
       reportedAt: 19,
+      agentReported: true,
+      sourceChangedByFrontmend: false,
     },
     implementationHistory: [{
       revision: 1,
@@ -377,6 +379,7 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.equal(readyWorkspace.data.repairs[0].implementationHistory[0].checks[0].status, "failed");
   assert.equal(readyWorkspace.data.repairs[0].implementationHistory[0].sourceChangedByFrontmend, false);
   assert.equal(readyWorkspace.data.repairs[0].mission.state, "ready-for-verification");
+  assert.equal(readyWorkspace.data.repairs[0].mission.implementationEvidence, "checks-passed");
 
   const verification = await findTool(tools, "start_repair_verification").execute({
     auditId: repair.auditId,
@@ -421,6 +424,8 @@ test("implementation receipt tool reports bounded repository evidence only", asy
 
   assert.equal(result.ok, true);
   assert.equal(result.data.implementationReceipt.sourceChangedByFrontmend, false);
+  assert.equal(result.data.mission.implementationEvidence, "checks-passed");
+  assert.match(result.data.nextAction, /checks passed/i);
   assert.deepEqual(calls[0], {
     receivedAuditId: auditId,
     receivedRepairId: repairId,
@@ -431,6 +436,23 @@ test("implementation receipt tool reports bounded repository evidence only", asy
       commitSha: "94a2827",
     },
   });
+
+  const failed = await findTool(
+    createFrontmendTools(service),
+    "record_repository_implementation",
+  ).execute({
+    repairId,
+    summary: "Applied the change but the production build failed.",
+    files: ["worker/index.js"],
+    checks: [{ name: "bun run build", status: "failed" }],
+  });
+  assert.equal(failed.ok, true);
+  assert.equal(failed.data.mission.implementationEvidence, "checks-failed");
+  assert.equal(
+    failed.data.mission.steps.find((step) => step.id === "implement").status,
+    "attention",
+  );
+  assert.match(failed.data.nextAction, /record a new receipt/i);
 });
 
 test("verification receipt tool returns the same bounded proof artifact", async () => {

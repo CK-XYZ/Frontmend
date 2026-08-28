@@ -1226,8 +1226,10 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(implementedRepair.implementationReceipt.sourceChangedByFrontmend, false);
   assert.equal(
     implementedRepair.mission.steps.find((step) => step.id === "implement").status,
-    "complete",
+    "attention",
   );
+  assert.equal(implementedRepair.mission.implementationEvidence, "checks-failed");
+  assert.equal(implementedRepair.mission.state, "implementation-attention");
   assert.equal(implementedRepair.deploymentAttestedAt, null);
 
   const implementationRerunResponse = await job.fetch(
@@ -1248,6 +1250,11 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(implementationRerun.implementationReceipt.revision, 2);
   assert.equal(implementationRerun.implementationHistory.length, 1);
   assert.equal(implementationRerun.implementationHistory[0].checks[1].status, "failed");
+  assert.equal(implementationRerun.mission.implementationEvidence, "checks-passed");
+  assert.equal(
+    implementationRerun.mission.steps.find((step) => step.id === "implement").status,
+    "complete",
+  );
 
   const exportResponse = await job.fetch(
     new Request(`https://frontmend.internal/repairs/${first.id}/export`),

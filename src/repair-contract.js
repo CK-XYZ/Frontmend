@@ -514,11 +514,26 @@ function implementationReceiptSnapshot(receipt) {
   };
 }
 
+function implementationEvidenceState(repair) {
+  const receipt = repair?.implementationReceipt;
+  if (!receipt?.agentReported) return "none";
+  const checks = Array.isArray(receipt.checks) ? receipt.checks : [];
+  if (checks.some((check) => check?.status === "failed")) return "checks-failed";
+  if (!checks.length || checks.some((check) => check?.status !== "passed")) {
+    return "checks-incomplete";
+  }
+  return "checks-passed";
+}
+
 export function repairMissionState(repair) {
   const hasDraft = Boolean(repair?.id);
   const approved = repair?.status === "approved";
   const changesRequested = repair?.status === "changes-requested";
-  const implemented = approved && Boolean(repair?.implementationReceipt?.agentReported);
+  const implementationEvidence = implementationEvidenceState(repair);
+  const implemented = approved && implementationEvidence === "checks-passed";
+  const implementationNeedsAttention = approved && ["checks-failed", "checks-incomplete"].includes(
+    implementationEvidence,
+  );
   const deploymentAttested = approved && Number.isFinite(repair?.deploymentAttestedAt);
   const steps = [
     { id: "measure", label: "Measure", owner: "Frontmend", status: "complete" },
@@ -538,7 +553,14 @@ export function repairMissionState(repair) {
       id: "implement",
       label: "Implement",
       owner: "Coding agent",
-      status: implemented ? "complete" : approved ? "available" : "blocked",
+      detail: implementationEvidence === "checks-passed"
+        ? "Agent checks passed"
+        : implementationEvidence === "checks-failed"
+          ? "Agent checks failed"
+          : implementationEvidence === "checks-incomplete"
+            ? "Agent checks incomplete"
+            : "Coding agent · optional receipt",
+      status: implemented ? "complete" : implementationNeedsAttention ? "attention" : approved ? "available" : "blocked",
     },
     {
       id: "deploy",
@@ -578,11 +600,14 @@ export function repairMissionState(repair) {
       : approved
         ? deploymentAttested
           ? "ready-for-verification"
-          : "awaiting-external-deployment"
+          : implementationNeedsAttention
+            ? "implementation-attention"
+            : "awaiting-external-deployment"
         : "awaiting-human-review",
     steps,
     nextActions,
     targetMutation: "external-only",
+    implementationEvidence,
     deploymentEvidence: deploymentAttested ? "site-owner-attestation" : "none",
   };
 }

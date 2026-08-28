@@ -620,7 +620,7 @@ export function createFrontmendTools(service) {
       name: "record_repository_implementation",
       title: "Record repository implementation",
       description:
-        "Record a bounded receipt after a coding agent implements a human-approved repair in the repository. It accepts only repository-relative filenames, check outcomes, and an optional Git object ID. This does not inspect or upload source, change files, approve the repair, attest deployment, or claim the public result is fixed.",
+        "Record a bounded receipt after a coding agent implements a human-approved repair in the repository. It accepts only repository-relative filenames, check outcomes, and an optional Git object ID. Failed or not-run checks remain visible and keep the implementation step from appearing complete. This does not inspect or upload source, change files, approve the repair, attest deployment, or claim the public result is fixed.",
       inputSchema: {
         type: "object",
         properties: {
@@ -669,13 +669,19 @@ export function createFrontmendTools(service) {
             commitSha: optionalString(value.commitSha, "commitSha", 64),
           },
         );
+        const mission = repair.mission ?? repairMissionState(repair);
+        const nextAction = mission.implementationEvidence === "checks-passed"
+          ? "The agent-reported checks passed. The site owner may review the receipt, deploy externally, and attest that handoff in the visible UI."
+          : mission.implementationEvidence === "checks-failed"
+            ? "One or more agent-reported checks failed. Correct the implementation and record a new receipt, or leave the failure visible for the site owner to assess before deployment."
+            : "One or more repository checks were not run. Run them and record a new receipt, or leave the incomplete evidence visible for the site owner to assess before deployment.";
         return {
           auditId,
           repairId: repair.id,
           status: repair.status,
           implementationReceipt: repair.implementationReceipt,
-          mission: repair.mission ?? repairMissionState(repair),
-          nextAction: "The site owner may now review the receipt, deploy externally, and attest that handoff in the visible UI.",
+          mission,
+          nextAction,
         };
       },
     }),

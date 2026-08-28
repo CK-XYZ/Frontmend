@@ -46,7 +46,7 @@ Use the repair mission rail to narrate ownership: Frontmend measures, a person o
 
 Review the proposal and click **Approve repair plan** yourself. Show that export becomes available, while verification remains locked at **Waiting for site owner**. Ask the agent to verify now and show the structured `DEPLOYMENT_NOT_ATTESTED` failure in the visible Agent log.
 
-On a controlled repository, let the coding agent implement the approved plan through its normal repository tools and run the relevant checks. Then call `record_repository_implementation` with only a short summary, repository-relative filenames, check outcomes, and an optional commit ID. Show the same receipt in the visible repair workspace. Explain that Frontmend still did not inspect source, make the edit, deploy it, or prove the public result.
+On a controlled repository, let the coding agent implement the approved plan through its normal repository tools and run the relevant checks. Then call `record_repository_implementation` with only a short summary, repository-relative filenames, check outcomes, and an optional commit ID. Show the same receipt in the visible repair workspace. If a check failed or was not run, show the amber **Implement** attention state and the agent's corrective next action; only a receipt whose reported checks all passed earns the completion tick. Explain that Frontmend still did not inspect source, make the edit, deploy it, or prove the public result.
 
 Only on a controlled target where the reviewed change has genuinely been deployed, check the site-owner confirmation and click **Confirm deployment handoff**. Explain that this is a human report, not a Frontmend deployment claim; it unlocks measurement but does not claim the repair succeeded.
 

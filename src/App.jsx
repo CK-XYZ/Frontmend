@@ -749,6 +749,7 @@ function RepairMissionRail({ repair }) {
     "not-started": "Ready to scope",
     "awaiting-human-review": "Human decision required",
     "changes-requested": "Agent revision required",
+    "implementation-attention": "Repository checks need attention",
     "awaiting-external-deployment": "Waiting for site owner",
     "ready-for-verification": "Ready to verify",
   };
@@ -770,11 +771,13 @@ function RepairMissionRail({ repair }) {
             <span className="mission-marker" aria-hidden="true">
               {["complete", "attested"].includes(step.status) ? (
                 <Check size={12} weight="bold" />
+              ) : step.status === "attention" ? (
+                <Warning size={12} weight="fill" />
               ) : index + 1}
             </span>
             <div>
               <strong>{step.label}</strong>
-              <small>{step.owner}</small>
+              <small>{step.detail ?? step.owner}</small>
             </div>
           </li>
         ))}

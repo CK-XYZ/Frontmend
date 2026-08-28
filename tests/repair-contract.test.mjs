@@ -137,6 +137,7 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   const approved = repairMissionState({ id: "repair-1", status: "approved" });
   assert.equal(approved.state, "awaiting-external-deployment");
   assert.equal(approved.targetMutation, "external-only");
+  assert.equal(approved.implementationEvidence, "none");
   assert.equal(approved.deploymentEvidence, "none");
   assert.equal(approved.steps.find((step) => step.id === "deploy").status, "current");
   assert.equal(approved.steps.find((step) => step.id === "verify").status, "blocked");
@@ -193,7 +194,14 @@ test("records bounded agent implementation evidence without claiming deployment"
   assert.deepEqual(implemented.implementationHistory, []);
   assert.equal(implemented.implementationReceipt.sourceChangedByFrontmend, false);
   assert.equal(implemented.deploymentAttestedAt, null);
-  assert.equal(repairMissionState(implemented).steps.find((step) => step.id === "implement").status, "complete");
+  const failedMission = repairMissionState(implemented);
+  assert.equal(failedMission.state, "implementation-attention");
+  assert.equal(failedMission.implementationEvidence, "checks-failed");
+  assert.equal(failedMission.steps.find((step) => step.id === "implement").status, "attention");
+  assert.equal(
+    failedMission.steps.find((step) => step.id === "implement").detail,
+    "Agent checks failed",
+  );
   const rerun = recordRepositoryImplementation(implemented, {
     summary: "Re-ran the checks after correcting the repository test fixture.",
     files: ["worker/index.js", "tests/headers.test.mjs"],
@@ -204,6 +212,19 @@ test("records bounded agent implementation evidence without claiming deployment"
   assert.equal(rerun.implementationHistory.length, 1);
   assert.equal(rerun.implementationHistory[0].revision, 1);
   assert.equal(rerun.implementationHistory[0].checks[1].status, "failed");
+  assert.equal(repairMissionState(rerun).implementationEvidence, "checks-passed");
+  assert.equal(repairMissionState(rerun).steps.find((step) => step.id === "implement").status, "complete");
+
+  const incompleteMission = repairMissionState({
+    ...rerun,
+    implementationReceipt: {
+      ...rerun.implementationReceipt,
+      checks: [{ name: "production build", status: "not-run" }],
+    },
+  });
+  assert.equal(incompleteMission.implementationEvidence, "checks-incomplete");
+  assert.equal(incompleteMission.state, "implementation-attention");
+  assert.equal(incompleteMission.steps.find((step) => step.id === "implement").status, "attention");
   let boundedHistory = rerun;
   for (let revision = 3; revision <= 8; revision += 1) {
     boundedHistory = recordRepositoryImplementation(boundedHistory, {

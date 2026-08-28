@@ -2207,6 +2207,17 @@ input:focus-visible,
   color: #252d26;
 }
 
+.repair-mission .mission-attention {
+  border-color: #d8b76f;
+  background: #fff8e8;
+}
+
+.mission-attention .mission-marker {
+  border-color: #c79b45;
+  background: #fff3d4;
+  color: #8d641e;
+}
+
 .repair-mission .mission-external {
   border-style: dashed;
   border-color: #c6ad82;
