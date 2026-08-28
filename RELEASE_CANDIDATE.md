@@ -8,11 +8,10 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 
 ## Candidate identity
 
-- Source provenance: standalone repository application commit `b94e6cb8fb9419145f7340c77de0882eb015d891`; push remains a separate action
-- Current local application: `a20e1ff0edaa35538211129904c6ff746cf3525a`; adds pre-approval repository plans plus visible and agent-readable per-strategy repair proof and is not deployed
+- Source provenance: standalone repository application commit `a20e1ff0edaa35538211129904c6ff746cf3525a`; push remains a separate action
 - Worker name: `frontmend`
-- Cloudflare version: `59677b80-ed0d-4851-8f66-403a31cc1985`
-- Deployment created: `2026-08-28T20:55:12.233Z`
+- Cloudflare version: `c04eb2e0-780b-4ee6-978f-876692784108`
+- Deployment created: `2026-08-28T21:26:28.048Z`
 - Wrangler source of truth: `wrangler.jsonc`
 - Runtime: Worker module plus `FrontmendAuditGate` and `FrontmendAuditJob` SQLite Durable Objects
 - Static assets: `dist/client`, exposed to the Worker as `ASSETS`
@@ -47,8 +46,8 @@ The candidate is deployed and HTTP/API-verified but not WebMCP-verified until ea
 - [x] Record the exact deployed URL, deployed version ID, source state, UTC deployment time, and final command receipt here.
 - [x] Verify explicit WebMCP response headers: `Origin-Agent-Cluster: ?1` and `Permissions-Policy: tools=(self)`.
 - [x] Verify public DNS through `1.1.1.1` and `8.8.8.8`, valid HTTPS, current hashed assets, SPA restoration, private-target rejection, and Durable Object persistence.
-- [x] Complete the production PageSpeed path on the deployed application commit: final audit `623f74f6-8699-4aac-b273-23d8642713d1` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 97, recorded zero findings and zero viewport failures, and used no fallback. Mobile scored 97/100/100/91 and desktop 100/100/100/91 for performance/accessibility/best-practices/SEO.
-- [x] Verify the deployed production asset hashes over public HTTPS (`index-DEWSzaVC.css`, `index-D4qj_4ma.js`), SPA restoration, security/WebMCP headers, and structured private-target rejection.
+- [x] Complete the production PageSpeed path on the deployed application commit: final audit `cac6da7e-ca38-4084-a0e1-c5e181451432` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 98, recorded 22 passed checks, zero findings and zero viewport failures, and used no fallback. Mobile scored 98/100/100/91 and desktop 100/100/100/91 for performance/accessibility/best-practices/SEO.
+- [x] Verify the deployed production asset hashes over public HTTPS (`index-BR_ayGCH.css`, `index-CkJVqSRf.js`), SPA restoration, security/WebMCP headers, and structured private-target rejection.
 - [ ] Complete a fresh Chrome console smoke on the currently deployed asset hashes with zero errors or warnings.
 - [ ] Complete both fresh-session procedures below against the exact production URL.
 
@@ -144,4 +143,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC2 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `b94e6cb`; it has not been pushed to a public remote. Local application commit `a20e1ff` is newer, passes the fresh gates above, and is not part of the deployed Worker version.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the remaining fresh-session procedures have real receipts. The exact deployed application source is committed locally at `a20e1ff`; it has not been pushed to a public remote. The newer repository commit contains documentation receipts only and does not change the deployed application.

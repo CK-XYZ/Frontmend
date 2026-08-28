@@ -76,10 +76,10 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Human-agent revision proof on current audit `f61621be`, repair `decdfde4`: visible feedback produced agent revision 2, reopened review, and rendered both proposal versions plus the request in bounded UI/API history.
 - [x] Clean-checkout installation and build receipt.
 - [x] Rendered narrow-viewport and reduced-motion browser receipt.
-- [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves application commit `b94e6cb` as Cloudflare Worker version `59677b80-ed0d-4851-8f66-403a31cc1985`; valid HTTPS, new hashed assets, SPA restoration, security/WebMCP headers, structured private-target rejection, and the fresh audit Durable Object path were verified.
+- [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves application commit `a20e1ff` as Cloudflare Worker version `c04eb2e0-780b-4ee6-978f-876692784108`; valid HTTPS, current hashed assets, SPA restoration, security/WebMCP headers, structured private-target rejection, and the fresh audit Durable Object path were verified.
 - [x] Production security/WebMCP headers: `Origin-Agent-Cluster: ?1`, `Permissions-Policy: tools=(self)`, CSP, `nosniff`, frame denial, and strict-origin referrer policy are present on the public origin.
-- [x] Production PageSpeed API-key path on the current deployment: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `623f74f6-8699-4aac-b273-23d8642713d1` returned Lighthouse 13.4.1 mobile and desktop evidence, score 97, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
-- [x] Public HTTP smoke on current assets `index-DEWSzaVC.css` and `index-D4qj_4ma.js`: both returned 200 with their expected content types; intended security/WebMCP headers and SPA restoration were present.
+- [x] Production PageSpeed API-key path on the current deployment: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `cac6da7e-ca38-4084-a0e1-c5e181451432` returned Lighthouse 13.4.1 mobile and desktop evidence, score 98, 22 passed checks, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
+- [x] Public HTTP smoke on current assets `index-BR_ayGCH.css` and `index-CkJVqSRf.js`: both returned 200 with their expected content types; intended security/WebMCP headers and SPA restoration were present.
 - [ ] Fresh Chrome console smoke on the current deployed asset hashes; the zero-error browser receipt for `index-BJ5D1pIW.css` and `index-Ba57YJQT.js` belongs to the prior deployment.
 - [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures; `{ "unexpected": true }` returned structured `INVALID_INPUT` without changing state. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
 
@@ -101,7 +101,6 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Local application commit `a20e1ff` adds reviewed repository plans and visible, agent-readable per-strategy repair proof but is newer than deployed application commit `b94e6cb`.
-3. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
-4. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
-5. Video capture, narration, upload, and Devpost submission remain external deliverables.
+2. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
+3. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
+4. Video capture, narration, upload, and Devpost submission remain external deliverables.
