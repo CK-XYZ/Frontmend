@@ -31,7 +31,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] After human approval, a coding agent can attach a bounded implementation receipt containing only repository-relative files, check outcomes, a summary, and optional Git object ID; only all-passed reported checks complete the implementation mission step, while failed/not-run evidence stays in an attention state with a corrective agent action. Repeated reports retain five prior receipts so failures cannot be silently overwritten, and the latest receipt is frozen into verification without being promoted to source, check, deployment, or resolution proof.
 - [x] Approved plans export as Markdown with an explicit proposal-only notice.
 - [x] Completed audits export as bounded Markdown with escaped provider text, rule-level provenance, and evidence-mode limits through the visible report workspace.
-- [x] Repair verification uses a fresh replay-safe audit; `resolved` requires an explicit pass for the exact original rule.
+- [x] Repair verification uses a fresh replay-safe audit; `resolved` requires every captured mobile, desktop, or document occurrence of the original measured rule to pass explicitly. One passing strategy cannot hide a sibling failure or missing comparison.
 - [x] Verification separates exact-rule comparability from whole-report metric comparability: partial/hybrid Lighthouse proof requires the same version and strategy, while score/check/finding deltas are withheld whenever audit coverage differs.
 - [x] Verification emits a visible and agent-readable before/after receipt with audit provenance, metric deltas, and the frozen repository implementation receipt when one was recorded.
 - [x] Repeated same-rule repairs retain a bounded audit lineage with root preservation, per-attempt evidence signatures and baseline metric-comparability verdicts, plus compaction after eight receipts.
@@ -45,7 +45,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 93 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun test`: 94 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
 - [x] `bunx wrangler deploy --dry-run`: static assets plus both Durable Object bindings recognized.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
@@ -74,10 +74,11 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Human-agent revision proof on current audit `f61621be`, repair `decdfde4`: visible feedback produced agent revision 2, reopened review, and rendered both proposal versions plus the request in bounded UI/API history.
 - [x] Clean-checkout installation and build receipt.
 - [x] Rendered narrow-viewport and reduced-motion browser receipt.
-- [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves commit `88b0b7e` as Cloudflare Worker version `80ac7ced-4c8d-4cc3-ade4-5fd1a90873b6`; public DNS, valid HTTPS, final hashed assets, SPA restoration, structured private-target rejection, and Durable Object execution were verified.
+- [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves application commit `b94e6cb` as Cloudflare Worker version `59677b80-ed0d-4851-8f66-403a31cc1985`; valid HTTPS, new hashed assets, SPA restoration, security/WebMCP headers, structured private-target rejection, and the fresh audit Durable Object path were verified.
 - [x] Production security/WebMCP headers: `Origin-Agent-Cluster: ?1`, `Permissions-Policy: tools=(self)`, CSP, `nosniff`, frame denial, and strict-origin referrer policy are present on the public origin.
-- [x] Production PageSpeed API-key path: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `67b15094-2878-488b-b134-9088c60ce208` returned Lighthouse 13.4.1 mobile and desktop evidence, score 97, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
-- [x] Final production Chrome smoke receipt: exact assets `index-BJ5D1pIW.css` and `index-Ba57YJQT.js`, intended security/WebMCP headers, and zero console errors or warnings.
+- [x] Production PageSpeed API-key path on the current deployment: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `623f74f6-8699-4aac-b273-23d8642713d1` returned Lighthouse 13.4.1 mobile and desktop evidence, score 97, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
+- [x] Public HTTP smoke on current assets `index-DEWSzaVC.css` and `index-D4qj_4ma.js`: both returned 200 with their expected content types; intended security/WebMCP headers and SPA restoration were present.
+- [ ] Fresh Chrome console smoke on the current deployed asset hashes; the zero-error browser receipt for `index-BJ5D1pIW.css` and `index-Ba57YJQT.js` belongs to the prior deployment.
 - [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures; `{ "unexpected": true }` returned structured `INVALID_INPUT` without changing state. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
 
 ## Competition delivery
@@ -98,6 +99,6 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Local application commit `b94f624` adds the verified cross-viewport repair scope but is newer than deployed application commit `88b0b7e`.
+2. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
 3. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
 4. Video capture, narration, upload, and Devpost submission remain external deliverables.
