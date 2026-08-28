@@ -41,13 +41,15 @@ const LANDING_SIGNALS = [
   { label: "Accessibility", detail: "Evidence attached", state: "neutral", icon: ShieldCheck },
   { label: "Verification", detail: "Before and after", state: "good", icon: CheckCircle },
 ];
-const WEBMCP_TOOL_COUNT = 14;
+const WEBMCP_TOOL_COUNT = 16;
 const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
   cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
   get_site_audit_results: ["Read audit evidence", "Inspect the bounded findings and measured rule outcomes."],
   get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
+  open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into browser, repository, and verification investigations."],
+  submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Attach clearly labelled browser observations and repository ownership before proposing a repair."],
   record_repository_implementation: ["Record repository implementation", "Attach bounded file and check evidence after an approved repair is implemented by a coding agent."],
   start_related_page_audit: ["Audit an observed route", "Start a new audit from a same-site path found in this evidence."],
   start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
@@ -1084,6 +1086,88 @@ function RepositoryPlanCard({ plan }) {
   );
 }
 
+function DiagnosticMissionCard({ auditId, finding, mission }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!finding?.diagnosticEvidence) return null;
+  const ready = mission?.state?.state === "ready-for-repair";
+  const openMission = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await auditService.openDiagnosticMission(auditId, finding.id);
+    } catch (cause) {
+      setError(cause instanceof AuditError ? cause.message : "The diagnostic mission could not be opened.");
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <section className={`diagnostic-mission ${ready ? "ready" : ""}`} aria-label="Diagnostic mission">
+      <header>
+        <span aria-hidden="true"><MagnifyingGlass size={20} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Measured symptom → owned cause</p>
+          <strong>{ready ? "Diagnosis ready for a repair proposal" : "Add browser and repository diagnosis"}</strong>
+          <p>Lighthouse remains the sensor. The diagnosis is separate, labelled evidence contributed by a person or agent.</p>
+        </div>
+        <span className="diagnostic-mission-state">{ready ? "Ready" : mission ? "In progress" : "Not opened"}</span>
+      </header>
+      {mission ? (
+        <>
+          <ol>
+            {mission.requiredInvestigations.map((item) => <li key={item}>{item}</li>)}
+          </ol>
+          {mission.diagnosis ? (
+            <div className="diagnostic-diagnosis">
+              <div>
+                <strong>{mission.diagnosis.summary}</strong>
+                <span>{mission.diagnosis.agentReported ? "Agent-reported" : "Person-reported"} · {mission.diagnosis.confidence} confidence</span>
+              </div>
+              <p>{mission.diagnosis.reproduction}</p>
+              <ul>
+                {mission.diagnosis.sourceLocations.map((location) => (
+                  <li key={`${location.file}-${location.line ?? "file"}`}>
+                    <code>{location.file}{location.line ? `:${location.line}` : ""}</code> — {location.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : (
+            <p className="diagnostic-mission-note">
+              A connected coding agent can now reproduce the issue, inspect repository ownership, and call <code>submit_runtime_diagnosis</code>. Manual repair drafting remains available below.
+            </p>
+          )}
+        </>
+      ) : (
+        <button type="button" className="repair-button" onClick={openMission} disabled={busy}>
+          <MagnifyingGlass size={17} weight="bold" />
+          {busy ? "Opening…" : "Open diagnostic mission"}
+        </button>
+      )}
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
+function DiagnosticProvenanceCard({ mission }) {
+  if (!mission?.diagnosis) return null;
+  return (
+    <section className="diagnostic-provenance" aria-label="Frozen diagnostic provenance">
+      <div>
+        <p className="kicker">Frozen diagnostic provenance</p>
+        <strong>{mission.diagnosis.summary}</strong>
+        <span>{mission.diagnosis.agentReported ? "Agent-reported" : "Person-reported"} · measured symptom retained separately</span>
+      </div>
+      <ul>
+        {mission.diagnosis.sourceLocations.map((location) => (
+          <li key={`${location.file}-${location.line ?? "file"}`}><code>{location.file}{location.line ? `:${location.line}` : ""}</code></li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify }) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
@@ -1224,6 +1308,7 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
         mode="repair"
       />
       <RepositoryPlanCard plan={repair.repositoryPlan} />
+      <DiagnosticProvenanceCard mission={repair.diagnosticMission} />
       {autoApproved ? (
         <div className="delegated-approval-receipt" role="status">
           <ShieldCheck size={19} weight="fill" aria-hidden="true" />
@@ -1906,6 +1991,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   );
   const [selectedFindingId, setSelectedFindingId] = useState(report.findings[0]?.id ?? null);
   const [repairs, setRepairs] = useState(() => auditService.getRepairs(report.auditId));
+  const [diagnosticMissions, setDiagnosticMissions] = useState(() => auditService.getDiagnosticMissions(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
   const [shareState, setShareState] = useState("idle");
   const shareInputRef = useRef(null);
@@ -1921,6 +2007,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
       )
     : [];
   const selectedRepair = repairs.find((repair) => repair.findingId === selectedFinding?.id) ?? null;
+  const selectedDiagnosticMission = diagnosticMissions.find((mission) => mission.findingId === selectedFinding?.id) ?? null;
   const omittedFindingCount = Math.max(
     0,
     Number.isFinite(report.findingsOmitted)
@@ -1933,11 +2020,13 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
     const refresh = () => {
       if (active) {
         setRepairs([...auditService.getRepairs(report.auditId)]);
+        setDiagnosticMissions([...auditService.getDiagnosticMissions(report.auditId)]);
         setRepairPolicy(auditService.getRepairPolicy(report.auditId));
       }
     };
     const unsubscribe = auditService.subscribe(refresh);
     void auditService.listRepairs(report.auditId).then(refresh).catch(() => {});
+    void auditService.listDiagnosticMissions(report.auditId).then(refresh).catch(() => {});
     return () => {
       active = false;
       unsubscribe();
@@ -2173,6 +2262,11 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
               <CspResourceInventory context={selectedFinding.repairContext} />
             </article>
           ) : null}
+          <DiagnosticMissionCard
+            auditId={report.auditId}
+            finding={selectedFinding}
+            mission={selectedDiagnosticMission}
+          />
           <RepairWorkbench
             auditId={report.auditId}
             finding={selectedFinding}

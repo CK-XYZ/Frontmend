@@ -849,6 +849,22 @@ function repositoryPlanSnapshot(plan) {
   };
 }
 
+function diagnosticMissionSnapshotForArtifact(mission) {
+  if (!mission?.id || !mission?.diagnosis) return null;
+  return {
+    id: mission.id,
+    findingId: mission.findingId,
+    measuredEvidence: mission.measuredEvidence ? { ...mission.measuredEvidence } : null,
+    diagnosis: {
+      ...mission.diagnosis,
+      observations: (mission.diagnosis.observations ?? []).map((item) => ({ ...item })),
+      sourceLocations: (mission.diagnosis.sourceLocations ?? []).map((item) => ({ ...item })),
+      verificationChecks: [...(mission.diagnosis.verificationChecks ?? [])],
+    },
+    state: mission.state ? { ...mission.state } : null,
+  };
+}
+
 function approvalSnapshot(repair) {
   if (repair?.approval?.mode === "delegated-auto") {
     return {
@@ -1253,6 +1269,7 @@ export function createVerificationContext(report, repair) {
     baseline: reportSnapshot(report, repair.findingSource, findingScope),
     lineage: startingLineage(report, repair.findingSource, findingScope),
     repositoryPlan: repositoryPlanSnapshot(repair.repositoryPlan),
+    diagnosticMission: diagnosticMissionSnapshotForArtifact(repair.diagnosticMission),
     approval: approvalSnapshot(repair),
     implementationReceipt: implementationReceiptSnapshot(repair.implementationReceipt),
     deploymentAttestedAt: repair.deploymentAttestedAt,
@@ -1333,6 +1350,7 @@ export function compareVerification(report, verification, now = Date.now()) {
     findingScope,
     scopeOutcomes,
     repositoryPlan: repositoryPlanSnapshot(verification.repositoryPlan),
+    diagnosticMission: diagnosticMissionSnapshotForArtifact(verification.diagnosticMission),
     approval: verification.approval ?? null,
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
     deploymentAttestedAt: verification.deploymentAttestedAt,
@@ -1433,6 +1451,22 @@ export function repairExportMarkdown({ report, repair }) {
           `- Planned checks: ${repair.repositoryPlan.checks.map((check) => receiptText(check, 120)).join("; ")}`,
           "",
           "> Coding-agent plan metadata only. Frontmend did not inspect these files, receive their contents, or run these checks.",
+          "",
+        ]
+      : []),
+    ...(repair.diagnosticMission?.diagnosis
+      ? [
+          "## Diagnostic provenance",
+          "",
+          `- Measured symptom: ${receiptText(repair.diagnosticMission.measuredEvidence?.kind, 80)} (${receiptText(repair.diagnosticMission.measuredEvidence?.provenance, 80)})`,
+          `- Contributed by: ${repair.diagnosticMission.diagnosis.agentReported ? "coding agent" : "person"} at ${new Date(repair.diagnosticMission.diagnosis.reportedAt).toISOString()}`,
+          `- Confidence: ${receiptText(repair.diagnosticMission.diagnosis.confidence, 20)}`,
+          `- Diagnosis: ${receiptText(repair.diagnosticMission.diagnosis.summary, 300)}`,
+          `- Reproduction: ${receiptText(repair.diagnosticMission.diagnosis.reproduction, 600)}`,
+          `- Source locations: ${repair.diagnosticMission.diagnosis.sourceLocations.map((location) => `\`${receiptText(location.file, 200)}${location.line ? `:${location.line}` : ""}\``).join(", ")}`,
+          `- Planned checks: ${repair.diagnosticMission.diagnosis.verificationChecks.map((check) => receiptText(check, 120)).join("; ")}`,
+          "",
+          "> Lighthouse evidence and contributed diagnosis remain separately attributed. Frontmend did not inspect repository source or independently prove the diagnosis.",
           "",
         ]
       : []),
@@ -1824,6 +1858,21 @@ export function verificationReceiptMarkdown(report) {
   ];
   const implementation = verification.implementationReceipt;
   const repositoryPlan = verification.repositoryPlan;
+  const diagnosticMission = verification.diagnosticMission;
+  if (diagnosticMission?.diagnosis) {
+    lines.push(
+      "",
+      "## Diagnostic provenance",
+      "",
+      "> The public symptom was measured; the causal diagnosis below is separately attributed and was not independently proven by Frontmend.",
+      "",
+      `- Measured symptom: ${receiptText(diagnosticMission.measuredEvidence?.kind, 80)} (${receiptText(diagnosticMission.measuredEvidence?.provenance, 80)})`,
+      `- Diagnosis source: ${diagnosticMission.diagnosis.agentReported ? "coding agent" : "person"}`,
+      `- Diagnosis: ${receiptText(diagnosticMission.diagnosis.summary, 300)}`,
+      `- Source locations: ${diagnosticMission.diagnosis.sourceLocations.map((location) => `\`${receiptText(location.file, 200)}${location.line ? `:${location.line}` : ""}\``).join(", ")}`,
+      `- Planned checks: ${diagnosticMission.diagnosis.verificationChecks.map((check) => receiptText(check, 120)).join("; ")}`,
+    );
+  }
   if (repositoryPlan) {
     lines.push(
       "",

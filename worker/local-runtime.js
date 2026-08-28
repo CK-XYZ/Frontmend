@@ -24,6 +24,13 @@ import {
   validateRepairId,
 } from "../src/repair-contract.js";
 import { runFrontmendAudit } from "./pagespeed-provider.js";
+import {
+  createDiagnosticMission,
+  diagnosticMissionForRepair,
+  diagnosticMissionSnapshot,
+  findingRequiresDiagnosticMission,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const BODY_LIMIT_BYTES = 4096;
 const RATE_LIMIT = 5;
@@ -240,6 +247,7 @@ export function createLocalAuditRuntime(options = {}) {
         report: null,
         screenshots: {},
         repairs: [],
+        diagnosticMissions: [],
         repairPolicy: repairPolicySnapshot(),
         error: null,
         abortController: new AbortController(),
@@ -265,6 +273,7 @@ export function createLocalAuditRuntime(options = {}) {
       report: null,
       screenshots: {},
       repairs: [],
+      diagnosticMissions: [],
       repairPolicy: repairPolicySnapshot(),
       error: null,
       abortController: new AbortController(),
@@ -515,6 +524,51 @@ export function createLocalAuditRuntime(options = {}) {
         );
       }
 
+      const diagnosticMatch = requestUrl.pathname.match(
+        /^\/api\/audits\/([^/]+)\/diagnostics(?:\/([^/]+)(?:\/(evidence))?)?$/,
+      );
+      if (diagnosticMatch) {
+        const [, auditId, rawMissionId, action] = diagnosticMatch;
+        const baseline = jobs.get(auditId);
+        if (!baseline) return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        if (baseline.status !== "complete" || !baseline.report) {
+          return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the audit before opening a diagnostic mission."), 409);
+        }
+        baseline.diagnosticMissions ??= [];
+        if (!rawMissionId && request.method === "GET") {
+          return sendJson(response, 200, { ok: true, data: { auditId, missions: baseline.diagnosticMissions.map(diagnosticMissionSnapshot) } });
+        }
+        if (!rawMissionId && request.method === "POST") {
+          assertSameOrigin(request);
+          const input = await readBody(request);
+          const extra = Object.keys(input ?? {}).find((key) => key !== "findingId");
+          if (extra) return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
+          const finding = baseline.report.findings.find((item) => item.id === input?.findingId);
+          if (!finding) return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
+          const existing = baseline.diagnosticMissions.find((mission) => mission.findingId === finding.id);
+          if (existing) return sendJson(response, 200, { ok: true, data: diagnosticMissionSnapshot(existing) });
+          if (baseline.diagnosticMissions.length >= 10) return sendError(response, new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
+          const mission = createDiagnosticMission({ auditId, finding });
+          baseline.diagnosticMissions.push(mission);
+          return sendJson(response, 201, { ok: true, data: mission });
+        }
+        const missionId = decodeURIComponent(rawMissionId ?? "");
+        const mission = baseline.diagnosticMissions.find((item) => item.id === missionId);
+        if (!mission) return sendError(response, new AuditError("DIAGNOSTIC_NOT_FOUND", "That diagnostic mission does not exist."), 404);
+        if (!action && request.method === "GET") return sendJson(response, 200, { ok: true, data: diagnosticMissionSnapshot(mission) });
+        if (action === "evidence" && request.method === "POST") {
+          assertSameOrigin(request);
+          const input = await readBody(request);
+          const { source, ...evidence } = input ?? {};
+          if (source !== "agent" && source !== "person") {
+            return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", "Diagnostic evidence must identify an agent or person source."));
+          }
+          Object.assign(mission, submitDiagnosticEvidence(mission, evidence, source));
+          return sendJson(response, 200, { ok: true, data: mission });
+        }
+        return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."), 405);
+      }
+
       const repairMatch = requestUrl.pathname.match(
         /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
       );
@@ -552,6 +606,16 @@ export function createLocalAuditRuntime(options = {}) {
             return sendError(response, new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
           }
           const { source, ...proposal } = input;
+          let diagnosticMission = null;
+          if (source === "agent" && findingRequiresDiagnosticMission(finding)) {
+            diagnosticMission = (baseline.diagnosticMissions ?? []).find((mission) => mission.findingId === finding.id) ?? null;
+            if (!diagnosticMission || diagnosticMission.state?.state !== "ready-for-repair") {
+              return sendError(response, new AuditError(
+                "DIAGNOSTIC_MISSION_REQUIRED",
+                "Open this finding's diagnostic mission and submit runtime plus repository evidence before staging an agent repair.",
+              ), 409);
+            }
+          }
           let repair = createRepairDraft({
             auditId,
             finding,
@@ -559,6 +623,7 @@ export function createLocalAuditRuntime(options = {}) {
             input: proposal,
             source,
           });
+          if (diagnosticMission) repair = { ...repair, diagnosticMission: diagnosticMissionForRepair(diagnosticMission) };
           const policyResult = applyRepairPolicy(repair, baseline.repairPolicy);
           repair = policyResult.repair;
           baseline.repairPolicy = policyResult.policy;

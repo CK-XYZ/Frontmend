@@ -4,6 +4,7 @@ import {
   repairMissionState,
   verificationReceiptMarkdown,
 } from "./repair-contract.js";
+import { findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 
@@ -104,6 +105,7 @@ export function contextualFrontmendToolNames(service) {
   const findings = audit.report?.findings ?? [];
   const routes = audit.report?.documentProfile?.routes ?? [];
   const repairs = service?.getRepairs?.(audit.id) ?? [];
+  const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
   const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
 
   if (audit.report?.verification) available.add("get_verification_receipt");
@@ -114,8 +116,18 @@ export function contextualFrontmendToolNames(service) {
   if (explorations.length) available.add("get_site_exploration");
   if (findings.length) {
     available.add("get_repository_fix_brief");
-    available.add("stage_site_repair");
     available.add("get_repair_workspace");
+  }
+  const diagnosticFindings = findings.filter(findingRequiresDiagnosticMission);
+  if (diagnosticFindings.length) available.add("open_diagnostic_mission");
+  if (diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
+    available.add("submit_runtime_diagnosis");
+  }
+  if (
+    findings.some((finding) => !findingRequiresDiagnosticMission(finding)) ||
+    diagnosticMissions.some((mission) => mission.state?.state === "ready-for-repair")
+  ) {
+    available.add("stage_site_repair");
   }
   if (repairs.some((repair) => repair.status === "changes-requested")) {
     available.add("revise_site_repair");
@@ -309,6 +321,114 @@ export function createFrontmendTools(service) {
       },
     }),
     tool({
+      name: "open_diagnostic_mission",
+      title: "Open diagnostic mission",
+      description:
+        "Open an idempotent diagnostic mission for a finding with structured runtime evidence, such as console errors, low-contrast nodes, or main-thread blocking. The mission turns the measured symptom into explicit browser reproduction, repository ownership, and verification investigations. It does not diagnose the cause, read repository source, stage a repair, or change the target site.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact structured diagnostic finding ID." },
+        },
+        required: ["findingId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "findingId"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const mission = await service.openDiagnosticMission(
+          auditId,
+          requiredString(value.findingId, "findingId", 160),
+        );
+        return {
+          auditId,
+          diagnosticMissionId: mission.id,
+          findingId: mission.findingId,
+          measuredEvidence: mission.measuredEvidence,
+          requiredInvestigations: mission.requiredInvestigations,
+          state: mission.state,
+          nextAction: "Reproduce the issue in the browser, map it to repository-relative source locations, then submit the bounded diagnosis. Do not include source contents or absolute paths.",
+        };
+      },
+    }),
+    tool({
+      name: "submit_runtime_diagnosis",
+      title: "Submit runtime diagnosis",
+      description:
+        "Contribute agent-reported diagnostic evidence after reproducing a measured issue in the browser and mapping it to repository ownership. Submit observations, repository-relative source locations, and exact planned checks; never submit source contents, credentials, private data, or absolute paths. This evidence is labelled agent-reported and does not itself approve, implement, deploy, or verify a repair.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          missionId: { type: "string", minLength: 1, maxLength: 80, description: "Diagnostic mission ID." },
+          summary: { type: "string", minLength: 1, maxLength: 300, description: "Concise causal diagnosis." },
+          reproduction: { type: "string", minLength: 1, maxLength: 600, description: "Exact browser steps and observed outcome." },
+          observations: {
+            type: "array", minItems: 1, maxItems: 5,
+            items: {
+              type: "object",
+              properties: {
+                kind: { type: "string", enum: ["console", "network", "interaction", "performance", "accessibility"] },
+                detail: { type: "string", minLength: 1, maxLength: 400 },
+              },
+              required: ["kind", "detail"], additionalProperties: false,
+            },
+          },
+          sourceLocations: {
+            type: "array", minItems: 1, maxItems: 8,
+            items: {
+              type: "object",
+              properties: {
+                file: { type: "string", minLength: 1, maxLength: 200, description: "Repository-relative path only." },
+                line: { type: "integer", minimum: 1, maximum: 10000000 },
+                symbol: { type: "string", minLength: 1, maxLength: 120 },
+                reason: { type: "string", minLength: 1, maxLength: 300 },
+              },
+              required: ["file", "reason"], additionalProperties: false,
+            },
+          },
+          verificationChecks: {
+            type: "array", minItems: 1, maxItems: 8, uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 120 },
+          },
+          confidence: { type: "string", enum: ["low", "medium", "high"] },
+        },
+        required: ["missionId", "summary", "reproduction", "observations", "sourceLocations", "verificationChecks", "confidence"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "missionId", "summary", "reproduction", "observations", "sourceLocations", "verificationChecks", "confidence"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const mission = await service.submitDiagnosticEvidence(
+          auditId,
+          requiredString(value.missionId, "missionId", 80),
+          {
+            summary: requiredString(value.summary, "summary", 300),
+            reproduction: requiredString(value.reproduction, "reproduction", 600),
+            observations: value.observations,
+            sourceLocations: value.sourceLocations,
+            verificationChecks: value.verificationChecks,
+            confidence: value.confidence,
+          },
+          "agent",
+        );
+        return {
+          auditId,
+          diagnosticMissionId: mission.id,
+          findingId: mission.findingId,
+          measuredEvidence: mission.measuredEvidence,
+          diagnosis: mission.diagnosis,
+          state: mission.state,
+          nextAction: "The diagnosis is ready for a separate repository repair proposal. Human review or a previously scoped auto-mode grant still controls approval.",
+        };
+      },
+    }),
+    tool({
       name: "start_site_exploration",
       title: "Explore selected site routes",
       description:
@@ -485,6 +605,7 @@ export function createFrontmendTools(service) {
           risk: repair.risk,
           findingScope: repair.findingScope,
           repositoryPlan: repair.repositoryPlan,
+          diagnosticMission: repair.diagnosticMission ?? null,
           requiresHumanReview: repair.requiresHumanReview,
           approval: repair.approval,
           automation: repair.automation,
@@ -609,6 +730,7 @@ export function createFrontmendTools(service) {
             findingTitle: repair.findingTitle,
             findingScope: repair.findingScope,
             repositoryPlan: repair.repositoryPlan,
+            diagnosticMission: repair.diagnosticMission ?? null,
             status: repair.status,
             revision: repair.revision ?? 1,
             source: repair.source,

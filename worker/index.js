@@ -25,6 +25,13 @@ import {
   validateRepairId,
 } from "../src/repair-contract.js";
 import { runFrontmendAudit } from "./pagespeed-provider.js";
+import {
+  createDiagnosticMission,
+  diagnosticMissionForRepair,
+  diagnosticMissionSnapshot,
+  findingRequiresDiagnosticMission,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const BODY_LIMIT_BYTES = 4096;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -50,6 +57,7 @@ function publicError(error) {
       "REPAIR_NOT_FOUND",
       "FINDING_NOT_FOUND",
       "EXPLORATION_NOT_FOUND",
+      "DIAGNOSTIC_NOT_FOUND",
     ].includes(error.code)
       ? 404
       : error.code === "METHOD_NOT_ALLOWED"
@@ -61,6 +69,7 @@ function publicError(error) {
             "CHANGES_ALREADY_REQUESTED",
             "CHANGES_REQUESTED",
             "REVISION_NOT_REQUESTED",
+            "DIAGNOSTIC_MISSION_REQUIRED",
           ].includes(error.code)
           ? 409
           : 400;
@@ -526,6 +535,26 @@ async function routeApi(request, env, url) {
     return new Response(response.body, response);
   }
 
+  const diagnosticMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/diagnostics(?:\/([^/]+)(?:\/(evidence))?)?$/,
+  );
+  if (diagnosticMatch) {
+    const [, auditId, missionId, action] = diagnosticMatch;
+    if (!["GET", "POST"].includes(request.method)) {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."));
+    }
+    let body;
+    if (request.method === "POST") {
+      assertSameOrigin(request);
+      body = await readJsonBody(request);
+    }
+    const suffix = missionId
+      ? `/diagnostics/${encodeURIComponent(missionId)}${action ? `/${action}` : ""}`
+      : "/diagnostics";
+    const response = await proxyJobRequest(jobFromId(env, auditId), suffix, request, body);
+    return new Response(response.body, response);
+  }
+
   const repairMatch = url.pathname.match(
     /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
   );
@@ -784,6 +813,9 @@ export class FrontmendAuditJob {
     if (url.pathname.startsWith("/repairs")) {
       return this.handleRepairs(request, url, state);
     }
+    if (url.pathname.startsWith("/diagnostics")) {
+      return this.handleDiagnostics(request, url, state);
+    }
     if (request.method === "POST" && url.pathname === "/exploration-inputs") {
       if (state.status !== "complete" || !state.report) {
         return errorResponse(
@@ -961,6 +993,17 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
       }
       const { source, ...proposal } = input;
+      let diagnosticMission = null;
+      if (source === "agent" && findingRequiresDiagnosticMission(finding)) {
+        const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
+        diagnosticMission = missions.find((mission) => mission.findingId === finding.id) ?? null;
+        if (!diagnosticMission || diagnosticMission.state?.state !== "ready-for-repair") {
+          return errorResponse(new AuditError(
+            "DIAGNOSTIC_MISSION_REQUIRED",
+            "Open this finding's diagnostic mission and submit runtime plus repository evidence before staging an agent repair.",
+          ));
+        }
+      }
       let repair = createRepairDraft({
         auditId: state.id,
         finding,
@@ -968,6 +1011,7 @@ export class FrontmendAuditJob {
         input: proposal,
         source,
       });
+      if (diagnosticMission) repair = { ...repair, diagnosticMission: diagnosticMissionForRepair(diagnosticMission) };
       const policyResult = applyRepairPolicy(repair, repairPolicy);
       repair = policyResult.repair;
       repairPolicy = policyResult.policy;
@@ -1077,6 +1121,56 @@ export class FrontmendAuditJob {
       }
     }
     return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair operation is not supported."));
+  }
+
+  async handleDiagnostics(request, url, state) {
+    if (state.status !== "complete" || !state.report) {
+      return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before opening a diagnostic mission."));
+    }
+    const match = url.pathname.match(/^\/diagnostics(?:\/([^/]+)(?:\/(evidence))?)?$/);
+    if (!match) return errorResponse(new AuditError("NOT_FOUND", "That diagnostic route does not exist."));
+    const [, rawMissionId, action] = match;
+    const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
+    if (!rawMissionId && request.method === "GET") {
+      return json({ ok: true, data: { auditId: state.id, missions: missions.map(diagnosticMissionSnapshot) } });
+    }
+    if (!rawMissionId && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const extra = Object.keys(input ?? {}).find((key) => key !== "findingId");
+      if (extra) return errorResponse(new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
+      const finding = state.report.findings.find((item) => item.id === input?.findingId);
+      if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
+      const existing = missions.find((mission) => mission.findingId === finding.id);
+      if (existing) return json({ ok: true, data: diagnosticMissionSnapshot(existing) });
+      if (missions.length >= 10) return errorResponse(new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
+      try {
+        const mission = createDiagnosticMission({ auditId: state.id, finding });
+        missions.push(mission);
+        await this.ctx.storage.put("diagnosticMissions", missions);
+        return json({ ok: true, data: mission }, { status: 201 });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    const missionId = decodeURIComponent(rawMissionId ?? "");
+    const missionIndex = missions.findIndex((mission) => mission.id === missionId);
+    if (missionIndex < 0) return errorResponse(new AuditError("DIAGNOSTIC_NOT_FOUND", "That diagnostic mission does not exist."));
+    if (!action && request.method === "GET") return json({ ok: true, data: diagnosticMissionSnapshot(missions[missionIndex]) });
+    if (action === "evidence" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const { source, ...evidence } = input ?? {};
+      if (source !== "agent" && source !== "person") {
+        return errorResponse(new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", "Diagnostic evidence must identify an agent or person source."));
+      }
+      try {
+        missions[missionIndex] = submitDiagnosticEvidence(missions[missionIndex], evidence, source);
+        await this.ctx.storage.put("diagnosticMissions", missions);
+        return json({ ok: true, data: missions[missionIndex] });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."));
   }
 
   async run(initialState) {

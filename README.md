@@ -19,6 +19,8 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Site-aware CSP repair evidence that inventories bounded external resource origins and inline script/style usage from the fetched document, then produces a conservative Report-Only candidate without claiming runtime coverage.
 - Responsive findings workspace with evidence provenance and source-specific scoring.
 - Truthful high-volume Lighthouse results: the summary reports the full measured failure total, while the bounded ten-detail queue exposes its omitted count and retains every explicit rule outcome for agents and exports.
+- Actionable diagnostic evidence for console errors, low-contrast nodes, and main-thread blocking: Frontmend retains bounded runtime details from Lighthouse, then opens a persisted mission requiring browser reproduction, repository ownership, and planned checks before an agent can propose a repair for that symptom.
+- Separately attributed diagnosis provenance: measured Lighthouse evidence remains provider evidence, while contributed browser observations and repository locations remain explicitly agent- or person-reported through repair exports and fresh verification receipts.
 - Portable completed-audit Markdown export backed by the persisted report, with bounded escaped findings, every recorded rule outcome, provider provenance, and evidence-mode limits.
 - Bounded repository repair missions that may be proposed by a person or agent and appear in the same visible workspace used by the site owner.
 - An audit-scoped operating policy chosen only in the human UI: **Review each plan** keeps explicit approval per proposal, while **Delegated auto mode** records a prior human grant for at most three agent-authored low-risk HTML or CSS plans that include bounded repository-relative files and planned checks. JavaScript, headers, configuration, medium/high risk, deployment, and deployment attestation remain gated.
@@ -34,7 +36,7 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Rule proof and summary-metric proof are deliberately separate: partial/hybrid verification requires the same Lighthouse version for an exact Lighthouse rule, while score/check/finding deltas appear only when the engine, measured strategies, score basis, and document-supplement coverage all match.
 - A before/after proof receipt with baseline and fresh audit IDs plus server-derived score, passed-check, and finding deltas; the same structure is returned through WebMCP.
 - A bounded audit-lineage trail that carries the exact rule across repeated repair attempts, preserves the root audit, stores each attempt's evidence signature, labels whether its summary metrics are comparable to the baseline, and compacts older history after eight receipts.
-- A library of fourteen WebMCP tools covering audit start/progress/cancellation/results, repository handoff, single-route and multi-page exploration, verification receipts, repair staging/revision/implementation/workspace, and verification; only the capabilities valid for the visible page state are registered at any moment.
+- A library of sixteen WebMCP tools covering audit start/progress/cancellation/results, diagnostic missions, repository handoff, single-route and multi-page exploration, verification receipts, repair staging/revision/implementation/workspace, and verification; only the capabilities valid for the visible page state are registered at any moment.
 - Audit-scoped tools infer the visible audit when `auditId` is omitted, while retaining explicit IDs for durable or background workflows.
 - A session-only WebMCP activity drawer that exposes bounded semantic tool lifecycle events while deliberately omitting tool inputs, URLs, patches, prompts, and secrets.
 - An inspectable WebMCP status panel that shows the active contextual subset, explains why it changed, and keeps human-only authority visible.
@@ -79,6 +81,8 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 | `cancel_site_audit` | Stop an active job and persist its terminal cancellation state. |
 | `get_site_audit_results` | Read the bounded evidence report. |
 | `get_repository_fix_brief` | Translate one finding into a source-safe repository implementation contract. |
+| `open_diagnostic_mission` | Turn a structured Lighthouse symptom into explicit browser, repository, and verification investigations. |
+| `submit_runtime_diagnosis` | Attach bounded, separately attributed browser observations and repository-relative ownership before agent repair staging. |
 | `start_related_page_audit` | Start a real audit for an exact same-site path observed in the visible report. |
 | `start_site_exploration` | Atomically start one to three observed page audits under one durable mission. |
 | `get_site_exploration` | Read mission progress and bounded recurring evidence across selected pages. |
@@ -93,7 +97,7 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun run test` currently runs 92 contracts.
+`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 103 contracts.
 
 ```powershell
 bun install

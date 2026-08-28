@@ -2378,6 +2378,142 @@ input:focus-visible,
   box-shadow: 0 16px 50px rgba(40, 49, 39, 0.05);
 }
 
+.diagnostic-mission,
+.diagnostic-provenance {
+  margin-top: 18px;
+  border: 1px solid color-mix(in srgb, var(--ink) 15%, transparent);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--paper) 94%, #dce8ff);
+  padding: 20px;
+  box-shadow: 0 12px 30px rgb(22 27 40 / 6%);
+}
+
+.diagnostic-mission.ready {
+  border-color: color-mix(in srgb, #16724a 38%, transparent);
+  background: color-mix(in srgb, var(--paper) 92%, #dff4e7);
+}
+
+.diagnostic-mission > header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 13px;
+  align-items: start;
+}
+
+.diagnostic-mission > header > span:first-child {
+  display: grid;
+  place-items: center;
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  color: #34599a;
+  background: #e5ecfb;
+}
+
+.diagnostic-mission header strong,
+.diagnostic-provenance strong {
+  display: block;
+  color: var(--ink);
+  font-size: 1rem;
+}
+
+.diagnostic-mission header p,
+.diagnostic-provenance span {
+  margin: 5px 0 0;
+  color: var(--muted);
+  font-size: 0.83rem;
+  line-height: 1.5;
+}
+
+.diagnostic-mission-state {
+  border-radius: 999px;
+  background: var(--paper);
+  padding: 6px 9px;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.diagnostic-mission > ol {
+  display: grid;
+  gap: 8px;
+  margin: 17px 0 0 51px;
+  padding-left: 18px;
+  color: var(--ink);
+  font-size: 0.84rem;
+}
+
+.diagnostic-mission > .repair-button {
+  margin: 17px 0 0 51px;
+}
+
+.diagnostic-mission-note,
+.diagnostic-diagnosis {
+  margin: 16px 0 0 51px;
+  border-left: 3px solid #7896d1;
+  padding: 3px 0 3px 13px;
+  color: var(--muted);
+  font-size: 0.84rem;
+  line-height: 1.55;
+}
+
+.diagnostic-diagnosis span {
+  display: block;
+  margin-top: 3px;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.diagnostic-diagnosis p {
+  margin: 10px 0;
+}
+
+.diagnostic-diagnosis ul,
+.diagnostic-provenance ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 0.78rem;
+}
+
+.diagnostic-provenance {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 18px;
+  margin-top: 0;
+}
+
+.diagnostic-provenance ul {
+  text-align: right;
+}
+
+@media (max-width: 650px) {
+  .diagnostic-mission > header,
+  .diagnostic-provenance {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .diagnostic-mission-state {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .diagnostic-mission > ol,
+  .diagnostic-mission > .repair-button,
+  .diagnostic-mission-note,
+  .diagnostic-diagnosis {
+    margin-left: 0;
+  }
+
+  .diagnostic-provenance ul {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
 .repair-mission {
   grid-column: 1 / -1;
   min-width: 0;

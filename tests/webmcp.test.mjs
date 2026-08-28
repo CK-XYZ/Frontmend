@@ -20,6 +20,8 @@ const TOOL_NAMES = [
   "get_site_audit_results",
   "get_repository_fix_brief",
   "start_related_page_audit",
+  "open_diagnostic_mission",
+  "submit_runtime_diagnosis",
   "start_site_exploration",
   "get_site_exploration",
   "get_verification_receipt",
@@ -762,7 +764,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 14);
+  assert.equal(snapshots.at(-1).totalTools, 16);
   dispose();
 });
 
@@ -830,7 +832,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 14);
+  assert.equal(snapshots.at(-1).totalTools, 16);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

@@ -111,6 +111,37 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
+    async listDiagnosticMissions(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async openDiagnosticMission(auditId, findingId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ findingId }),
+        }),
+      );
+    },
+
+    async submitDiagnosticEvidence(auditId, missionId, input, source = "agent") {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics/${encodeURIComponent(missionId)}/evidence`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent" }),
+          },
+        ),
+      );
+    },
+
     async getRepairPolicy(auditId) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repair-policy`, {
@@ -240,6 +271,7 @@ export function createAuditService(options = {}) {
   const now = options.now ?? Date.now;
   const jobs = new Map();
   const repairs = new Map();
+  const diagnosticMissions = new Map();
   const repairPolicies = new Map();
   const explorations = new Map();
   const listeners = new Set();
@@ -266,6 +298,17 @@ export function createAuditService(options = {}) {
     repairs.set(repair.auditId, [...current.filter((item) => item.id !== repair.id), repair]);
     emit();
     return repair;
+  };
+
+  const rememberDiagnosticMission = (mission, expectedGeneration = generation) => {
+    if (!mission?.id || expectedGeneration !== generation) return mission;
+    const current = diagnosticMissions.get(mission.auditId) ?? [];
+    diagnosticMissions.set(mission.auditId, [
+      ...current.filter((item) => item.id !== mission.id),
+      mission,
+    ]);
+    emit();
+    return mission;
   };
 
   const rememberExploration = (exploration, expectedGeneration = generation) => {
@@ -404,6 +447,41 @@ export function createAuditService(options = {}) {
       return workspace;
     },
 
+    async listDiagnosticMissions(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const workspace = await transport.listDiagnosticMissions(auditId);
+      if (expectedGeneration === generation) {
+        diagnosticMissions.set(auditId, workspace.missions ?? []);
+        emit();
+      }
+      return workspace;
+    },
+
+    async openDiagnosticMission(auditId, findingId) {
+      if (typeof auditId !== "string" || !auditId || typeof findingId !== "string" || !findingId) {
+        throw new AuditError("INVALID_INPUT", "auditId and findingId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberDiagnosticMission(
+        await transport.openDiagnosticMission(auditId, findingId),
+        expectedGeneration,
+      );
+    },
+
+    async submitDiagnosticEvidence(auditId, missionId, input, source = "agent") {
+      if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
+        throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberDiagnosticMission(
+        await transport.submitDiagnosticEvidence(auditId, missionId, input, source),
+        expectedGeneration,
+      );
+    },
+
     async stageRepair(auditId, input) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
@@ -487,6 +565,10 @@ export function createAuditService(options = {}) {
 
     getRepairs(auditId) {
       return repairs.get(auditId) ?? [];
+    },
+
+    getDiagnosticMissions(auditId) {
+      return diagnosticMissions.get(auditId) ?? [];
     },
 
     getRepairPolicy(auditId) {
@@ -575,6 +657,7 @@ export function createAuditService(options = {}) {
       generation += 1;
       activeAuditId = null;
       repairs.clear();
+      diagnosticMissions.clear();
       repairPolicies.clear();
       explorations.clear();
       emit();

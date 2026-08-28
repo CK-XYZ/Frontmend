@@ -4,7 +4,7 @@ Target length: 2 minutes 30 seconds. Show the real deployed application and keep
 
 Natural fresh-task prompt for the repository-aware version:
 
-> Audit the deployed site, identify the highest-impact finding that can be fixed in this repository, and prepare a concrete repair plan. Use Frontmend’s site tools for live evidence and inspect the repository yourself to locate the owning code. Don’t edit anything until I approve the plan, and don’t deploy.
+> Audit the deployed site and fix the most important issue you can prove is owned by this repository. Use Frontmend for public evidence. If it opens a diagnostic mission, reproduce the issue in the browser, trace it to the owning repository code, and contribute that diagnosis before proposing a repair. Show me the evidence and plan before editing unless my visible Frontmend auto-mode grant explicitly authorises it. Run the agreed checks, never deploy, and don’t claim the live site is fixed until a fresh Frontmend verification proves it.
 
 Auto-mode variant after the person visibly enables **Delegated auto mode** in Frontmend:
 
@@ -45,6 +45,8 @@ Pause on **Human-agent operating policy**. Explain that this is the central WebM
 For the review path, keep **Review each plan** selected. Ask the agent to submit a repository mission for the selected finding. Show the draft appear immediately in the same visible workspace. For CSP, trace an observed origin from the evidence inventory into the Report-Only header, then point out the inline evidence, nonce-or-hash guidance, risk, and real-journey verification plan. Emphasize that the agent cannot grant itself approval.
 
 Before staging, use `get_repository_fix_brief` for the finding. Show that Frontmend returns measured evidence, likely repository ownership points, and acceptance criteria—but no source content or absolute paths. After Codex inspects the repository, have it stage the proposal with the exact repository-relative target files and planned checks. Point to that structured **Coding-agent plan** in the visible review workspace before approval. If the same rule failed in more than one measured strategy, point to the visible repair scope and the brief's bounded occurrence list: one repository change must be checked against every failing strategy, not only whichever viewport the agent selected first. This is the Codex-native handoff: the coding agent keeps source access; Frontmend receives only public evidence and bounded plan metadata.
+
+For console, contrast, or main-thread findings, open the visible **Diagnostic mission** first. Show the measured Lighthouse symptom, then have the agent call `open_diagnostic_mission`, reproduce the exact issue in the browser, inspect repository ownership, and call `submit_runtime_diagnosis`. Compare the visible diagnosis with its repository-relative locations and planned checks. Frontmend labels this contribution as agent-reported and does not promote it into measured evidence. Until that step is complete, the agent repair tool remains unavailable for that finding; manual drafting is still possible for a person.
 
 Write one specific change request and click **Request agent revision**. Show approval disappear, ask the agent to read `get_repair_workspace`, and then use `revise_site_repair`. Point to the incremented revision, reopened human review, and visible revision trail. This is collaboration over shared state, not an agent clicking its own approval.
 

@@ -1319,6 +1319,82 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(verification.lineage.entries.length, 1);
 });
 
+test("diagnostic missions gate agent repairs until runtime and repository evidence is ready", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const finding = {
+    id: "lighthouse-errors-in-console-mobile",
+    title: "Browser errors were logged",
+    severity: "medium",
+    category: "Best practices",
+    evidence: "One console error was measured.",
+    repair: "Resolve the first-party runtime error.",
+    source: { provider: "Lighthouse", auditId: "errors-in-console", strategy: "mobile" },
+    diagnosticEvidence: {
+      kind: "console-errors",
+      completeness: "actionable",
+      entries: [{ description: "Failed to load resource", source: "network" }],
+      missing: [],
+      caveat: "Lighthouse measured the symptom; an agent must reproduce and map its cause.",
+    },
+  };
+  const values = new Map([["state", {
+    id: auditId,
+    url: "https://example.com/",
+    source: "agent",
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      engine: { mode: "live-pagespeed" },
+      findings: [finding],
+      ruleOutcomes: [{ source: finding.source, status: "failed" }],
+    },
+  }]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, value),
+    },
+  }, {});
+  const post = (path, body) => job.fetch(new Request(`https://frontmend.internal${path}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  }));
+
+  const openedResponse = await post("/diagnostics", { findingId: finding.id });
+  assert.equal(openedResponse.status, 201);
+  const opened = (await openedResponse.json()).data;
+  assert.equal(opened.state.state, "awaiting-diagnosis");
+  assert.equal(opened.measuredEvidence.provenance, "measured-lighthouse");
+
+  const earlyRepair = await post("/repairs", { findingId: finding.id, source: "agent" });
+  assert.equal(earlyRepair.status, 409);
+  assert.equal((await earlyRepair.json()).error.code, "DIAGNOSTIC_MISSION_REQUIRED");
+
+  const diagnosedResponse = await post(`/diagnostics/${opened.id}/evidence`, {
+    source: "agent",
+    summary: "A first-party fetch rejects without handling its expected response.",
+    reproduction: "Reload the page and inspect the console and failed request before interacting.",
+    observations: [{ kind: "console", detail: "The rejection occurs once during initial load." }],
+    sourceLocations: [{ file: "src/load.js", line: 12, symbol: "loadData", reason: "Owns the failing request." }],
+    verificationChecks: ["bun test", "Reload with an empty console"],
+    confidence: "high",
+  });
+  assert.equal(diagnosedResponse.status, 200);
+  assert.equal((await diagnosedResponse.json()).data.state.state, "ready-for-repair");
+
+  const repairResponse = await post("/repairs", { findingId: finding.id, source: "agent" });
+  assert.equal(repairResponse.status, 201);
+  const repair = (await repairResponse.json()).data;
+  assert.equal(repair.diagnosticMission.id, opened.id);
+  assert.equal(repair.diagnosticMission.diagnosis.source, "agent");
+  assert.equal(repair.diagnosticMission.measuredEvidence.provenance, "measured-lighthouse");
+});
+
 test("audit jobs persist a scoped auto policy and authorise only an eligible agent mission", async () => {
   const values = new Map([["state", {
     id: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
