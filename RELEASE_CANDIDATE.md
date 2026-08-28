@@ -23,7 +23,7 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 92 passed, 0 failed |
+| Tests | `bun test` | PASS — 93 passed, 0 failed on local application commit `b94f624` |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
 | Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 145.48 KiB raw / 33.38 KiB gzip Worker upload; no upload performed |
@@ -142,4 +142,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC1 deployed, HTTP/API-verified, production-Chrome-smoke-verified, and production-Lighthouse-verified**. It must not be labelled ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until both fresh-session procedures have real receipts. The exact deployed source is committed locally at `88b0b7e`; it has not been pushed to a public remote.
+The deployed version may be labelled **RC1 deployed, HTTP/API-verified, production-Chrome-smoke-verified, and production-Lighthouse-verified**. It must not be labelled ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until both fresh-session procedures have real receipts. The exact deployed source is committed locally at `88b0b7e`; it has not been pushed to a public remote. Newer local application commit `b94f624` adds cross-viewport repair scope and passes the fresh local receipt above, but is not part of the deployed Worker version.

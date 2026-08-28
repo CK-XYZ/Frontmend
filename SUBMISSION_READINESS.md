@@ -45,7 +45,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 92 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun test`: 93 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
 - [x] `bunx wrangler deploy --dry-run`: static assets plus both Durable Object bindings recognized.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
@@ -78,7 +78,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Production security/WebMCP headers: `Origin-Agent-Cluster: ?1`, `Permissions-Policy: tools=(self)`, CSP, `nosniff`, frame denial, and strict-origin referrer policy are present on the public origin.
 - [x] Production PageSpeed API-key path: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `67b15094-2878-488b-b134-9088c60ce208` returned Lighthouse 13.4.1 mobile and desktop evidence, score 97, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
 - [x] Final production Chrome smoke receipt: exact assets `index-BJ5D1pIW.css` and `index-Ba57YJQT.js`, intended security/WebMCP headers, and zero console errors or warnings.
-- [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
+- [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures; `{ "unexpected": true }` returned structured `INVALID_INPUT` without changing state. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
 
 ## Competition delivery
 
@@ -98,5 +98,6 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
-3. Video capture, narration, upload, and Devpost submission remain external deliverables.
+2. Local application commit `b94f624` adds the verified cross-viewport repair scope but is newer than deployed application commit `88b0b7e`.
+3. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
+4. Video capture, narration, upload, and Devpost submission remain external deliverables.
