@@ -8,10 +8,10 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 
 ## Candidate identity
 
-- Source provenance: the standalone repository's initial release commit captures the working tree deployed to the Cloudflare version below; push remains a separate action
+- Source provenance: standalone repository commit `88b0b7e792eef1ecd07fb27cf441b54072fccd37`; push remains a separate action
 - Worker name: `frontmend`
-- Cloudflare version: `11ee543b-2a8d-46f1-8636-57d7568e74bd`
-- Deployment created: `2026-08-28T18:23:55.282Z`
+- Cloudflare version: `80ac7ced-4c8d-4cc3-ade4-5fd1a90873b6`
+- Deployment created: `2026-08-28T20:39:27.174Z`
 - Wrangler source of truth: `wrangler.jsonc`
 - Runtime: Worker module plus `FrontmendAuditGate` and `FrontmendAuditJob` SQLite Durable Objects
 - Static assets: `dist/client`, exposed to the Worker as `ASSETS`
@@ -26,7 +26,7 @@ Run from `Ideas/Frontmend`:
 | Tests | `bun test` | PASS — 92 passed, 0 failed |
 | Production build | `bun run build` | PASS — 4,574 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --config wrangler.jsonc` | PASS — five assets; 145.42 KiB raw / 33.36 KiB gzip Worker upload; no upload performed |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 145.48 KiB raw / 33.38 KiB gzip Worker upload; no upload performed |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -46,8 +46,8 @@ The candidate is deployed and HTTP/API-verified but not WebMCP-verified until ea
 - [x] Record the exact deployed URL, deployed version ID, source state, UTC deployment time, and final command receipt here.
 - [x] Verify explicit WebMCP response headers: `Origin-Agent-Cluster: ?1` and `Permissions-Policy: tools=(self)`.
 - [x] Verify public DNS through `1.1.1.1` and `8.8.8.8`, valid HTTPS, current hashed assets, SPA restoration, private-target rejection, and Durable Object persistence.
-- [x] Complete a real production self-audit: `807bc951-7e1a-4064-96d1-e162e849cedb` observed CSP and `nosniff`, scored 78, and retained only the two honest unhydrated-document findings.
-- [x] Complete the production PageSpeed path: audit `c7b70680-06b8-444d-a1de-ab6d5c9d2d83` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 85, and recorded no fallback.
+- [x] Complete the production PageSpeed path: final audit `67b15094-2878-488b-b134-9088c60ce208` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 97, recorded zero findings and zero viewport failures, and used no fallback. Mobile scored 97/100/100/91 and desktop 100/100/100/91 for performance/accessibility/best-practices/SEO.
+- [x] Verify the final production asset hashes (`index-BJ5D1pIW.css`, `index-Ba57YJQT.js`) and a fresh Chrome session with zero console errors or warnings.
 - [ ] Complete both fresh-session procedures below against the exact production URL.
 
 `PAGESPEED_API_KEY` is not required for the Worker to start. It is now configured for the deployed judging path; if Google still rate-limits one strategy, the strengthened candidate retains any successful Lighthouse viewport and names the unavailable strategy rather than discarding valid evidence.
@@ -142,4 +142,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC1 deployed, HTTP/API-verified, and production-Lighthouse-verified**. It must not be labelled ChatGPT-verified, Chrome-verified, or submission-ready until both fresh-session procedures have real receipts. The strengthened source described in the fresh local receipt has not been committed, pushed, or deployed; the deployed source is still tied to the repository's initial release commit.
+The deployed version may be labelled **RC1 deployed, HTTP/API-verified, production-Chrome-smoke-verified, and production-Lighthouse-verified**. It must not be labelled ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until both fresh-session procedures have real receipts. The exact deployed source is committed locally at `88b0b7e`; it has not been pushed to a public remote.

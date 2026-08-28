@@ -74,10 +74,10 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Human-agent revision proof on current audit `f61621be`, repair `decdfde4`: visible feedback produced agent revision 2, reopened review, and rendered both proposal versions plus the request in bounded UI/API history.
 - [x] Clean-checkout installation and build receipt.
 - [x] Rendered narrow-viewport and reduced-motion browser receipt.
-- [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves Cloudflare Worker version `11ee543b-2a8d-46f1-8636-57d7568e74bd`; public DNS, valid HTTPS, hashed assets, SPA restoration, structured private-target rejection, and Durable Object execution were verified.
+- [x] Production deployment receipt: `https://frontmend.test.knightware.xyz/` serves commit `88b0b7e` as Cloudflare Worker version `80ac7ced-4c8d-4cc3-ade4-5fd1a90873b6`; public DNS, valid HTTPS, final hashed assets, SPA restoration, structured private-target rejection, and Durable Object execution were verified.
 - [x] Production security/WebMCP headers: `Origin-Agent-Cluster: ?1`, `Permissions-Policy: tools=(self)`, CSP, `nosniff`, frame denial, and strict-origin referrer policy are present on the public origin.
-- [x] Production self-audit `807bc951-7e1a-4064-96d1-e162e849cedb`: completed with truthful live-document fallback, score 78, CSP and `nosniff` observed, and only the two unhydrated-document limitations retained.
-- [x] Production PageSpeed API-key path: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; audit `c7b70680-06b8-444d-a1de-ab6d5c9d2d83` returned Lighthouse 13.4.1 mobile and desktop evidence, score 85, with no fallback.
+- [x] Production PageSpeed API-key path: secret version `72b82cc8-61bf-4fd9-9ff1-06593fd6d78b`; final audit `67b15094-2878-488b-b134-9088c60ce208` returned Lighthouse 13.4.1 mobile and desktop evidence, score 97, zero findings, zero viewport failures, accessibility 100 and best practices 100 in both strategies, with no fallback.
+- [x] Final production Chrome smoke receipt: exact assets `index-BJ5D1pIW.css` and `index-Ba57YJQT.js`, intended security/WebMCP headers, and zero console errors or warnings.
 
 ## Competition delivery
 
@@ -92,11 +92,10 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [ ] Free judging access confirmed through the full judging window.
 - [ ] Final English Devpost description.
 - [ ] Public YouTube demo under three minutes with clear audio.
-- [ ] Exact deployed revision, repository revision, and final test receipt recorded.
+- [x] Exact deployed revision, repository revision, and final test receipt recorded.
 
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. The strengthened partial-viewport, repository-brief, and implementation-receipt source is locally verified but has not been committed, pushed, or deployed.
-3. The production deployment must be exercised from fresh ChatGPT and Chrome sessions before any submission claim.
-4. Video capture, narration, upload, and Devpost submission remain external deliverables.
+2. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
+3. Video capture, narration, upload, and Devpost submission remain external deliverables.
