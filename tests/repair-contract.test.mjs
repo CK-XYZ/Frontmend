@@ -103,6 +103,10 @@ test("creates a bounded source-attributed repair that requires human review", ()
     auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
     finding,
     source: "agent",
+    input: {
+      repositoryFiles: ["frontend/next.config.ts", "frontend/tests/headers.test.ts"],
+      repositoryChecks: ["bun test", "bun run build"],
+    },
     now: 1_787_766_000_000,
   });
 
@@ -114,6 +118,13 @@ test("creates a bounded source-attributed repair that requires human review", ()
   assert.match(repair.patch, /Report-Only/);
   assert.equal(repair.reviewedAt, null);
   assert.equal(repair.deploymentAttestedAt, null);
+  assert.deepEqual(repair.repositoryPlan.files, [
+    "frontend/next.config.ts",
+    "frontend/tests/headers.test.ts",
+  ]);
+  assert.deepEqual(repair.repositoryPlan.checks, ["bun test", "bun run build"]);
+  assert.equal(repair.repositoryPlan.source, "agent");
+  assert.equal(repair.repositoryPlan.sourceChangedByFrontmend, false);
 });
 
 test("turns bounded CSP evidence into a conservative site-aware report-only draft", () => {
@@ -155,6 +166,30 @@ test("rejects unbounded or unknown repair proposal fields", () => {
         input: { secretContext: "no" },
       }),
     (error) => error.code === "INVALID_REPAIR",
+  );
+  assert.throws(
+    () => createRepairDraft({
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      finding,
+      source: "agent",
+      input: {
+        repositoryFiles: ["C:/private/source.js"],
+        repositoryChecks: ["bun test"],
+      },
+    }),
+    (error) => error.code === "INVALID_REPAIR" && /repository-relative/i.test(error.message),
+  );
+  assert.throws(
+    () => createRepairDraft({
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      finding,
+      source: "human",
+      input: {
+        repositoryFiles: ["src/index.js"],
+        repositoryChecks: ["bun test"],
+      },
+    }),
+    (error) => error.code === "INVALID_REPAIR" && /coding agent/i.test(error.message),
   );
   assert.throws(
     () =>
@@ -314,6 +349,10 @@ test("human feedback gates bounded agent revisions and clears stale approvals", 
       auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
       finding,
       source: "agent",
+      input: {
+        repositoryFiles: ["worker/index.js"],
+        repositoryChecks: ["bun test"],
+      },
       now: 100,
     }),
     status: "approved",
@@ -344,6 +383,8 @@ test("human feedback gates bounded agent revisions and clears stale approvals", 
     {
       patch: `${requested.patch}; report-uri /csp-report`,
       verificationPlan: `${requested.verificationPlan} Confirm reports reach /csp-report.`,
+      repositoryFiles: ["worker/index.js", "tests/sites-worker.test.mjs"],
+      repositoryChecks: ["bun test", "bun run build"],
     },
     "agent",
     300,
@@ -354,6 +395,8 @@ test("human feedback gates bounded agent revisions and clears stale approvals", 
   assert.equal(revised.reviewedAt, null);
   assert.equal(revised.revisionHistory.length, 1);
   assert.equal(revised.revisionHistory[0].revision, 1);
+  assert.deepEqual(revised.repositoryPlan.files, ["worker/index.js", "tests/sites-worker.test.mjs"]);
+  assert.deepEqual(revised.revisionHistory[0].repositoryPlan.files, ["worker/index.js"]);
   assert.match(revised.revisionHistory[0].changeRequest.feedback, /reporting endpoint/);
 
   for (let index = 0; index < 6; index += 1) {
@@ -702,6 +745,12 @@ test("verification carries a bounded before and after proof receipt", () => {
     findingTitle: finding.title,
     findingSource: finding.source,
     status: "approved",
+    repositoryPlan: {
+      files: ["src/worker.js", "tests/worker.test.mjs"],
+      checks: ["bun test", "bun run build"],
+      source: "agent",
+      sourceChangedByFrontmend: false,
+    },
     implementationReceipt: {
       revision: 2,
       summary: "Updated the response header and its contract coverage.",
@@ -720,6 +769,8 @@ test("verification carries a bounded before and after proof receipt", () => {
   assert.equal(context.repairRevision, 1);
   assert.equal(context.implementationReceipt.revision, 2);
   assert.equal(context.implementationReceipt.commitSha, "691defd");
+  assert.deepEqual(context.repositoryPlan.files, ["src/worker.js", "tests/worker.test.mjs"]);
+  assert.notEqual(context.repositoryPlan, repair.repositoryPlan);
   assert.notEqual(context.implementationReceipt, repair.implementationReceipt);
   assert.notEqual(context.implementationReceipt.checks, repair.implementationReceipt.checks);
   assert.deepEqual(context.baseline, {
@@ -750,6 +801,7 @@ test("verification carries a bounded before and after proof receipt", () => {
   };
   const result = compareVerification(fresh, context, 1_787_766_100_000);
   assert.equal(result.status, "resolved");
+  assert.deepEqual(result.repositoryPlan, context.repositoryPlan);
   assert.deepEqual(result.implementationReceipt, context.implementationReceipt);
   assert.equal(result.proof.current.exactRuleOutcome, "passed");
   assert.deepEqual(result.proof.deltas, { score: 11, checksPassed: 1, findings: -1 });
@@ -857,6 +909,12 @@ test("exports a bounded honest verification receipt", () => {
       comparable: true,
       metricComparable: false,
       comparisonReason: "exact-document-rule",
+      repositoryPlan: {
+        files: ["src/worker.js", "tests/worker.test.mjs"],
+        checks: ["bun test", "bun run build"],
+        source: "agent",
+        sourceChangedByFrontmend: false,
+      },
       implementationReceipt: {
         revision: 2,
         summary: "Updated the Worker response header.",
@@ -920,6 +978,9 @@ test("exports a bounded honest verification receipt", () => {
   assert.match(receipt, /Exact rule comparison: like for like/);
   assert.match(receipt, /Attempt 1.*Changed; deltas withheld/);
   assert.match(receipt, /Repository implementation provenance/);
+  assert.match(receipt, /Reviewed repository plan/);
+  assert.match(receipt, /Planned files: `src\/worker\.js`, `tests\/worker\.test\.mjs`/);
+  assert.match(receipt, /Planned checks: bun test; bun run build/);
   assert.match(receipt, /agent-reported receipt revision 2/);
   assert.match(receipt, /Frontmend did not inspect the source, execute these checks, or deploy this Git object/);
   assert.match(receipt, /`src\/worker\.js`/);
@@ -1059,6 +1120,11 @@ test("exports only human-approved repair proposals with an honesty notice", () =
     ...createRepairDraft({
       auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
       finding,
+      source: "agent",
+      input: {
+        repositoryFiles: ["worker/index.js"],
+        repositoryChecks: ["bun test", "bun run build"],
+      },
       now: 1_787_766_000_000,
     }),
     status: "approved",
@@ -1088,6 +1154,10 @@ test("exports only human-approved repair proposals with an honesty notice", () =
   assert.match(markdown, /Deployment handoff: not yet attested/);
   assert.match(markdown, /does not claim the target site was changed/i);
   assert.match(markdown, /Repository implementation receipt/);
+  assert.match(markdown, /## Repository plan/);
+  assert.match(markdown, /`worker\/index\.js`/);
+  assert.match(markdown, /Planned checks: bun test; bun run build/);
+  assert.match(markdown, /did not inspect these files, receive their contents, or run these checks/i);
   assert.match(markdown, /Receipt revision: 2/);
   assert.match(markdown, /Previous receipts retained: 1/);
   assert.match(markdown, /`worker\/index\.js`/);

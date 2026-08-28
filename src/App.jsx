@@ -10,6 +10,7 @@ import {
   Desktop,
   DeviceMobile,
   DownloadSimple,
+  FileCode,
   Info,
   LinkSimple,
   MagnifyingGlass,
@@ -24,7 +25,7 @@ import {
   Wrench,
   X,
 } from "@phosphor-icons/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "./audit-service.js";
 import { repairMissionState } from "./repair-contract.js";
 import { contextualFrontmendToolNames, registerFrontmendTools } from "./webmcp.js";
@@ -874,6 +875,7 @@ function VerificationBanner({ verification }) {
           mode="verification"
         />
       ) : null}
+      <RepositoryPlanCard plan={verification.repositoryPlan} />
       {implementation ? (
         <section className="implementation-receipt verification-implementation" aria-labelledby="verification-implementation-title">
           <div className="implementation-receipt-heading">
@@ -1034,6 +1036,9 @@ function RepairRevisionTrail({ repair }) {
           <li key={revision.revision}>
             <span>Revision {revision.revision}</span>
             <strong>{revision.summary}</strong>
+            {revision.repositoryPlan?.files?.length ? (
+              <small>{revision.repositoryPlan.files.length} planned repository file{revision.repositoryPlan.files.length === 1 ? "" : "s"}</small>
+            ) : null}
             {revision.changeRequest?.feedback ? <small>{revision.changeRequest.feedback}</small> : null}
           </li>
         ))}
@@ -1043,6 +1048,38 @@ function RepairRevisionTrail({ repair }) {
           <small>Current proposal · awaiting human decision</small>
         </li>
       </ol>
+    </section>
+  );
+}
+
+function RepositoryPlanCard({ plan }) {
+  const titleId = useId();
+  if (!plan?.files?.length || !plan?.checks?.length) return null;
+  return (
+    <section className="repository-plan" aria-labelledby={titleId}>
+      <div className="repository-plan-heading">
+        <span aria-hidden="true"><FileCode size={20} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Coding-agent plan</p>
+          <strong id={titleId}>Repository ownership before approval</strong>
+          <p>Relative paths and planned checks only · no source contents received</p>
+        </div>
+      </div>
+      <div className="repository-plan-columns">
+        <div>
+          <span>Planned files</span>
+          <ul>
+            {plan.files.map((file) => <li key={file}><code>{file}</code></li>)}
+          </ul>
+        </div>
+        <div>
+          <span>Planned checks</span>
+          <ul>
+            {plan.checks.map((check) => <li key={check}>{check}</li>)}
+          </ul>
+        </div>
+      </div>
+      <small>Agent-reported plan metadata · Frontmend did not inspect the repository or authorise implementation</small>
     </section>
   );
 }
@@ -1183,6 +1220,7 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
         fallbackSource={repair.findingSource}
         mode="repair"
       />
+      <RepositoryPlanCard plan={repair.repositoryPlan} />
       <div className="patch-preview">
         <div>
           <Code size={16} weight="bold" aria-hidden="true" />

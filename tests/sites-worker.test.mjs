@@ -1122,6 +1122,8 @@ test("audit jobs persist one repair per finding and require human approval befor
         body: JSON.stringify({
           findingId: "document-content-security-policy",
           source: "agent",
+          repositoryFiles: ["worker/index.js", "tests/sites-worker.test.mjs"],
+          repositoryChecks: ["bun test", "bun run build"],
         }),
       }),
     );
@@ -1134,6 +1136,8 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.match(first.patch, /script-src 'self' https:\/\/scripts\.example\.net/);
   assert.equal(values.get("repairs").length, 1);
   assert.equal(first.mission.state, "awaiting-human-review");
+  assert.deepEqual(first.repositoryPlan.files, ["worker/index.js", "tests/sites-worker.test.mjs"]);
+  assert.deepEqual(first.repositoryPlan.checks, ["bun test", "bun run build"]);
   assert.deepEqual(first.mission.nextActions, [{ id: "review_in_ui", actor: "person" }]);
 
   const changesResponse = await job.fetch(
@@ -1180,6 +1184,7 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(revisedRepair.revision, 2);
   assert.equal(revisedRepair.revisionHistory.length, 1);
   assert.match(revisedRepair.patch, /report-uri \/csp-report/);
+  assert.deepEqual(revisedRepair.repositoryPlan.files, first.repositoryPlan.files);
 
   const earlyExport = await job.fetch(
     new Request(`https://frontmend.internal/repairs/${first.id}/export`),
@@ -1269,7 +1274,10 @@ test("audit jobs persist one repair per finding and require human approval befor
   );
   assert.equal(exportResponse.status, 200);
   assert.match(exportResponse.headers.get("content-type"), /text\/markdown/);
-  assert.match(await exportResponse.text(), /does not claim the target site was changed/i);
+  const exportText = await exportResponse.text();
+  assert.match(exportText, /does not claim the target site was changed/i);
+  assert.match(exportText, /## Repository plan/);
+  assert.match(exportText, /`worker\/index\.js`/);
 
   const earlyVerificationInput = await job.fetch(
     new Request(`https://frontmend.internal/repairs/${first.id}/verification-input`),

@@ -241,6 +241,12 @@ test("repair tools use visible audit context while preserving explicit repair ID
         { provider: "Lighthouse", auditId: "color-contrast", strategy: "desktop" },
       ],
     },
+    repositoryPlan: {
+      files: ["frontend/next.config.ts", "frontend/tests/headers.test.ts"],
+      checks: ["bun test", "bun run build"],
+      source: "agent",
+      sourceChangedByFrontmend: false,
+    },
     status: "draft",
     source: "agent",
     summary: "Introduce a tested report-only policy first.",
@@ -301,11 +307,14 @@ test("repair tools use visible audit context while preserving explicit repair ID
     patch: repair.patch,
     verificationPlan: repair.verificationPlan,
     risk: repair.risk,
+    repositoryFiles: repair.repositoryPlan.files,
+    repositoryChecks: repair.repositoryPlan.checks,
   });
   assert.equal(staged.ok, true);
   assert.equal(staged.data.requiresHumanReview, true);
   assert.equal(staged.data.findingScope.occurrenceCount, 2);
   assert.deepEqual(staged.data.findingScope.sources.map((source) => source.strategy), ["mobile", "desktop"]);
+  assert.deepEqual(staged.data.repositoryPlan.files, repair.repositoryPlan.files);
   assert.equal("patch" in staged.data, false);
   assert.equal(staged.data.mission.state, "awaiting-human-review");
   assert.deepEqual(staged.data.mission.nextActions, [{ id: "review_in_ui", actor: "person" }]);
@@ -316,6 +325,7 @@ test("repair tools use visible audit context while preserving explicit repair ID
   });
   assert.equal(workspace.data.repairs[0].patch, repair.patch);
   assert.equal(workspace.data.repairs[0].findingScope.occurrenceCount, 2);
+  assert.deepEqual(workspace.data.repairs[0].repositoryPlan.checks, ["bun test", "bun run build"]);
   assert.equal(
     workspace.data.repairs[0].mission.steps.find((step) => step.id === "review").status,
     "current",
@@ -329,6 +339,8 @@ test("repair tools use visible audit context while preserving explicit repair ID
     patch: "Content-Security-Policy-Report-Only: default-src 'self'; report-uri /csp-report",
     verificationPlan: "Exercise critical journeys and inspect the reporting endpoint before enforcement.",
     risk: "high",
+    repositoryFiles: ["frontend/next.config.ts", "frontend/tests/csp.test.ts"],
+    repositoryChecks: ["bun test", "bun run build"],
   };
   const unrequestedRevision = await findTool(tools, "revise_site_repair").execute(revisionInput);
   assert.equal(unrequestedRevision.ok, false);
@@ -354,6 +366,7 @@ test("repair tools use visible audit context while preserving explicit repair ID
   assert.equal(revised.data.revision, 2);
   assert.equal(revised.data.status, "draft");
   assert.equal(revised.data.findingScope.occurrenceCount, 2);
+  assert.equal(revised.data.repositoryPlan.sourceChangedByFrontmend, false);
   assert.equal(revised.data.mission.state, "awaiting-human-review");
   assert.equal(calls.at(-1)[0], "revise");
 
@@ -510,6 +523,12 @@ test("verification receipt tool returns the same bounded proof artifact", async 
           comparisonReason: "exact-lighthouse-rule",
         },
       ],
+      repositoryPlan: {
+        files: ["src/App.jsx", "tests/App.test.jsx"],
+        checks: ["bun test", "bun run build"],
+        source: "agent",
+        sourceChangedByFrontmend: false,
+      },
       ruleOutcome: "passed",
       comparable: true,
       metricComparable: true,
@@ -531,10 +550,12 @@ test("verification receipt tool returns the same bounded proof artifact", async 
   assert.equal(receipt.data.status, "resolved");
   assert.equal(receipt.data.findingScope.occurrenceCount, 2);
   assert.deepEqual(receipt.data.scopeOutcomes.map((outcome) => outcome.source.strategy), ["mobile", "desktop"]);
+  assert.deepEqual(receipt.data.repositoryPlan.files, ["src/App.jsx", "tests/App.test.jsx"]);
   assert.equal(receipt.data.format, "text/markdown");
   assert.equal(receipt.data.downloadPath, `/api/audits/${auditId}/receipt`);
   assert.match(receipt.data.receipt, /\| Score \| 88 \| 100 \| \+12 \|/);
   assert.match(receipt.data.receipt, /Rule-scope outcomes/);
+  assert.match(receipt.data.receipt, /Reviewed repository plan/);
 });
 
 test("audit-scoped schemas make only the current audit ID optional", async () => {

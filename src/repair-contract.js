@@ -29,7 +29,7 @@ function boundedString(value, field, maximum, { required = true } = {}) {
   return result;
 }
 
-function repositoryRelativePath(value) {
+function repositoryRelativePath(value, errorCode = "INVALID_IMPLEMENTATION_RECEIPT") {
   const path = boundedString(value, "file path", 200).replace(/\\/g, "/");
   const segments = path.split("/");
   if (
@@ -40,25 +40,72 @@ function repositoryRelativePath(value) {
     /[\u0000-\u001f\u007f]/.test(path)
   ) {
     throw new AuditError(
-      "INVALID_IMPLEMENTATION_RECEIPT",
+      errorCode,
       "files must contain repository-relative paths without parent traversal.",
     );
   }
   return path;
 }
 
-function boundedUniqueList(value, field, maximum, normalize) {
+function boundedUniqueList(
+  value,
+  field,
+  maximum,
+  normalize,
+  errorCode = "INVALID_IMPLEMENTATION_RECEIPT",
+) {
   if (!Array.isArray(value) || value.length < 1 || value.length > maximum) {
     throw new AuditError(
-      "INVALID_IMPLEMENTATION_RECEIPT",
+      errorCode,
       `${field} must contain between 1 and ${maximum} items.`,
     );
   }
   const result = value.map(normalize);
   if (new Set(result.map((item) => JSON.stringify(item))).size !== result.length) {
-    throw new AuditError("INVALID_IMPLEMENTATION_RECEIPT", `${field} must not contain duplicates.`);
+    throw new AuditError(errorCode, `${field} must not contain duplicates.`);
   }
   return result;
+}
+
+function repositoryPlanForProposal(input, existing = null, source = "agent") {
+  const hasFiles = input.repositoryFiles !== undefined;
+  const hasChecks = input.repositoryChecks !== undefined;
+  if (!hasFiles && !hasChecks) {
+    return existing
+      ? {
+          files: [...existing.files],
+          checks: [...existing.checks],
+          source: "agent",
+          sourceChangedByFrontmend: false,
+        }
+      : null;
+  }
+  if (source !== "agent") {
+    throw new AuditError(
+      "INVALID_REPAIR",
+      "Repository files and checks may be attached only by a coding agent with repository access.",
+    );
+  }
+  const files = boundedUniqueList(
+    hasFiles ? input.repositoryFiles : existing?.files,
+    "repositoryFiles",
+    8,
+    (value) => repositoryRelativePath(value, "INVALID_REPAIR"),
+    "INVALID_REPAIR",
+  );
+  const checks = boundedUniqueList(
+    hasChecks ? input.repositoryChecks : existing?.checks,
+    "repositoryChecks",
+    8,
+    (value) => boundedString(value, "repository check", 120),
+    "INVALID_REPAIR",
+  );
+  return {
+    files,
+    checks,
+    source: "agent",
+    sourceChangedByFrontmend: false,
+  };
 }
 
 const CSP_DIRECTIVES = Object.freeze([
@@ -398,7 +445,16 @@ export function createRepairDraft({
 }) {
   if (!finding?.id) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
   const extra = Object.keys(input).find(
-    (key) => !["findingId", "summary", "patchType", "patch", "verificationPlan", "risk"].includes(key),
+    (key) => ![
+      "findingId",
+      "summary",
+      "patchType",
+      "patch",
+      "verificationPlan",
+      "risk",
+      "repositoryFiles",
+      "repositoryChecks",
+    ].includes(key),
   );
   if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
   const defaults = templateForFinding(finding);
@@ -428,6 +484,7 @@ export function createRepairDraft({
       700,
     ),
     risk,
+    repositoryPlan: repositoryPlanForProposal(input, null, source),
     requiresHumanReview: true,
     createdAt: now,
     updatedAt: now,
@@ -469,7 +526,15 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
       "A person must request changes in the visible review interface before this repair can be revised.",
     );
   }
-  const allowed = ["summary", "patchType", "patch", "verificationPlan", "risk"];
+  const allowed = [
+    "summary",
+    "patchType",
+    "patch",
+    "verificationPlan",
+    "risk",
+    "repositoryFiles",
+    "repositoryChecks",
+  ];
   const extra = Object.keys(input).find((key) => !allowed.includes(key));
   if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
   if (!Object.keys(input).length) {
@@ -493,8 +558,12 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
       700,
     ),
     risk,
+    repositoryPlan: repositoryPlanForProposal(input, repair.repositoryPlan, source),
   };
-  if (allowed.every((key) => next[key] === repair[key])) {
+  const proposalChanged = ["summary", "patchType", "patch", "verificationPlan", "risk"]
+    .some((key) => next[key] !== repair[key]);
+  const repositoryPlanChanged = JSON.stringify(next.repositoryPlan) !== JSON.stringify(repair.repositoryPlan ?? null);
+  if (!proposalChanged && !repositoryPlanChanged) {
     throw new AuditError("INVALID_REPAIR", "The revised proposal must differ from the current version.");
   }
   const previous = {
@@ -504,6 +573,14 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     patch: repair.patch,
     verificationPlan: repair.verificationPlan,
     risk: repair.risk,
+    repositoryPlan: repair.repositoryPlan
+      ? {
+          files: [...repair.repositoryPlan.files],
+          checks: [...repair.repositoryPlan.checks],
+          source: "agent",
+          sourceChangedByFrontmend: false,
+        }
+      : null,
     source: repair.source,
     createdAt: repair.updatedAt ?? repair.createdAt,
     changeRequest: repair.changeRequest,
@@ -544,7 +621,7 @@ export function recordRepositoryImplementation(repair, input = {}, now = Date.no
   if (extra) {
     throw new AuditError("INVALID_IMPLEMENTATION_RECEIPT", `Unknown implementation field: ${extra}.`);
   }
-  const files = boundedUniqueList(input.files, "files", 8, repositoryRelativePath);
+  const files = boundedUniqueList(input.files, "files", 8, (value) => repositoryRelativePath(value));
   const checks = boundedUniqueList(input.checks, "checks", 8, (check) => {
     if (!check || typeof check !== "object" || Array.isArray(check)) {
       throw new AuditError("INVALID_IMPLEMENTATION_RECEIPT", "Each check must be an object.");
@@ -607,6 +684,16 @@ function implementationReceiptSnapshot(receipt) {
     source: "agent",
     reportedAt: receipt.reportedAt,
     agentReported: true,
+    sourceChangedByFrontmend: false,
+  };
+}
+
+function repositoryPlanSnapshot(plan) {
+  if (!plan?.files?.length || !plan?.checks?.length || plan.source !== "agent") return null;
+  return {
+    files: plan.files.slice(0, 8).map((file) => file),
+    checks: plan.checks.slice(0, 8).map((check) => check),
+    source: "agent",
     sourceChangedByFrontmend: false,
   };
 }
@@ -987,6 +1074,7 @@ export function createVerificationContext(report, repair) {
     baselineEvidence: reportEvidenceSignature(report),
     baseline: reportSnapshot(report, repair.findingSource, findingScope),
     lineage: startingLineage(report, repair.findingSource, findingScope),
+    repositoryPlan: repositoryPlanSnapshot(repair.repositoryPlan),
     implementationReceipt: implementationReceiptSnapshot(repair.implementationReceipt),
     deploymentAttestedAt: repair.deploymentAttestedAt,
   };
@@ -1065,6 +1153,7 @@ export function compareVerification(report, verification, now = Date.now()) {
     findingSource: source,
     findingScope,
     scopeOutcomes,
+    repositoryPlan: repositoryPlanSnapshot(verification.repositoryPlan),
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
@@ -1155,6 +1244,17 @@ export function repairExportMarkdown({ report, repair }) {
     "",
     "> Every listed occurrence must explicitly pass in a fresh audit before Frontmend can mark this repair resolved.",
     "",
+    ...(repair.repositoryPlan
+      ? [
+          "## Repository plan",
+          "",
+          `- Planned files: ${repair.repositoryPlan.files.map((file) => `\`${receiptText(file, 200)}\``).join(", ")}`,
+          `- Planned checks: ${repair.repositoryPlan.checks.map((check) => receiptText(check, 120)).join("; ")}`,
+          "",
+          "> Coding-agent plan metadata only. Frontmend did not inspect these files, receive their contents, or run these checks.",
+          "",
+        ]
+      : []),
     "## Repair summary",
     "",
     repair.summary,
@@ -1505,6 +1605,18 @@ export function verificationReceiptMarkdown(report) {
     `Fresh audit: \`${receiptText(proof.current.auditId, 80)}\``,
   ];
   const implementation = verification.implementationReceipt;
+  const repositoryPlan = verification.repositoryPlan;
+  if (repositoryPlan) {
+    lines.push(
+      "",
+      "## Reviewed repository plan",
+      "",
+      "> Coding-agent plan metadata frozen before implementation. Frontmend did not inspect these files, receive their contents, or run these checks.",
+      "",
+      `- Planned files: ${repositoryPlan.files.map((file) => `\`${receiptText(file, 200)}\``).join(", ")}`,
+      `- Planned checks: ${repositoryPlan.checks.map((check) => receiptText(check, 120)).join("; ")}`,
+    );
+  }
   if (implementation) {
     lines.push(
       "",

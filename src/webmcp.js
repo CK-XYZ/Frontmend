@@ -403,6 +403,7 @@ export function createFrontmendTools(service) {
           status: report.verification?.status,
           findingScope: report.verification?.findingScope,
           scopeOutcomes: report.verification?.scopeOutcomes,
+          repositoryPlan: report.verification?.repositoryPlan,
           format: "text/markdown",
           downloadPath: `/api/audits/${encodeURIComponent(auditId)}/receipt`,
           receipt: verificationReceiptMarkdown(report),
@@ -413,7 +414,7 @@ export function createFrontmendTools(service) {
       name: "stage_site_repair",
       title: "Stage site repair",
       description:
-        "Stage a bounded repair proposal for one completed audit finding and freeze every measured strategy sharing that failed rule into its verification scope. Omit auditId to use the visible audit. This creates a visible draft for human review; it never changes the target site or approves the draft.",
+        "Stage a bounded repair proposal for one completed audit finding, freeze every measured strategy sharing that failed rule, and optionally attach source-safe repository-relative target files plus planned checks for human review. Omit auditId to use the visible audit. Never include source contents, absolute paths, credentials, or environment values. This never changes the target site or approves the draft.",
       inputSchema: {
         type: "object",
         properties: {
@@ -428,6 +429,22 @@ export function createFrontmendTools(service) {
           patch: { type: "string", minLength: 1, maxLength: 1200, description: "Reviewable code or implementation guidance." },
           verificationPlan: { type: "string", minLength: 1, maxLength: 500, description: "How to prove the finding changed after deployment." },
           risk: { type: "string", enum: ["low", "medium", "high"], description: "Implementation risk requiring review." },
+          repositoryFiles: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 200 },
+            description: "Optional repository-relative files the coding agent plans to change; no absolute paths or source contents.",
+          },
+          repositoryChecks: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 120 },
+            description: "Optional checks the coding agent plans to run before reporting implementation.",
+          },
         },
         required: ["findingId"],
         additionalProperties: false,
@@ -435,7 +452,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk"]);
+        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
@@ -454,6 +471,8 @@ export function createFrontmendTools(service) {
           patch: optionalString(value.patch, "patch", 1200),
           verificationPlan: optionalString(value.verificationPlan, "verificationPlan", 500),
           risk: value.risk,
+          repositoryFiles: value.repositoryFiles,
+          repositoryChecks: value.repositoryChecks,
         });
         return {
           auditId,
@@ -465,6 +484,7 @@ export function createFrontmendTools(service) {
           patchType: repair.patchType,
           risk: repair.risk,
           findingScope: repair.findingScope,
+          repositoryPlan: repair.repositoryPlan,
           requiresHumanReview: true,
           mission: repair.mission ?? repairMissionState(repair),
           nextAction: "Ask the person to review and approve the visible draft in Frontmend.",
@@ -475,7 +495,7 @@ export function createFrontmendTools(service) {
       name: "revise_site_repair",
       title: "Revise site repair",
       description:
-        "Submit a complete revised repair proposal only after a person requested changes in the visible Frontmend review interface. Omit auditId to use the visible audit. This cannot approve the revision, attest deployment, or change the target site.",
+        "Submit a complete revised repair proposal only after a person requested changes in the visible Frontmend review interface. The coding agent may attach or revise bounded repository-relative target files and planned checks, but never source contents or absolute paths. Omit auditId to use the visible audit. This cannot approve the revision, attest deployment, or change the target site.",
       inputSchema: {
         type: "object",
         properties: {
@@ -490,6 +510,22 @@ export function createFrontmendTools(service) {
           patch: { type: "string", minLength: 1, maxLength: 1200, description: "Complete revised code or implementation guidance." },
           verificationPlan: { type: "string", minLength: 1, maxLength: 500, description: "Revised plan for proving the exact finding changed." },
           risk: { type: "string", enum: ["low", "medium", "high"], description: "Reassessed implementation risk." },
+          repositoryFiles: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 200 },
+            description: "Optional revised repository-relative files; no absolute paths or source contents.",
+          },
+          repositoryChecks: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 120 },
+            description: "Optional revised repository checks planned before implementation is reported.",
+          },
         },
         required: ["repairId", "summary", "patchType", "patch", "verificationPlan", "risk"],
         additionalProperties: false,
@@ -497,7 +533,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "repairId", "summary", "patchType", "patch", "verificationPlan", "risk"]);
+        noExtra(value, ["auditId", "repairId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks"]);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
         const risks = ["low", "medium", "high"];
         if (!patchTypes.includes(value.patchType)) {
@@ -514,6 +550,8 @@ export function createFrontmendTools(service) {
           patch: requiredString(value.patch, "patch", 1200),
           verificationPlan: requiredString(value.verificationPlan, "verificationPlan", 500),
           risk: value.risk,
+          repositoryFiles: value.repositoryFiles,
+          repositoryChecks: value.repositoryChecks,
         });
         return {
           auditId,
@@ -525,6 +563,7 @@ export function createFrontmendTools(service) {
           patchType: repair.patchType,
           risk: repair.risk,
           findingScope: repair.findingScope,
+          repositoryPlan: repair.repositoryPlan,
           requiresHumanReview: true,
           mission: repair.mission ?? repairMissionState(repair),
           nextAction: "Ask the person to review the revised proposal in Frontmend.",
@@ -564,6 +603,7 @@ export function createFrontmendTools(service) {
             findingId: repair.findingId,
             findingTitle: repair.findingTitle,
             findingScope: repair.findingScope,
+            repositoryPlan: repair.repositoryPlan,
             status: repair.status,
             revision: repair.revision ?? 1,
             source: repair.source,
@@ -609,6 +649,7 @@ export function createFrontmendTools(service) {
               summary: revision.summary,
               source: revision.source,
               createdAt: revision.createdAt,
+              repositoryPlan: revision.repositoryPlan,
               changeRequest: revision.changeRequest
                 ? {
                     feedback: revision.changeRequest.feedback,

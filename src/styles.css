@@ -2507,6 +2507,90 @@ input:focus-visible,
   background: rgb(255 255 252 / 72%);
 }
 
+.repository-plan {
+  grid-column: 1 / -1;
+  padding: 14px;
+  border: 1px solid #d8dce8;
+  border-radius: 13px;
+  background: #f7f8fc;
+}
+
+.repository-plan-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.repository-plan-heading > span {
+  display: grid;
+  flex: 0 0 auto;
+  width: 35px;
+  height: 35px;
+  place-items: center;
+  border-radius: 10px;
+  background: #e8ebf6;
+  color: #52618b;
+}
+
+.repository-plan-heading strong {
+  display: block;
+  color: #3e4968;
+  font-size: 11px;
+}
+
+.repository-plan-heading p:not(.kicker) {
+  margin: 3px 0 0;
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.repository-plan-columns {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.repository-plan-columns > div {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgb(70 82 118 / 10%);
+  border-radius: 10px;
+  background: rgb(255 255 255 / 68%);
+}
+
+.repository-plan-columns span {
+  color: #6d7590;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.repository-plan-columns ul {
+  display: grid;
+  gap: 6px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.repository-plan-columns li,
+.repository-plan-columns code {
+  overflow-wrap: anywhere;
+  color: #4f5873;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.repository-plan > small {
+  display: block;
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 8px;
+  line-height: 1.45;
+}
+
 .repair-risk {
   flex: 0 0 auto;
   padding: 7px 9px;
@@ -4355,6 +4439,10 @@ input:focus-visible,
   .rule-scope-receipt li {
     grid-template-columns: minmax(72px, 0.4fr) minmax(0, 1fr) auto;
     gap: 8px;
+  }
+
+  .repository-plan-columns {
+    grid-template-columns: 1fr;
   }
 
   .deployment-gate {
