@@ -1,4 +1,8 @@
 import { AuditError } from "./url-policy.js";
+import {
+  compileBrowserInvestigations,
+  projectLegacyBrowserCheck,
+} from "./browser-investigation-compiler.js";
 
 export const BROWSER_REVIEW_OUTCOMES = Object.freeze(["passed", "issue", "blocked"]);
 export const BROWSER_REVIEW_BLOCKER_REASONS = Object.freeze([
@@ -98,14 +102,64 @@ export function browserReviewChecksForMission(mission) {
     .map((check) => ({ ...check, focusAreas: check.focusAreas.filter((area) => areas.has(area)) }));
 }
 
-function requestedCheckSnapshot(check) {
+function requestedCheckSnapshot(check, reviewTarget = "/") {
+  const task = check?.schemaVersion === 1 && check?.assignment && check?.responseContract
+    ? check
+    : projectLegacyBrowserCheck(check, reviewTarget);
+  const focusArea = task.focusArea === "seo" ? "seo" : task.focusArea === "reliability"
+    ? "reliability"
+    : task.focusArea === "performance" ? "performance" : "accessibility";
+  const viewport = task.viewport === "mobile" ? "mobile" : "desktop";
+  const occurrences = Array.isArray(task.trigger?.occurrences)
+    ? task.trigger.occurrences.slice(0, 8).map((item) => ({
+        findingId: item?.findingId ? boundedString(item.findingId, "task.trigger.occurrences.findingId", 160) : null,
+        strategy: ["mobile", "desktop", "document"].includes(item?.strategy) ? item.strategy : viewport,
+        selector: item?.selector ? boundedString(item.selector, "task.trigger.occurrences.selector", 200) : null,
+        evidence: boundedString(item?.evidence ?? "Retained provider symptom.", "task.trigger.occurrences.evidence", 600),
+      }))
+    : [];
   return {
-    id: check.id,
-    label: check.label,
-    focusAreas: [...check.focusAreas],
-    viewport: check.viewport,
-    instruction: check.instruction,
-    boundary: check.boundary,
+    schemaVersion: 1,
+    id: boundedString(task.id, "task.id", 80),
+    kind: ["provider-confirmation", "coverage-gap", "safe-journey", "verification-replay"].includes(task.kind)
+      ? task.kind
+      : "coverage-gap",
+    label: boundedString(task.label, "task.label", 120),
+    focusArea,
+    focusAreas: Array.isArray(task.focusAreas) && task.focusAreas.length
+      ? task.focusAreas.filter((area) => ["accessibility", "seo", "reliability", "performance"].includes(area))
+      : [focusArea],
+    viewport,
+    target: {
+      path: boundedString(task.target?.path ?? "/", "task.target.path", 256),
+      viewport,
+      affectedViewports: Array.isArray(task.target?.affectedViewports)
+        ? [...new Set(task.target.affectedViewports.filter((item) => ["mobile", "desktop", "document"].includes(item)))].slice(0, 3)
+        : [viewport],
+    },
+    trigger: {
+      provider: boundedString(task.trigger?.provider ?? "Frontmend", "task.trigger.provider", 120),
+      auditId: boundedString(task.trigger?.auditId ?? task.id, "task.trigger.auditId", 160),
+      findingId: task.trigger?.findingId ? boundedString(task.trigger.findingId, "task.trigger.findingId", 160) : null,
+      ruleId: task.trigger?.ruleId ? boundedString(task.trigger.ruleId, "task.trigger.ruleId", 120) : null,
+      selector: task.trigger?.selector ? boundedString(task.trigger.selector, "task.trigger.selector", 200) : null,
+      retainedEvidence: boundedString(task.trigger?.retainedEvidence ?? "Retained browser coverage gap.", "task.trigger.retainedEvidence", 600),
+      occurrences,
+    },
+    assignment: {
+      goal: boundedString(task.assignment?.goal, "task.assignment.goal", 300),
+      instructions: boundedString(task.assignment?.instructions, "task.assignment.instructions", 900),
+      boundary: boundedString(task.assignment?.boundary, "task.assignment.boundary", 900),
+      completionCriteria: boundedString(task.assignment?.completionCriteria, "task.assignment.completionCriteria", 600),
+    },
+    responseContract: {
+      outcomes: ["passed", "issue", "blocked"],
+      observationPrompt: boundedString(task.responseContract?.observationPrompt, "task.responseContract.observationPrompt", 600),
+      findingsAllowed: task.responseContract?.findingsAllowed !== false,
+      blockerReasons: [...BROWSER_REVIEW_BLOCKER_REASONS],
+    },
+    instruction: boundedString(task.assignment?.instructions ?? task.instruction, "task.instruction", 900),
+    boundary: boundedString(task.assignment?.boundary ?? task.boundary, "task.boundary", 900),
   };
 }
 
@@ -161,6 +215,16 @@ function resultSnapshot(result) {
     agentReported: result.agentReported,
     revision: result.revision,
     reportedAt: result.reportedAt,
+    taskTrigger: result.taskTrigger
+      ? {
+          provider: result.taskTrigger.provider,
+          auditId: result.taskTrigger.auditId,
+          findingId: result.taskTrigger.findingId ?? null,
+          ruleId: result.taskTrigger.ruleId ?? null,
+          selector: result.taskTrigger.selector ?? null,
+          occurrences: (result.taskTrigger.occurrences ?? []).map((item) => ({ ...item })),
+        }
+      : null,
   };
 }
 
@@ -213,25 +277,33 @@ export function browserReviewState(review) {
     completedCheckCount,
     issueCount,
     blockedCheckCount,
-    nextCheck: nextCheck ? requestedCheckSnapshot(nextCheck) : null,
+    nextCheck: nextCheck ? requestedCheckSnapshot(nextCheck, review.target) : null,
   };
 }
 
 export function browserReviewSnapshot(review) {
-  if (!review?.id || review.schemaVersion !== 1) {
+  if (!review?.id || ![1, 2].includes(review.schemaVersion)) {
     throw new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist.");
   }
+  const target = boundedString(review.target, "target", 2_048);
+  const sourceTasks = review.schemaVersion === 1
+    ? (review.requestedChecks ?? [])
+    : (review.tasks ?? review.requestedChecks ?? []);
+  const tasks = sourceTasks.map((check) => requestedCheckSnapshot(check, target));
   const snapshot = {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    taskSchemaVersion: 1,
+    migratedFromSchemaVersion: review.schemaVersion === 1 ? 1 : null,
     id: boundedId(review.id, "browserReview.id"),
     auditId: boundedId(review.auditId),
     purpose: review.purpose === "verification" ? "verification" : "assessment",
-    target: boundedString(review.target, "target", 2_048),
+    target,
     verificationBaseline: review.purpose === "verification"
       ? verificationBaselineSnapshot(review.verificationBaseline)
       : null,
     requestedFocusAreas: missionFocusAreas({ focusAreas: review.requestedFocusAreas }),
-    requestedChecks: (review.requestedChecks ?? []).map(requestedCheckSnapshot),
+    tasks,
+    requestedChecks: tasks,
     results: (review.results ?? []).map(resultSnapshot),
     history: (review.history ?? []).slice(-MAX_HISTORY).map(resultSnapshot),
     createdAt: review.createdAt,
@@ -253,22 +325,29 @@ export function browserReviewSnapshot(review) {
   };
 }
 
-export function createBrowserReviewMission({ auditId, mission, target, now = Date.now() }) {
+export function createBrowserReviewMission({
+  auditId,
+  mission,
+  report = null,
+  documentProfile = report?.documentProfile ?? null,
+  target,
+  now = Date.now(),
+}) {
   if (!browserReviewRequired(mission)) {
     throw new AuditError(
       "BROWSER_REVIEW_NOT_REQUIRED",
       "This assessment does not require an agent-contributed accessibility or SEO browser review.",
     );
   }
-  const requestedChecks = browserReviewChecksForMission(mission);
+  const tasks = compileBrowserInvestigations({ report, documentProfile, mission, target });
   return browserReviewSnapshot({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: crypto.randomUUID(),
     auditId: boundedId(auditId),
     purpose: "assessment",
     target: boundedString(target, "target", 2_048),
     requestedFocusAreas: missionFocusAreas(mission),
-    requestedChecks,
+    tasks,
     results: [],
     history: [],
     createdAt: now,
@@ -285,25 +364,51 @@ export function createBrowserVerificationReview({ auditId, verification, target,
     );
   }
   const viewport = baseline.source.strategy === "mobile" ? "mobile" : "desktop";
-  const requestedChecks = [{
+  const tasks = [{
+    schemaVersion: 1,
     id: "fresh-browser-replay",
+    kind: "verification-replay",
     label: "Fresh browser replay",
+    focusArea: baseline.focusArea,
     focusAreas: [baseline.focusArea],
     viewport,
-    instruction:
-      `Revisit the deployed page at the retained ${viewport} viewport and repeat the exact original ${baseline.browserReviewEvidence?.checkLabel ?? "browser"} check. Compare ${baseline.selector} against this baseline issue: ${baseline.evidence}`,
-    boundary:
-      "Report passed only when the exact retained issue is no longer observable, issue when it remains, or blocked with the exact limitation. Do not infer a pass from provider scores, source changes, or deployment claims.",
+    target: { path: new URL(target).pathname || "/", viewport, affectedViewports: [viewport] },
+    trigger: {
+      provider: baseline.source.provider,
+      auditId: baseline.source.auditId,
+      findingId: baseline.findingId,
+      ruleId: baseline.source.auditId,
+      selector: baseline.selector,
+      retainedEvidence: baseline.evidence,
+      occurrences: [{
+        findingId: baseline.findingId,
+        strategy: baseline.source.strategy,
+        selector: baseline.selector,
+        evidence: baseline.evidence,
+      }],
+    },
+    assignment: {
+      goal: "Replay the exact retained browser issue against the deployed public page.",
+      instructions: `Revisit the deployed page at the retained ${viewport} viewport and repeat the exact original ${baseline.browserReviewEvidence?.checkLabel ?? "browser"} check. Compare the retained selector against this bounded baseline symptom: ${baseline.evidence}`,
+      boundary: "Report passed only when the exact retained issue is no longer observable, issue when it remains, or blocked with the exact limitation. Do not infer a pass from provider scores, source changes, or deployment claims.",
+      completionCriteria: "Return a fresh direct comparison for the retained selector and symptom at the retained viewport.",
+    },
+    responseContract: {
+      outcomes: ["passed", "issue", "blocked"],
+      observationPrompt: "Describe only the fresh rendered comparison with the retained symptom.",
+      findingsAllowed: false,
+      blockerReasons: [...BROWSER_REVIEW_BLOCKER_REASONS],
+    },
   }];
   return browserReviewSnapshot({
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: crypto.randomUUID(),
     auditId: boundedId(auditId),
     purpose: "verification",
     target: boundedString(target, "target", 2_048),
     verificationBaseline: baseline,
     requestedFocusAreas: [baseline.focusArea],
-    requestedChecks,
+    tasks,
     results: [],
     history: [],
     createdAt: now,
@@ -354,6 +459,14 @@ function browserFinding({ review, check, input, finding, index, now }) {
       checkLabel: check.label,
       provenance: "agent-reported-browser",
       reportedAt: now,
+      trigger: {
+        provider: check.trigger.provider,
+        auditId: check.trigger.auditId,
+        findingId: check.trigger.findingId,
+        ruleId: check.trigger.ruleId,
+        selector: check.trigger.selector,
+        occurrences: check.trigger.occurrences.map((item) => ({ ...item })),
+      },
     },
     diagnosticEvidence: {
       kind: "browser-observation",
@@ -444,6 +557,14 @@ export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agen
     agentReported: source !== "person",
     revision: previous ? previous.revision + 1 : 1,
     reportedAt: now,
+    taskTrigger: {
+      provider: check.trigger.provider,
+      auditId: check.trigger.auditId,
+      findingId: check.trigger.findingId,
+      ruleId: check.trigger.ruleId,
+      selector: check.trigger.selector,
+      occurrences: check.trigger.occurrences.map((item) => ({ ...item })),
+    },
   };
   return browserReviewSnapshot({
     ...review,

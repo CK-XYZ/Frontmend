@@ -1381,6 +1381,8 @@ export class FrontmendAuditJob {
           : createBrowserReviewMission({
               auditId: state.id,
               mission: state.mission,
+              report: state.report,
+              documentProfile: state.report.documentProfile,
               target: state.report.finalUrl ?? state.report.url ?? state.url,
             });
         await this.ctx.storage.put("browserReview", review);

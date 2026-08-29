@@ -706,6 +706,8 @@ export function createLocalAuditRuntime(options = {}) {
               : createBrowserReviewMission({
                   auditId,
                   mission: baseline.mission,
+                  report: baseline.report,
+                  documentProfile: baseline.report.documentProfile,
                   target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
                 });
             return sendJson(response, 201, { ok: true, data: baseline.browserReview });

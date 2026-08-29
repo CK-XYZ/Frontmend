@@ -226,3 +226,13 @@
 - Clean release gate from `d3221c6`: 153/153 tests passed across 11 files; Vite transformed 4,578 modules; assets were `index-DI7L0EII.css` at 84.41 kB raw / 17.03 kB gzip and `index-CYmkSJ03.js` at 458.99 kB raw / 126.75 kB gzip.
 - Strict Wrangler 4.126.0 dry run read five assets, recognised both Durable Objects plus `ASSETS`, emitted 262.47 KiB raw / 56.51 KiB gzip, and exited without upload.
 - No server was started, no deployment or push occurred, and the public hostname still serves the older candidate. Fresh current-candidate visual, ChatGPT/Codex, Chrome and post-deployment replay receipts remain required.
+
+## 30 August 2026 — Evidence-led browser investigation compiler
+
+- Replaced static assessment check selection for new reviews with a pure, deterministic compiler over the completed report, document profile, persisted mission, and public target. Existing review tools and the 21-tool ceiling are unchanged.
+- Added versioned tasks with nested target, trigger, assignment, and response contracts. An internal allowlist owns all instructions, boundaries, outcomes, and completion criteria; bounded provider text can appear only as retained evidence.
+- Grouped duplicate provider rules across strategies, retained selectors and bounded occurrences, ranked high-severity/useful rendered investigations first, and capped each review at five tasks.
+- Kept minimal rendered structure, safe journey, reflow, and discovery coverage only when the requested focus area has no useful retained evidence. Schema v1 reviews are projected at read time into safe coverage-gap tasks without changing completed results.
+- Targeted compiler/browser/mission suites passed 22/22. Shared service, WebMCP, Worker, and local-runtime suites passed 83/83, including the packaging test.
+- The production build transformed 4,579 modules and emitted `index-DI7L0EII.css` at 84.41 kB raw / 17.03 kB gzip and `index-Dkx5fmOY.js` at 467.00 kB raw / 128.52 kB gzip.
+- No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.
