@@ -167,3 +167,18 @@
 - Reran the allowed release gate from that exact clean commit: `bun run test` passed 125/125, `bun run build` transformed 4,576 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
 - Current assets are `index-BTDKodKk.css` at 76.46 kB raw / 15.63 kB gzip and `index-DyXq3uEW.js` at 416.18 kB raw / 116.11 kB gzip. The dry bundle is 212.09 KiB raw / 46.61 KiB gzip.
 - `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.
+
+## 2026-08-30 — Contextual assessment receipt
+
+- Added one bounded receipt contract that refuses export until the persisted assessment mission is complete, including honest zero-priority completion when no supported failure matches the retained focus.
+- The receipt freezes the retained mission and ranked provider evidence beside separately attributed browser reproduction, repository ownership, and planned checks. It explicitly keeps source receipt, repair approval, implementation, deployment, and resolution authority false.
+- Added `get_assessment_receipt` as the eighteenth tool. It is absent while diagnosis remains required, appears contextually after `assessmentComplete`, and returns the same structured contract plus portable Markdown exposed through the human **Export assessment** action.
+- The public Worker and local runtime share the `/api/audits/:id/assessment` route, stable filename, no-store/nosniff response headers, and `ASSESSMENT_INCOMPLETE` conflict result.
+- Updated the primary Codex demo and exact fresh ChatGPT/Codex/Chrome procedures to prove both the capability transition and honest absence when evidence is incomplete.
+
+## 2026-08-30 — Assessment-receipt release gate
+
+- Product slice committed as `946a7933246fea5bb91ecf72cd94c9411a2ba842` with the CK-XYZ Git identity.
+- Reran the allowed release gate from that exact clean commit: `bun run test` passed 130/130, `bun run build` transformed 4,577 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
+- Current assets are `index-ntU8Lm1i.css` at 76.72 kB raw / 15.70 kB gzip and `index-D1ZHTB7o.js` at 425.34 kB raw / 118.53 kB gzip. The dry bundle is 222.65 KiB raw / 48.87 KiB gzip.
+- `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.

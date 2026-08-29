@@ -52,10 +52,10 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 124 passing tests across mission, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
-- [x] `bun run build`: 4,576 Vite modules transformed; current client assets `index-By0mrP6s.css` and `index-CsoRpCO4.js`, bundled Worker, and Sites metadata emitted successfully.
-- [x] `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: Wrangler 4.126.0 read five static assets, recognized `AUDIT_GATE`, `AUDIT_JOBS`, and `ASSETS`, and produced a 210.20 KiB raw / 46.27 KiB gzip bundle without upload.
-- [x] Command-safe release gate ran from tracked revision `71ac6b24106b201f0292276c6fab5a27eaa62daf`; worktree and whitespace checks were clean before and after.
+- [x] `bun test`: 130 passing tests across mission, assessment receipt, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun run build`: 4,577 Vite modules transformed; current client assets `index-ntU8Lm1i.css` and `index-D1ZHTB7o.js`, bundled Worker, and Sites metadata emitted successfully.
+- [x] `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: Wrangler 4.126.0 read five static assets, recognized `AUDIT_GATE`, `AUDIT_JOBS`, and `ASSETS`, and produced a 222.65 KiB raw / 48.87 KiB gzip bundle without upload.
+- [x] Command-safe release gate ran from tracked revision `946a7933246fea5bb91ecf72cd94c9411a2ba842`; worktree and whitespace checks were clean before and after.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
 - [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current eighteen-tool library, and completed reports still register only their applicable result, exploration, diagnosis, receipt, preparation, and repair capabilities.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.
@@ -88,7 +88,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Public HTTP smoke on current assets `index-BR_ayGCH.css` and `index-CkJVqSRf.js`: both returned 200 with their expected content types; intended security/WebMCP headers and SPA restoration were present.
 - [ ] Fresh Chrome console smoke on the current deployed asset hashes; the zero-error browser receipt for `index-BJ5D1pIW.css` and `index-Ba57YJQT.js` belongs to the prior deployment.
 - [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures; `{ "unexpected": true }` returned structured `INVALID_INPUT` without changing state. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
-- [ ] Fresh browser proof for the current local mission candidate: visible Assess focus, measurement-versus-assessment state, diagnostic continuation, explicit preparation, contextual re-registration, and 390 px priority/preparation layout. Static contracts and builds are not this proof.
+- [ ] Fresh browser proof for the current local mission candidate: visible Assess focus, measurement-versus-assessment state, diagnostic continuation, assessment-receipt appearance only after completion, explicit preparation, contextual re-registration, and 390 px priority/preparation layout. Static contracts and builds are not this proof.
 
 ## Competition delivery
 
@@ -108,7 +108,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Current application source `8e988f0` adds the persisted Assess/Prepare-fix mission, focused priorities, and explicit repair-intent gate; it is newer than deployed application commit `a20e1ff` and has no live proof.
+2. Current application source `946a793` adds the persisted Assess/Prepare-fix mission, focused priorities, diagnostic evidence chain, and contextual assessment receipt; it is newer than deployed application commit `a20e1ff` and has no live proof.
 3. Temporary Cloudflare Access policy **Only CK** currently protects the Frontmend hostname. It must be removed before judging or replaced with tested judge credentials delivered through an allowed private channel.
 4. The current deployment needs a fresh Chrome console smoke on its asset hashes.
 5. The eventual current deployment must be exercised through WebMCP from fresh ChatGPT, Codex-repository, and Chrome sessions before any submission claim.

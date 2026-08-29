@@ -11,7 +11,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Source provenance: standalone repository application commit `a20e1ff0edaa35538211129904c6ff746cf3525a`; push remains a separate action
-- Current local application source: `ba2cf01`; adds persisted Assess missions, focused priorities, a shared four-stage diagnostic evidence chain, explicit repair preparation, and the visible authority boundary; this candidate remains local-only
+- Current local application source: `946a793`; adds the contextual completed-assessment receipt to persisted Assess missions, focused priorities, the four-stage diagnostic chain, explicit repair preparation, and the visible authority boundary; this candidate remains local-only
 - Worker name: `frontmend`
 - Cloudflare version: `c04eb2e0-780b-4ee6-978f-876692784108`
 - Deployment created: `2026-08-28T21:26:28.048Z`
@@ -24,14 +24,14 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 
 Run from `Ideas/Frontmend`:
 
-The latest command-safe release gate ran from tracked revision `ba2cf0189ce568adb856ee0aaae3f418c685181b`. `git status --short` was empty before and after the commands; generated `dist` output remains ignored.
+The latest command-safe release gate ran from tracked revision `946a7933246fea5bb91ecf72cd94c9411a2ba842`. `git status --short` was empty before and after the commands; generated `dist` output remains ignored.
 
 | Gate | Command | Result on 30 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 125 passed, 0 failed on the local application candidate |
-| Production build | `bun run build` | PASS — 4,576 modules transformed; `index-BTDKodKk.css` (76.46 kB / 15.63 kB gzip), `index-DyXq3uEW.js` (416.18 kB / 116.11 kB gzip), client HTML, Worker artifact, and Sites metadata emitted |
+| Tests | `bun test` | PASS — 130 passed, 0 failed on the local application candidate |
+| Production build | `bun run build` | PASS — 4,577 modules transformed; `index-ntU8Lm1i.css` (76.72 kB / 15.70 kB gzip), `index-D1ZHTB7o.js` (425.34 kB / 118.53 kB gzip), client HTML, Worker artifact, and Sites metadata emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | RETAINED EARLIER RECEIPT — not rerun in this three-command gate; bindings matched `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — Wrangler 4.126.0 read five assets and reported 212.09 KiB raw / 46.61 KiB gzip; `--dry-run: exiting now`, so no upload occurred |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — Wrangler 4.126.0 read five assets and reported 222.65 KiB raw / 48.87 KiB gzip; `--dry-run: exiting now`, so no upload occurred |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -165,4 +165,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. The current local mission candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, freely judge-accessible, or submission-ready until temporary Cloudflare Access is resolved and the procedures above have genuine receipts. The deployed application source is `a20e1ff`; current application source `8e988f0` plus judge documentation through tested revision `71ac6b2` have not been pushed to a public remote or deployed.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. The current local mission candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, freely judge-accessible, or submission-ready until temporary Cloudflare Access is resolved and the procedures above have genuine receipts. The deployed application source is `a20e1ff`; current application source `946a793` and this newer judge documentation have not been pushed to a public remote or deployed.

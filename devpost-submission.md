@@ -54,7 +54,7 @@ Codex was both the primary development collaborator and the intended repository-
 
 During the build, Codex inspected the existing React, service, Worker, Durable Object, and test architecture; helped turn the product risk into a scope, PRD, technical specification, and eleven-item build checklist; implemented each isolated slice; and committed each completed slice with the existing project identity. It added the pure mission contract, cross-runtime persistence, explicit repair-preparation route, mission-aware WebMCP outputs, contextual tool gating, visible mission and priority UI, responsive styling, and cross-layer regression coverage.
 
-Codex also challenged weak claims. The guided build explicitly treated “stops after Lighthouse” as a failed evaluation, kept historical browser receipts separate from current proof, preserved unrelated work, rejected raw prompt/source/absolute-path retention, and distinguished tests/build/dry-run from deployment. The current command-safe gate runs 125 deterministic tests, builds the production client/Worker package, and completes a strict Wrangler dry run without upload.
+Codex also challenged weak claims. The guided build explicitly treated “stops after Lighthouse” as a failed evaluation, kept historical browser receipts separate from current proof, preserved unrelated work, rejected raw prompt/source/absolute-path retention, and distinguished tests/build/dry-run from deployment. The current command-safe gate runs 130 deterministic tests, builds the production client/Worker package, and completes a strict Wrangler dry run without upload.
 
 The intended live demonstration uses Codex inside a controlled target repository: Codex can receive independent public evidence from Frontmend, use its own repository access to investigate and implement an authorised plan, and return a bounded receipt without uploading the source tree to Frontmend.
 
@@ -119,7 +119,7 @@ bun run build
 bunx wrangler deploy --dry-run --strict --config wrangler.jsonc
 ```
 
-Fresh local receipt on 30 August 2026 from tracked revision `ba2cf0189ce568adb856ee0aaae3f418c685181b`: 125 tests passed; Vite transformed 4,576 modules; Wrangler 4.126.0 recognised the assets plus both Durable Object bindings and exited in dry-run mode without uploading.
+Fresh local receipt on 30 August 2026 from tracked revision `946a7933246fea5bb91ecf72cd94c9411a2ba842`: 130 tests passed; Vite transformed 4,577 modules; Wrangler 4.126.0 recognised five assets plus both Durable Object bindings and exited in dry-run mode without uploading.
 
 ## Public Demo Link
 
