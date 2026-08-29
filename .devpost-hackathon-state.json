@@ -1,0 +1,38 @@
+{
+  "plugin": "devpost-hackathon",
+  "version": 2,
+  "hackathon": {
+    "slug": "webmcp",
+    "name": "The WebMCP Challenge",
+    "url": "https://webmcp.devpost.com/",
+    "selected": true,
+    "source": "known"
+  },
+  "participant": {
+    "name": "",
+    "display_name": ""
+  },
+  "project": {
+    "name": "Frontmend",
+    "summary": "A repository-aware accessibility and SEO audit workspace that lets people and agents measure a site, investigate the highest-impact issues, and turn evidence into reviewable fixes.",
+    "ai_usage": "",
+    "codex_usage": ""
+  },
+  "current_stage": "review-hackathon-rules",
+  "completed_stages": [
+    "start-hackathon"
+  ],
+  "rules_acknowledged": false,
+  "learning": {
+    "status": "not-started",
+    "current_step": "",
+    "completed_steps": [],
+    "plan_file": "",
+    "checklist_file": ""
+  },
+  "submission": {
+    "draft_file": "devpost-submission.md",
+    "status": "not-started"
+  },
+  "next_command": "review-hackathon-rules"
+}
