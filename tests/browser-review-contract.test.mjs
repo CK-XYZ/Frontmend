@@ -5,6 +5,7 @@ import {
   browserReviewFindings,
   browserReviewRequired,
   createBrowserReviewMission,
+  createBrowserVerificationReview,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
 
@@ -103,6 +104,103 @@ test("keeps a browser blocker honest and lets the same check recover later", () 
   assert.equal(review.state.status, "in-progress");
   assert.equal(review.history.length, 1);
   assert.equal(review.history[0].blockerReason, "browser-unavailable");
+  assert.equal(review.results[0].revision, 2);
+});
+
+test("replays the exact retained browser issue after deployment without creating a new finding", () => {
+  const verification = {
+    browserReplay: {
+      required: true,
+      baseline: {
+        findingId: "browser:responsive-reflow:01",
+        title: "Primary action clips at narrow widths",
+        category: "Accessibility",
+        focusArea: "accessibility",
+        selector: "button.primary-action",
+        evidence: "The right edge of the primary action is clipped at the mobile viewport.",
+        repair: "Allow the action row to wrap within the viewport.",
+        source: {
+          provider: "Frontmend browser review",
+          auditId: "responsive-reflow:01",
+          strategy: "mobile",
+        },
+        browserReviewEvidence: {
+          reviewId: "baseline-review",
+          checkId: "responsive-reflow",
+          checkLabel: "Responsive reflow",
+          provenance: "agent-reported-browser",
+          reportedAt: 5,
+        },
+      },
+    },
+  };
+  let review = createBrowserVerificationReview({
+    auditId: AUDIT_ID,
+    verification,
+    target: "https://example.com/",
+    now: 10,
+  });
+  assert.equal(review.purpose, "verification");
+  assert.equal(review.state.nextCheck.id, "fresh-browser-replay");
+  assert.equal(review.state.nextCheck.viewport, "mobile");
+  assert.match(review.state.nextCheck.instruction, /right edge.*clipped/i);
+
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay",
+    outcome: "issue",
+    summary: "The same primary action remains clipped.",
+    observations: ["The right edge remains outside the mobile viewport."],
+  }, "agent", 20);
+  assert.equal(review.state.status, "complete");
+  assert.equal(review.state.issueCount, 1);
+  assert.equal(review.results[0].findings.length, 0);
+  assert.equal(review.verificationBaseline.findingId, "browser:responsive-reflow:01");
+});
+
+test("keeps a blocked verification replay resumable until the exact comparison passes", () => {
+  const verification = {
+    browserReplay: {
+      required: true,
+      baseline: {
+        findingId: "browser:search-discovery:01",
+        title: "Guide has no discovery path",
+        category: "SEO",
+        focusArea: "seo",
+        selector: "header nav",
+        evidence: "No same-site guide link was visible.",
+        repair: "Add a crawlable guide link.",
+        source: {
+          provider: "Frontmend browser review",
+          auditId: "search-discovery:01",
+          strategy: "desktop",
+        },
+        browserReviewEvidence: {
+          reviewId: "baseline-review",
+          checkId: "search-discovery",
+          checkLabel: "Search discovery path",
+          reportedAt: 5,
+        },
+      },
+    },
+  };
+  let review = createBrowserVerificationReview({ auditId: AUDIT_ID, verification, target: "https://example.com/", now: 10 });
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay",
+    outcome: "blocked",
+    summary: "The retained target now requires authentication.",
+    blockerReason: "authentication-required",
+  }, "agent", 20);
+  assert.equal(review.state.status, "blocked");
+  assert.equal(review.state.nextCheck.id, "fresh-browser-replay");
+
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay",
+    outcome: "passed",
+    summary: "The public page is reachable and now exposes the guide link.",
+    observations: ["The rendered primary navigation contains a crawlable Guide link."],
+  }, "agent", 30);
+  assert.equal(review.state.status, "complete");
+  assert.equal(review.history[0].blockerReason, "authentication-required");
   assert.equal(review.results[0].revision, 2);
 });
 

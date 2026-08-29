@@ -15,6 +15,10 @@ import {
   reviseRepairDraft,
   verificationReceiptMarkdown,
 } from "../src/repair-contract.js";
+import {
+  createBrowserVerificationReview,
+  recordBrowserReviewCheck,
+} from "../src/browser-review-contract.js";
 
 const finding = {
   id: "document-content-security-policy",
@@ -591,6 +595,133 @@ test("verification claims resolution only for comparable evidence", () => {
       .status,
     "inconclusive",
   );
+});
+
+test("browser-observed repairs require an exact fresh replay before a verification receipt", () => {
+  const browserFinding = {
+    id: "browser:responsive-reflow:01",
+    title: "Primary action clips at narrow widths",
+    severity: "medium",
+    category: "Accessibility",
+    focusAreas: ["accessibility"],
+    selector: "button.primary-action",
+    evidence: "The right edge of the primary action is clipped at the mobile viewport.",
+    repair: "Allow the action row to wrap within the viewport.",
+    source: {
+      provider: "Frontmend browser review",
+      auditId: "responsive-reflow:01",
+      strategy: "mobile",
+    },
+    browserReviewEvidence: {
+      reviewId: "baseline-browser-review",
+      checkId: "responsive-reflow",
+      checkLabel: "Responsive reflow",
+      provenance: "agent-reported-browser",
+      reportedAt: 90,
+    },
+  };
+  const baseline = {
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 100,
+    score: 90,
+    scoreBasis: "measured-lighthouse-viewports",
+    findingCount: 1,
+    checks: { passed: 9, warnings: 0, failed: 1 },
+    viewports: [{ id: "mobile" }],
+    engine: {
+      mode: "live-lighthouse",
+      provider: "PageSpeed Insights",
+      ruleSetVersion: 1,
+      lighthouseVersion: "13.4.1",
+    },
+    findings: [],
+    ruleOutcomes: [],
+  };
+  const repair = {
+    ...createRepairDraft({ auditId: baseline.auditId, finding: browserFinding, report: baseline, now: 105 }),
+    status: "approved",
+    reviewedAt: 110,
+    deploymentAttestedAt: 115,
+  };
+  assert.equal(repair.findingEvidence.browserReviewEvidence.checkId, "responsive-reflow");
+
+  const context = createVerificationContext(baseline, repair);
+  assert.equal(context.browserReplay.required, true);
+  assert.equal(context.browserReplay.status, "not-opened");
+  assert.equal(context.baseline.exactRuleOutcome, "failed");
+
+  const fresh = {
+    ...baseline,
+    auditId: "c45d54ea-6884-4c86-b82d-b9048cff697f",
+    completedAt: 120,
+    score: 94,
+    findingCount: 0,
+    checks: { passed: 10, warnings: 0, failed: 0 },
+  };
+  const waiting = compareVerification(fresh, context, 125);
+  assert.equal(waiting.status, "inconclusive");
+  assert.equal(waiting.comparisonReason, "browser-replay-required");
+  assert.equal(waiting.browserReplay.status, "not-opened");
+  assert.throws(
+    () => verificationReceiptMarkdown({ ...fresh, verification: waiting }),
+    (error) => error.code === "VERIFICATION_RECEIPT_UNAVAILABLE",
+  );
+
+  let review = createBrowserVerificationReview({
+    auditId: fresh.auditId,
+    verification: context,
+    target: fresh.finalUrl,
+    now: 130,
+  });
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay",
+    outcome: "passed",
+    summary: "The primary action now wraps within the mobile viewport.",
+    observations: ["The entire primary action is visible without horizontal clipping."],
+  }, "agent", 140);
+  const resolved = compareVerification(fresh, context, 145, review);
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.ruleOutcome, "passed");
+  assert.equal(resolved.browserReplay.provenance, "agent-reported-browser");
+  assert.match(
+    verificationReceiptMarkdown({ ...fresh, verification: resolved }),
+    /Fresh browser replay[\s\S]*entire primary action/i,
+  );
+
+  let blockedReview = createBrowserVerificationReview({
+    auditId: fresh.auditId,
+    verification: context,
+    target: fresh.finalUrl,
+    now: 150,
+  });
+  blockedReview = recordBrowserReviewCheck(blockedReview, {
+    checkId: "fresh-browser-replay",
+    outcome: "blocked",
+    summary: "The retained target now requires authentication.",
+    blockerReason: "authentication-required",
+  }, "agent", 160);
+  const blocked = compareVerification(fresh, context, 165, blockedReview);
+  assert.equal(blocked.status, "inconclusive");
+  assert.equal(blocked.comparisonReason, "browser-replay-blocked");
+  assert.equal(blocked.browserReplay.blockerReason, "authentication-required");
+
+  let failedReview = createBrowserVerificationReview({
+    auditId: fresh.auditId,
+    verification: context,
+    target: fresh.finalUrl,
+    now: 170,
+  });
+  failedReview = recordBrowserReviewCheck(failedReview, {
+    checkId: "fresh-browser-replay",
+    outcome: "issue",
+    summary: "The same primary action remains clipped.",
+    observations: ["The right edge remains outside the mobile viewport."],
+  }, "agent", 180);
+  const stillPresent = compareVerification(fresh, context, 185, failedReview);
+  assert.equal(stillPresent.status, "still-present");
+  assert.equal(stillPresent.ruleOutcome, "failed");
 });
 
 test("verification requires every captured strategy for the rule to pass", () => {

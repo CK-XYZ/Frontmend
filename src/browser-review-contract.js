@@ -109,6 +109,33 @@ function requestedCheckSnapshot(check) {
   };
 }
 
+function verificationBaselineSnapshot(value) {
+  if (!value?.findingId || !value?.title || !value?.evidence || !value?.source) return null;
+  return {
+    findingId: boundedId(value.findingId, "verificationBaseline.findingId"),
+    title: boundedString(value.title, "verificationBaseline.title", 240),
+    category: boundedString(value.category ?? "Accessibility", "verificationBaseline.category", 80),
+    focusArea: value.focusArea === "seo" ? "seo" : "accessibility",
+    selector: boundedString(value.selector ?? "Rendered page", "verificationBaseline.selector", 200),
+    evidence: boundedString(value.evidence, "verificationBaseline.evidence", 600),
+    repair: boundedString(value.repair ?? "Recheck the original rendered issue.", "verificationBaseline.repair", 600),
+    source: {
+      provider: boundedString(value.source.provider, "verificationBaseline.source.provider", 120),
+      auditId: boundedString(value.source.auditId, "verificationBaseline.source.auditId", 160),
+      strategy: boundedString(value.source.strategy, "verificationBaseline.source.strategy", 40),
+    },
+    browserReviewEvidence: value.browserReviewEvidence?.reviewId
+      ? {
+          reviewId: boundedId(value.browserReviewEvidence.reviewId, "verificationBaseline.browserReviewEvidence.reviewId"),
+          checkId: boundedString(value.browserReviewEvidence.checkId, "verificationBaseline.browserReviewEvidence.checkId", 80),
+          checkLabel: boundedString(value.browserReviewEvidence.checkLabel, "verificationBaseline.browserReviewEvidence.checkLabel", 120),
+          provenance: "agent-reported-browser",
+          reportedAt: value.browserReviewEvidence.reportedAt,
+        }
+      : null,
+  };
+}
+
 function resultSnapshot(result) {
   return {
     checkId: result.checkId,
@@ -175,7 +202,9 @@ export function browserReviewState(review) {
   const nextCheck = blocked ?? pending ?? null;
   const completedCheckCount = results.filter((result) => ["passed", "issue"].includes(result.outcome)).length;
   const blockedCheckCount = results.filter((result) => result.outcome === "blocked").length;
-  const issueCount = browserReviewFindings(review).length;
+  const issueCount = review.purpose === "verification"
+    ? results.filter((result) => result.outcome === "issue").length
+    : browserReviewFindings(review).length;
   const complete = requestedChecks.length > 0 && completedCheckCount === requestedChecks.length;
   return {
     status: complete ? "complete" : blocked ? "blocked" : "in-progress",
@@ -196,7 +225,11 @@ export function browserReviewSnapshot(review) {
     schemaVersion: 1,
     id: boundedId(review.id, "browserReview.id"),
     auditId: boundedId(review.auditId),
+    purpose: review.purpose === "verification" ? "verification" : "assessment",
     target: boundedString(review.target, "target", 2_048),
+    verificationBaseline: review.purpose === "verification"
+      ? verificationBaselineSnapshot(review.verificationBaseline)
+      : null,
     requestedFocusAreas: missionFocusAreas({ focusAreas: review.requestedFocusAreas }),
     requestedChecks: (review.requestedChecks ?? []).map(requestedCheckSnapshot),
     results: (review.results ?? []).map(resultSnapshot),
@@ -213,7 +246,9 @@ export function browserReviewSnapshot(review) {
       sourceContentsReceived: false,
       repair: "separate-diagnosis-and-review",
       deployment: "site-owner",
-      claim: "Browser review observations complement provider measurement; they do not prove repository ownership, implementation, deployment, or resolution.",
+      claim: snapshot.purpose === "verification"
+        ? "The replay result is agent-reported browser evidence for the exact retained issue. Frontmend keeps it separate from provider measurement and never infers implementation or deployment from it."
+        : "Browser review observations complement provider measurement; they do not prove repository ownership, implementation, deployment, or resolution.",
     },
   };
 }
@@ -230,8 +265,44 @@ export function createBrowserReviewMission({ auditId, mission, target, now = Dat
     schemaVersion: 1,
     id: crypto.randomUUID(),
     auditId: boundedId(auditId),
+    purpose: "assessment",
     target: boundedString(target, "target", 2_048),
     requestedFocusAreas: missionFocusAreas(mission),
+    requestedChecks,
+    results: [],
+    history: [],
+    createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export function createBrowserVerificationReview({ auditId, verification, target, now = Date.now() }) {
+  const baseline = verificationBaselineSnapshot(verification?.browserReplay?.baseline);
+  if (!verification?.browserReplay?.required || !baseline) {
+    throw new AuditError(
+      "BROWSER_REVIEW_NOT_REQUIRED",
+      "This verification does not contain a retained browser finding that requires fresh replay.",
+    );
+  }
+  const viewport = baseline.source.strategy === "mobile" ? "mobile" : "desktop";
+  const requestedChecks = [{
+    id: "fresh-browser-replay",
+    label: "Fresh browser replay",
+    focusAreas: [baseline.focusArea],
+    viewport,
+    instruction:
+      `Revisit the deployed page at the retained ${viewport} viewport and repeat the exact original ${baseline.browserReviewEvidence?.checkLabel ?? "browser"} check. Compare ${baseline.selector} against this baseline issue: ${baseline.evidence}`,
+    boundary:
+      "Report passed only when the exact retained issue is no longer observable, issue when it remains, or blocked with the exact limitation. Do not infer a pass from provider scores, source changes, or deployment claims.",
+  }];
+  return browserReviewSnapshot({
+    schemaVersion: 1,
+    id: crypto.randomUUID(),
+    auditId: boundedId(auditId),
+    purpose: "verification",
+    target: boundedString(target, "target", 2_048),
+    verificationBaseline: baseline,
+    requestedFocusAreas: [baseline.focusArea],
     requestedChecks,
     results: [],
     history: [],
@@ -344,7 +415,13 @@ export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agen
   if (!Array.isArray(rawFindings) || rawFindings.length > 3) {
     throw new AuditError("INVALID_BROWSER_REVIEW", "findings must contain zero to three browser findings.");
   }
-  if (input.outcome === "issue" && rawFindings.length < 1) {
+  if (review.purpose === "verification" && rawFindings.length) {
+    throw new AuditError(
+      "INVALID_BROWSER_REVIEW",
+      "A verification replay compares the retained finding and must not create a new browser finding.",
+    );
+  }
+  if (review.purpose !== "verification" && input.outcome === "issue" && rawFindings.length < 1) {
     throw new AuditError("INVALID_BROWSER_REVIEW", "An issue outcome must include at least one browser finding.");
   }
   if (input.outcome === "passed" && rawFindings.length) {

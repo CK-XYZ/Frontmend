@@ -581,6 +581,35 @@ function repairFindingScope(report, finding) {
   };
 }
 
+function browserFindingEvidenceSnapshot(finding) {
+  if (
+    finding?.source?.provider !== "Frontmend browser review" ||
+    !finding?.browserReviewEvidence?.reviewId
+  ) return null;
+  const focusArea = finding.focusArea === "seo" || finding.focusAreas?.includes("seo") || finding.category === "SEO"
+    ? "seo"
+    : "accessibility";
+  return {
+    findingId: briefText(finding.id ?? finding.findingId, 160),
+    title: briefText(finding.title, 240),
+    category: briefText(finding.category, 80) || (focusArea === "seo" ? "SEO" : "Accessibility"),
+    focusArea,
+    selector: briefText(finding.selector, 200) || "Rendered page",
+    evidence: briefText(finding.evidence, 600),
+    repair: briefText(finding.repair, 600) || "Recheck the original rendered issue.",
+    source: boundedFindingSource(finding.source),
+    browserReviewEvidence: {
+      reviewId: briefText(finding.browserReviewEvidence.reviewId, 160),
+      checkId: briefText(finding.browserReviewEvidence.checkId, 80),
+      checkLabel: briefText(finding.browserReviewEvidence.checkLabel, 120),
+      provenance: "agent-reported-browser",
+      reportedAt: Number.isFinite(finding.browserReviewEvidence.reportedAt)
+        ? finding.browserReviewEvidence.reportedAt
+        : null,
+    },
+  };
+}
+
 export function createRepairDraft({
   auditId,
   finding,
@@ -618,6 +647,7 @@ export function createRepairDraft({
     findingId: finding.id,
     findingTitle: finding.title,
     findingSource: finding.source ?? null,
+    findingEvidence: browserFindingEvidenceSnapshot(finding),
     findingScope: repairFindingScope(report, finding),
     status: "draft",
     source: source === "agent" ? "agent" : "human",
@@ -1256,6 +1286,14 @@ export function createVerificationContext(report, repair) {
       : 0,
     sources: findingScopeSources(repair.findingScope, repair.findingSource),
   };
+  const browserReplayBaseline = browserFindingEvidenceSnapshot(repair.findingEvidence);
+  const baseline = reportSnapshot(report, repair.findingSource, findingScope);
+  const lineage = startingLineage(report, repair.findingSource, findingScope);
+  if (browserReplayBaseline) {
+    baseline.exactRuleOutcome = "failed";
+    baseline.scopeRuleOutcomes = findingScope.sources.map((source) => ({ source, status: "failed" }));
+    if (lineage.entries?.[0]) lineage.entries[0].exactRuleOutcome = "failed";
+  }
   return {
     url: report.finalUrl ?? report.url,
     baselineAuditId: report.auditId,
@@ -1267,8 +1305,15 @@ export function createVerificationContext(report, repair) {
     findingScope,
     baselineEngine: report.engine,
     baselineEvidence: reportEvidenceSignature(report),
-    baseline: reportSnapshot(report, repair.findingSource, findingScope),
-    lineage: startingLineage(report, repair.findingSource, findingScope),
+    baseline,
+    lineage,
+    browserReplay: browserReplayBaseline
+      ? {
+          required: true,
+          status: "not-opened",
+          baseline: browserReplayBaseline,
+        }
+      : null,
     repositoryPlan: repositoryPlanSnapshot(repair.repositoryPlan),
     diagnosticMission: diagnosticMissionSnapshotForArtifact(repair.diagnosticMission),
     approval: approvalSnapshot(repair),
@@ -1281,7 +1326,60 @@ function metricDelta(current, baseline) {
   return Number.isFinite(current) && Number.isFinite(baseline) ? current - baseline : null;
 }
 
-export function compareVerification(report, verification, now = Date.now()) {
+function browserReplayComparison(verification, review) {
+  const baseline = verification?.browserReplay?.baseline;
+  if (!verification?.browserReplay?.required || !baseline) return null;
+  if (!review || review.purpose !== "verification") {
+    return {
+      comparable: false,
+      reason: "browser-replay-required",
+      outcome: "not-comparable",
+      replay: { required: true, status: "not-opened", baseline },
+    };
+  }
+  const result = review.results?.find((item) => item.checkId === "fresh-browser-replay") ?? null;
+  const reviewStatus = review.state?.status ?? "in-progress";
+  if (!result || result.outcome === "blocked") {
+    const status = result?.outcome === "blocked" ? "blocked" : reviewStatus;
+    return {
+      comparable: false,
+      reason: status === "blocked" ? "browser-replay-blocked" : "browser-replay-in-progress",
+      outcome: "not-comparable",
+      replay: {
+        required: true,
+        status,
+        baseline,
+        reviewId: review.id,
+        outcome: result?.outcome ?? null,
+        summary: result?.summary ?? null,
+        observations: [...(result?.observations ?? [])],
+        blockerReason: result?.blockerReason ?? null,
+        reportedAt: result?.reportedAt ?? null,
+        provenance: "agent-reported-browser",
+      },
+    };
+  }
+  const outcome = result.outcome === "passed" ? "passed" : "failed";
+  return {
+    comparable: true,
+    reason: "exact-browser-replay",
+    outcome,
+    replay: {
+      required: true,
+      status: "complete",
+      baseline,
+      reviewId: review.id,
+      outcome: result.outcome,
+      summary: result.summary,
+      observations: [...(result.observations ?? [])],
+      blockerReason: null,
+      reportedAt: result.reportedAt,
+      provenance: "agent-reported-browser",
+    },
+  };
+}
+
+export function compareVerification(report, verification, now = Date.now(), browserReview = null) {
   const source = verification?.findingSource;
   const findingScope = {
     occurrenceCount: Number.isFinite(verification?.findingScope?.occurrenceCount)
@@ -1294,21 +1392,29 @@ export function compareVerification(report, verification, now = Date.now()) {
   };
   const baselineEngine = verification?.baselineEngine;
   const measuredEngine = report?.engine;
-  const scopeOutcomes = findingScope.sources.map((candidate) => {
-    const outcome = outcomeForSource(report, candidate);
-    const comparison = exactRuleComparison({
-      source: candidate,
-      baselineEngine,
-      measuredEngine,
-      measuredRuleOutcome: outcome,
-    });
-    return {
-      source: candidate,
-      outcome: comparison.comparable ? outcome : "not-comparable",
-      comparable: comparison.comparable,
-      comparisonReason: comparison.reason,
-    };
-  });
+  const browserReplay = browserReplayComparison(verification, browserReview);
+  const scopeOutcomes = browserReplay
+    ? findingScope.sources.map((candidate) => ({
+        source: candidate,
+        outcome: browserReplay.outcome,
+        comparable: browserReplay.comparable,
+        comparisonReason: browserReplay.reason,
+      }))
+    : findingScope.sources.map((candidate) => {
+        const outcome = outcomeForSource(report, candidate);
+        const comparison = exactRuleComparison({
+          source: candidate,
+          baselineEngine,
+          measuredEngine,
+          measuredRuleOutcome: outcome,
+        });
+        return {
+          source: candidate,
+          outcome: comparison.comparable ? outcome : "not-comparable",
+          comparable: comparison.comparable,
+          comparisonReason: comparison.reason,
+        };
+      });
   const comparable = scopeOutcomes.length > 0 && scopeOutcomes.every((outcome) => outcome.comparable);
   const measuredEvidence = reportEvidenceSignature(report);
   const metricComparable = sameEvidenceSignature(
@@ -1327,6 +1433,7 @@ export function compareVerification(report, verification, now = Date.now()) {
         : "inconclusive";
   const baseline = verification.baseline ?? reportSnapshot(null, source, findingScope);
   const current = reportSnapshot(report, source, findingScope);
+  if (browserReplay) current.exactRuleOutcome = ruleOutcome;
   const lineage = appendLineage(
     verification.lineage ?? {
       rootAuditId: baseline.auditId,
@@ -1354,6 +1461,7 @@ export function compareVerification(report, verification, now = Date.now()) {
     diagnosticMission: diagnosticMissionSnapshotForArtifact(verification.diagnosticMission),
     approval: verification.approval ?? null,
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
+    browserReplay: browserReplay?.replay ?? null,
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
     comparable,
@@ -1385,7 +1493,9 @@ export function compareVerification(report, verification, now = Date.now()) {
     lineage,
     message:
       status === "resolved"
-        ? metricComparable
+        ? browserReplay
+          ? "The exact retained browser issue was not observed in a fresh agent replay after deployment."
+          : metricComparable
           ? findingScope.sources.length > 1
             ? "Every captured rule occurrence explicitly passed in fresh evidence with like-for-like report metrics."
             : "The exact original rule explicitly passed in fresh evidence with like-for-like report metrics."
@@ -1393,7 +1503,9 @@ export function compareVerification(report, verification, now = Date.now()) {
             ? "Every captured rule occurrence explicitly passed, but whole-report metrics are not like for like."
             : "The exact original rule explicitly passed, but whole-report metrics are not like for like."
         : status === "still-present"
-          ? metricComparable
+          ? browserReplay
+            ? "The exact retained browser issue was observed again in a fresh agent replay after deployment."
+            : metricComparable
             ? findingScope.sources.length > 1
               ? "At least one captured rule occurrence failed again in fresh evidence with like-for-like report metrics."
               : "The exact original rule explicitly failed again in fresh evidence with like-for-like report metrics."
@@ -1402,7 +1514,13 @@ export function compareVerification(report, verification, now = Date.now()) {
               : "The exact original rule explicitly failed again, but whole-report metrics are not like for like."
           : comparable
             ? "The fresh audit did not affirmatively pass every captured rule occurrence, so Frontmend cannot claim it was resolved across the repair scope."
-            : inconclusiveComparisonMessage(
+            : browserReplay?.reason === "browser-replay-required"
+              ? "Provider measurement is complete, but the exact retained browser issue still needs a fresh agent replay before Frontmend can issue a verification receipt."
+              : browserReplay?.reason === "browser-replay-in-progress"
+                ? "The fresh browser replay is in progress; Frontmend is withholding a resolution claim until the exact retained check is recorded."
+                : browserReplay?.reason === "browser-replay-blocked"
+                  ? "The fresh browser replay is honestly blocked, so Frontmend cannot claim the retained browser issue was resolved."
+                  : inconclusiveComparisonMessage(
                 scopeOutcomes.find((outcome) => !outcome.comparable)?.comparisonReason,
               ),
   };
@@ -1799,6 +1917,12 @@ export function verificationReceiptMarkdown(report) {
       "A verification receipt is available only after a completed repair verification.",
     );
   }
+  if (verification.browserReplay?.required && verification.browserReplay.status !== "complete") {
+    throw new AuditError(
+      "VERIFICATION_RECEIPT_UNAVAILABLE",
+      "Complete the exact fresh browser replay before exporting a verification receipt.",
+    );
+  }
   const metricComparable = verification.metricComparable === true;
   const scopeSources = findingScopeSources(verification.findingScope, verification.findingSource);
   const occurrenceCount = Number.isFinite(verification.findingScope?.occurrenceCount)
@@ -1846,6 +1970,24 @@ export function verificationReceiptMarkdown(report) {
     "",
     "> Resolution requires an explicit pass for every captured occurrence. A passing strategy cannot hide a sibling failure or missing comparison.",
     "",
+    ...(verification.browserReplay?.required
+      ? [
+          "## Fresh browser replay",
+          "",
+          `- Baseline observation: ${receiptText(verification.browserReplay.baseline?.evidence, 600)}`,
+          `- Retained element: ${receiptText(verification.browserReplay.baseline?.selector, 200)}`,
+          `- Replay outcome: ${receiptText(verification.browserReplay.outcome, 40)}`,
+          `- Agent summary: ${receiptText(verification.browserReplay.summary, 300)}`,
+          ...((verification.browserReplay.observations ?? []).slice(0, 4).map(
+            (observation) => `- Observed: ${receiptText(observation, 400)}`,
+          )),
+          `- Provenance: ${receiptText(verification.browserReplay.provenance, 80)}`,
+          `- Reported: ${Number.isFinite(verification.browserReplay.reportedAt) ? new Date(verification.browserReplay.reportedAt).toISOString() : "—"}`,
+          "",
+          "> This exact rendered comparison is agent-reported browser evidence and remains separate from provider measurement.",
+          "",
+        ]
+      : []),
     "## Before and after",
     "",
     "| Metric | Baseline | Fresh audit | Delta |",
