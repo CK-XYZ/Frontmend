@@ -71,7 +71,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Documentation leads with the product value beyond Lighthouse; no build is called deployment; browser proof remains unchecked until run; public-repo/video/access tasks remain explicit; demo spends most time on diagnosis and shared authority rather than audit polling.
   Verify: `rg -n "Assess|Prepare fix|assessmentComplete|ChatGPT|Chrome|Cloudflare Access|Lighthouse" README.md DEMO_SCRIPT.md RELEASE_CANDIDATE.md SUBMISSION_READINESS.md` and `git diff --check`
 
-- [ ] **10. Run the command-safe release gate**
+- [x] **10. Run the command-safe release gate**
   Spec ref: `spec.md > Tests And Verification > Allowed release commands`
   What to build: Run the complete test suite, production build, and Wrangler strict dry run. Record fresh counts, asset/bundle output, exact commit, and the evidence boundary in release documentation. Fix genuine failures without weakening contracts.
   Acceptance: All commands succeed from the current worktree; release ledger distinguishes local tests/build/dry-run from deployment and browser proof; worktree contains only intentional tracked changes before commit.

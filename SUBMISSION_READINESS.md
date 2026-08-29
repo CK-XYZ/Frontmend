@@ -52,8 +52,9 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Current proof receipt
 
 - [x] `bun test`: 124 passing tests across mission, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
-- [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
-- [x] `bunx wrangler deploy --dry-run --strict`: five static assets plus both Durable Object bindings recognized; local Worker bundle 156.46 KiB raw / 35.36 KiB gzip.
+- [x] `bun run build`: 4,576 Vite modules transformed; current client assets `index-By0mrP6s.css` and `index-CsoRpCO4.js`, bundled Worker, and Sites metadata emitted successfully.
+- [x] `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: Wrangler 4.126.0 read five static assets, recognized `AUDIT_GATE`, `AUDIT_JOBS`, and `ASSETS`, and produced a 210.20 KiB raw / 46.27 KiB gzip bundle without upload.
+- [x] Command-safe release gate ran from tracked revision `71ac6b24106b201f0292276c6fab5a27eaa62daf`; worktree and whitespace checks were clean before and after.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
 - [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current seventeen-tool library, and completed reports still register only their applicable result, exploration, diagnosis, preparation, and repair capabilities.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.

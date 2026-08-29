@@ -130,3 +130,13 @@
 - Fresh Chrome Inspector steps now test Assess focus and `assessmentComplete`, then call `prepare_site_repair` before expecting any eligible staging capability; Chrome-only evidence must not invent repository diagnosis.
 - Temporary Cloudflare Access **Only CK** is recorded as a release blocker rather than free judging access. Older deployed Lighthouse and WebMCP receipts remain labelled historical and cannot prove the newer local mission candidate.
 - Verification: the required cross-document `rg` query returned Assess, Prepare a fix, `assessmentComplete`, ChatGPT, Chrome, Cloudflare Access, and Lighthouse coverage; `git diff --check` passed.
+
+## 2026-08-29 — Build item 10
+
+- Loaded the Wrangler command guidance, checked Cloudflare's current official command documentation, confirmed installed Wrangler 4.126.0, and verified local `deploy --help` exposes both `--dry-run` and `--strict`.
+- The local `wrangler.jsonc` continues to match the installed schema for static assets, Durable Objects, and migrations; no generated deployment redirect overrides the tracked configuration.
+- Release gate ran from exact tracked revision `71ac6b24106b201f0292276c6fab5a27eaa62daf` with an empty worktree before and after.
+- `bun run test`: 124 passed, 0 failed; the packaging contract also rebuilt current source.
+- `bun run build`: 4,576 modules transformed; CSS `index-By0mrP6s.css` is 73.54 kB raw / 15.17 kB gzip and JavaScript `index-CsoRpCO4.js` is 412.21 kB raw / 115.26 kB gzip.
+- `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: five assets, 210.20 KiB raw / 46.27 KiB gzip, both Durable Object bindings plus assets recognized, and explicit `--dry-run: exiting now` output.
+- This is local test/build/package evidence only. It is not deployment, current-version browser discovery, live mission continuity, public-repository publication, free judge access, or submission proof.

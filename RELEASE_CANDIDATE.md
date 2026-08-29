@@ -9,7 +9,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Source provenance: standalone repository application commit `a20e1ff0edaa35538211129904c6ff746cf3525a`; push remains a separate action
-- Current local application source: `8e988f0`; adds persisted Assess missions, focused priorities, browser-and-repository diagnosis, explicit repair preparation, and the visible authority boundary; regression/docs commit `8818005` is also local-only
+- Current local application source: `8e988f0`; adds persisted Assess missions, focused priorities, browser-and-repository diagnosis, explicit repair preparation, and the visible authority boundary; judge-facing documentation through `71ac6b2` is also local-only
 - Worker name: `frontmend`
 - Cloudflare version: `c04eb2e0-780b-4ee6-978f-876692784108`
 - Deployment created: `2026-08-28T21:26:28.048Z`
@@ -22,12 +22,14 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 
 Run from `Ideas/Frontmend`:
 
+The command-safe release gate ran from tracked revision `71ac6b24106b201f0292276c6fab5a27eaa62daf`. `git status --short` and `git diff --check` were empty before and after the commands; generated `dist` output remains ignored.
+
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
 | Tests | `bun test` | PASS — 124 passed, 0 failed on the local application candidate |
-| Production build | `bun run build` | PASS — 4,575 modules transformed; client and Worker artifacts emitted |
-| Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 194.80 KiB raw / 43.44 KiB gzip Worker upload; no upload performed |
+| Production build | `bun run build` | PASS — 4,576 modules transformed; `index-By0mrP6s.css`, `index-CsoRpCO4.js`, client HTML, Worker artifact, and Sites metadata emitted |
+| Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | RETAINED EARLIER RECEIPT — not rerun in this three-command gate; bindings matched `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — Wrangler 4.126.0 read five assets and reported 210.20 KiB raw / 46.27 KiB gzip; `--dry-run: exiting now`, so no upload occurred |
 
 Wrangler 4.126.0 generated six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash.
 
@@ -158,4 +160,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. The current local mission candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, freely judge-accessible, or submission-ready until temporary Cloudflare Access is resolved and the procedures above have genuine receipts. The deployed application source is `a20e1ff`; current application source `8e988f0` and regression/docs commit `8818005` have not been pushed to a public remote or deployed.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. The current local mission candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, freely judge-accessible, or submission-ready until temporary Cloudflare Access is resolved and the procedures above have genuine receipts. The deployed application source is `a20e1ff`; current application source `8e988f0` plus judge documentation through tested revision `71ac6b2` have not been pushed to a public remote or deployed.
