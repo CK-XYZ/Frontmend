@@ -15,6 +15,8 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Failed audits can be retried by people or agents without replaying the deduplicated failure; attempts remain rate-limited, numbered, and attached to the stable workspace.
 - [x] Active audits can be cancelled by a person or agent through the shared service; provider abort, persisted `cancelled` state, idempotent replay, retention, and same-ID retry are covered in both runtimes.
 - [x] Human UI and WebMCP use the same application service and Worker routes.
+- [x] Natural accessibility/SEO requests persist a bounded **Assess** mission with no raw prompt, survive retry/reload, and return at most three deduplicated priorities through both the visible workspace and structured WebMCP result.
+- [x] Audit completion and assessment completion are distinct: supported Lighthouse symptoms name an exact browser/repository diagnostic continuation, and separately attributed agent evidence can complete that obligation without being promoted to measured evidence.
 - [x] Mobile and desktop Lighthouse requests run independently; successful viewport evidence survives a sibling failure, with a labelled hybrid document supplement or truthful partial-Lighthouse result.
 - [x] Live-document fallback emits a bounded schema-5 Document profile with element counts, inline-code counts, external-origin inventory, and observed response-header signals; it remains explicit about omitted runtime and viewport evidence.
 - [x] Completed document reports expose bounded unique same-site route paths, an omitted count, and an unvisited-route caveat; the retained parent job authoritatively validates every human or agent follow-up and persists bounded root/parent/depth lineage into the child.
@@ -22,7 +24,8 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Missing-CSP findings include a bounded static resource-origin inventory and generate a site-aware Report-Only draft that avoids blanket inline-script weakening.
 - [x] Evidence is bounded, versioned, source-attributed, and marked untrusted to agents.
 - [x] Lighthouse result bounding is explicit: supported-rule check counts, the complete supported failure total, retained ten-detail queue, omitted count, and full supported rule-outcome record remain distinct across UI, JSON, and Markdown; hybrid totals omit overlapping document rules.
-- [x] Agents can stage a repair proposal without changing the target site.
+- [x] A person or agent acting on an explicit request must first record **Prepare a fix** intent for one retained finding; only then can an eligible repair proposal be staged without changing the target site.
+- [x] Repair preparation is idempotent for the selected finding, rejects conflicting or stale replacement, consumes no delegated-auto allowance, creates no approval, and cannot deploy or attest deployment.
 - [x] Coding agents can request a source-safe repository fix brief with measured evidence, bounded same-rule occurrences, every failing measured strategy, ownership hints, and cross-viewport acceptance criteria; the visible report exposes the same repair scope, while Frontmend does not receive repository source or absolute paths.
 - [x] Coding agents can attach a bounded pre-approval repository plan containing only relative target files and planned checks; it is visible to the person, revisioned, agent-readable, exported with the reviewed proposal, and frozen into final verification provenance. Human-authored metadata, absolute paths, source contents, credentials, and environment values are rejected or excluded.
 - [x] People can request bounded, visible changes; agents can revise only after that request, and each new proposal re-enters human review with a five-version history cap.
@@ -63,7 +66,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Reduced-motion receipt: emulated preference matched, maximum computed animation and transition durations were both 0.01ms, with zero elements exceeding 1ms.
 - [x] Clipboard-denied sharing receipt on audit `b8fb882b`: the stable workspace URL appeared focused and fully selected; desktop and 390px layouts remained usable with no overlap, overflow, or console errors.
 - [x] Dialog keyboard receipt at 390px: capability, Agent log, and explainer dialogs moved focus inside, contained Tab, closed on Escape, restored their trigger, and emitted no console errors.
-- [x] Current-context WebMCP proof on audit `b8fb882b`: results and workspace calls succeeded with `{}`, and repair `5ab83c3a` staged using only `findingId`; the visible UI matched the returned human-review mission.
+- [x] Historical pre-preparation WebMCP proof on audit `b8fb882b`: results and workspace calls succeeded with `{}`, and repair `5ab83c3a` staged using only `findingId`; the visible UI matched that older human-review contract. This does not prove the current explicit preparation transition.
 - [x] Portable audit-report proof on real audit `d09c07c9`: visible **Export report**, HTTP 200 Markdown, stable filename, `no-store`, `nosniff`, complete rule-outcome table, and explicit live-document boundary; 390×844 replay had no overflow or console errors.
 - [x] Live Document-profile proof on real audit `3e46d0a9`: schema 5 JSON and visible UI matched 273,662 HTML bytes, 21 scripts, two stylesheets, nine images, 87 links, 72 headings, one external origin, CSP missing, and `nosniff` observed; Markdown export carried the same bounded profile and caveat.
 - [x] Post-contract live replay `9e89fd1b`: completed on port 3434 with schema 5, one measured finding, one retained detail, `findingsOmitted: 0`, and the live Document profile; the synthetic 30-failure contract separately proved ten retained plus twenty explicitly omitted.
@@ -83,6 +86,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Public HTTP smoke on current assets `index-BR_ayGCH.css` and `index-CkJVqSRf.js`: both returned 200 with their expected content types; intended security/WebMCP headers and SPA restoration were present.
 - [ ] Fresh Chrome console smoke on the current deployed asset hashes; the zero-error browser receipt for `index-BJ5D1pIW.css` and `index-Ba57YJQT.js` belongs to the prior deployment.
 - [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures; `{ "unexpected": true }` returned structured `INVALID_INPUT` without changing state. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
+- [ ] Fresh browser proof for the current local mission candidate: visible Assess focus, measurement-versus-assessment state, diagnostic continuation, explicit preparation, contextual re-registration, and 390 px priority/preparation layout. Static contracts and builds are not this proof.
 
 ## Competition delivery
 
@@ -91,7 +95,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Reproducible local setup instructions.
 - [x] Tracked publication preflight: no credential-like filenames, common token/private-key signatures, or absolute user-home paths detected; `.env*` and Cloudflare `.dev.vars*` secrets are ignored with safe examples explicitly allowlisted.
 - [ ] Public source repository and challenge-period commit history.
-- [x] Working public deployment with a stable judging URL.
+- [x] Stable production HTTPS deployment exists and is verified from an authorised owner session.
 - [ ] Production URL verified in ChatGPT's in-app browser.
 - [ ] Production URL verified in the supported Chrome WebMCP path.
 - [ ] Free judging access confirmed through the full judging window.
@@ -102,7 +106,8 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Local application commit `900b5f9` adds the persisted review/delegated-auto mission policy and visible protocol language and is newer than deployed application commit `a20e1ff`.
-3. The current deployment needs a fresh Chrome console smoke on its new asset hashes.
-4. The production deployment must be exercised through WebMCP from fresh ChatGPT and Chrome sessions before any submission claim.
-5. Video capture, narration, upload, and Devpost submission remain external deliverables.
+2. Current application source `8e988f0` adds the persisted Assess/Prepare-fix mission, focused priorities, and explicit repair-intent gate; it is newer than deployed application commit `a20e1ff` and has no live proof.
+3. Temporary Cloudflare Access policy **Only CK** currently protects the Frontmend hostname. It must be removed before judging or replaced with tested judge credentials delivered through an allowed private channel.
+4. The current deployment needs a fresh Chrome console smoke on its asset hashes.
+5. The eventual current deployment must be exercised through WebMCP from fresh ChatGPT, Codex-repository, and Chrome sessions before any submission claim.
+6. Video capture, narration, upload, and Devpost submission remain external deliverables.

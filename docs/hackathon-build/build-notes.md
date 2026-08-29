@@ -119,3 +119,14 @@
 - Existing pure and integration coverage continues to prove semantic admission signatures, same-ID retry attribution, stale/conflicting intent rejection, diagnostic completion, raw prompt exclusion, source-content rejection, repository-relative paths, human deployment attestation, and honest verification.
 - Updated the documented tool inventory and full-suite count from fresh output rather than historical estimates.
 - Verification: `bun run test` — 124 passed, 0 failed; the packaging contract rebuilt the current Vite/Sites artifact during the run.
+
+## 2026-08-29 — Build item 9
+
+- README now opens the real Codex workflow with the natural one-line accessibility/SEO prompt, explains Assess versus Prepare a fix, and leads with diagnosis and shared authority rather than a Lighthouse score tour.
+- Recut the under-three-minute demo around four judge-visible moments: retained mission focus, measurement-versus-assessment continuation, repository-aware diagnosis, and an explicit human transition into repair.
+- The demo spends only a short interval on audit polling and makes a fake resolution, agent deployment, source upload, or premature repair transition an explicit failed take.
+- Fresh ChatGPT steps now test the natural focused request, empty result continuation, no-more-than-three priorities, honest repository-access blocking, and a separate natural preparation request.
+- Fresh Codex steps test the strongest repository-native path: browser reproduction, repository ownership, bounded diagnosis, explicit preparation, reviewed implementation, and the person-only deployment gate.
+- Fresh Chrome Inspector steps now test Assess focus and `assessmentComplete`, then call `prepare_site_repair` before expecting any eligible staging capability; Chrome-only evidence must not invent repository diagnosis.
+- Temporary Cloudflare Access **Only CK** is recorded as a release blocker rather than free judging access. Older deployed Lighthouse and WebMCP receipts remain labelled historical and cannot prove the newer local mission candidate.
+- Verification: the required cross-document `rg` query returned Assess, Prepare a fix, `assessmentComplete`, ChatGPT, Chrome, Cloudflare Access, and Lighthouse coverage; `git diff --check` passed.

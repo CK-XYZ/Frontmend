@@ -65,7 +65,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: All new PRD acceptance boundaries have direct deterministic coverage; existing cancellation, exploration, repair revision, implementation history, deployment gate, verification comparability, and human fallback contracts remain green.
   Verify: `bun run test`
 
-- [ ] **9. Align product, demo, and fresh-session evidence instructions**
+- [x] **9. Align product, demo, and fresh-session evidence instructions**
   Spec ref: `spec.md > Fresh-Session Evaluation`; `spec.md > Demo And Submission Flow`
   What to build: Update README, demo script, release candidate ledger, and submission-readiness notes with Assess versus Prepare fix, the natural prompt, exact ChatGPT/Chrome steps, the mission-continuity failure condition, temporary Cloudflare Access release gate, and only evidence actually proven at this point.
   Acceptance: Documentation leads with the product value beyond Lighthouse; no build is called deployment; browser proof remains unchecked until run; public-repo/video/access tasks remain explicit; demo spends most time on diagnosis and shared authority rather than audit polling.

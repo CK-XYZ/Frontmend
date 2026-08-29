@@ -2,7 +2,17 @@
 
 **Paste a URL. Mend the frontend.**
 
-Frontmend is a URL-first frontend audit and repair workspace for people and browser agents. A human can start an audit from the floating URL field; a compatible agent can inspect the same evidence and stage a repair through WebMCP. Both adapters use one application service, persisted jobs, and one visible review state.
+Frontmend is a URL-first frontend assessment and repair workspace for people and browser agents. A person can start from the floating URL field; a compatible coding agent can carry the same durable mission from public evidence into repository-aware diagnosis and a bounded repair handoff. Both adapters use one application service, persisted jobs, and one visible authority state.
+
+## Try the real workflow
+
+From a fresh Codex task with the target repository open, use one natural prompt:
+
+> Hey Codex, please use Frontmend to audit my site for accessibility and SEO issues.
+
+Codex should resolve the repository's public deployment, start Frontmend in **Assess** mode, retain the requested focus, and return no more than three deduplicated priorities. If Lighthouse measured a symptom but not its cause, the audit job may be complete while `assessmentComplete` remains false: Frontmend names the exact diagnostic tool, Codex reproduces the issue in the browser, inspects repository ownership, and contributes only bounded repository-relative evidence. It must not stage a repair from this prompt.
+
+Only a later explicit request such as “Please prepare the first priority for a fix” records **Prepare a fix** intent and makes an eligible repair draft available. That transition is not approval, does not consume delegated-auto allowance, does not edit the repository, and cannot deploy or attest deployment.
 
 ## Working product slice
 
@@ -13,6 +23,9 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Fresh retry semantics for failed jobs: a repeated human or agent start keeps the stable workspace ID, consumes the normal rate budget, increments the visible attempt, clears stale failure state, and actually runs the provider again.
 - Independent PageSpeed Insights/Lighthouse evidence for mobile and desktop, including bounded screenshots when supplied by the provider. One failed viewport no longer discards the other viewport's measured result.
 - Natural intent handoff for requests such as “audit my site for accessibility and SEO”: the result tool accepts the requested focus areas, retains category scores, and returns up to three severity-ranked priorities deduplicated across mobile and desktop instead of making the person restate Frontmend's workflow.
+- A persisted **Assess** mission distinguishes measurement completion from assessment completion, names the next diagnostic action when Lighthouse exposes only a symptom, and survives polling, retry, reload, and an empty result call without retaining the user's raw prompt.
+- A ranked mission-priority surface links directly to the complete evidence queue, preserves cross-viewport occurrences, and shows whether each priority is measured, awaiting diagnosis, or backed by contributed diagnosis.
+- An explicit **Prepare a fix** transition freezes one retained finding before repair staging appears. It is idempotent for that finding, rejects conflicting intent, creates no repair by itself, and cannot silently consume delegated policy.
 - A truthful live-document fallback when Lighthouse is unavailable, plus a hybrid mode that supplements a retained single-viewport Lighthouse result with bounded public HTML and response-header evidence. Every report names unavailable strategies instead of flattening partial evidence into a total failure.
 - Bounded same-site route discovery from fetched anchor paths, with explicit unvisited-route caveats and a shared human/WebMCP action whose server-authoritative parent job starts a real follow-up audit only for an observed path.
 - Durable route journeys with bounded root, parent, depth, and ancestor provenance in job snapshots, reports, Markdown exports, WebMCP results, and a visible back-to-parent trail.
@@ -37,7 +50,7 @@ Frontmend is a URL-first frontend audit and repair workspace for people and brow
 - Rule proof and summary-metric proof are deliberately separate: partial/hybrid verification requires the same Lighthouse version for an exact Lighthouse rule, while score/check/finding deltas appear only when the engine, measured strategies, score basis, and document-supplement coverage all match.
 - A before/after proof receipt with baseline and fresh audit IDs plus server-derived score, passed-check, and finding deltas; the same structure is returned through WebMCP.
 - A bounded audit-lineage trail that carries the exact rule across repeated repair attempts, preserves the root audit, stores each attempt's evidence signature, labels whether its summary metrics are comparable to the baseline, and compacts older history after eight receipts.
-- A library of sixteen WebMCP tools covering audit start/progress/cancellation/results, diagnostic missions, repository handoff, single-route and multi-page exploration, verification receipts, repair staging/revision/implementation/workspace, and verification; only the capabilities valid for the visible page state are registered at any moment.
+- A library of seventeen WebMCP tools covering audit start/progress/cancellation/results, diagnostic missions, repository handoff, single-route and multi-page exploration, verification receipts, explicit repair preparation, repair staging/revision/implementation/workspace, and verification; only the capabilities valid for the visible page state are registered at any moment.
 - Audit-scoped tools infer the visible audit when `auditId` is omitted, while retaining explicit IDs for durable or background workflows.
 - A session-only WebMCP activity drawer that exposes bounded semantic tool lifecycle events while deliberately omitting tool inputs, URLs, patches, prompts, and secrets.
 - An inspectable WebMCP status panel that shows the active contextual subset, explains why it changed, and keeps human-only authority visible.
@@ -142,4 +155,4 @@ A clipboard-denied replay proved the sharing fallback on audit `b8fb882b`: the e
 
 Keyboard replays at 390px proved the WebMCP capability panel, Agent log, and How it works sheet all focus their close control on entry, retain Tab focus inside, close on Escape, and return focus to the exact invoking button.
 
-On visible audit `b8fb882b`, genuine WebMCP calls read results and the repair workspace with empty input objects, then staged repair `5ab83c3a` using only the finding ID. The UI immediately entered `Human decision required` with the site-aware Report-Only CSP proposal; no approval, deployment attestation, or target mutation occurred.
+On visible audit `b8fb882b`, the historical pre-preparation contract let genuine WebMCP calls read results and the repair workspace with empty input objects, then stage repair `5ab83c3a` using only the finding ID. The UI immediately entered `Human decision required` with the site-aware Report-Only CSP proposal; no approval, deployment attestation, or target mutation occurred. This receipt does not prove the current explicit `prepare_site_repair` transition.
