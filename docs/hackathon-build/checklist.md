@@ -53,7 +53,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Agent-started focus is visible during progress and after reload; broad human audits say Full frontend audit; the completed page shows when measurement is done but diagnosis remains; copy states that the agent investigates the repository while the person controls deployment; layout remains accessible and responsive.
   Verify: `bun test tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs` plus `bun run build`
 
-- [ ] **7. Add focused mission priorities and the human repair-intent action**
+- [x] **7. Add focused mission priorities and the human repair-intent action**
   Spec ref: `spec.md > Human UI > Focused priority presentation`; `spec.md > Human UI > Prepare repair transition`
   What to build: Add a compact ranked mission-priority view linked to the existing evidence queue, show each diagnostic state, and add the human `Prepare a fix` action using the shared service transition. Update styles and capability copy without duplicating finding details or changing repair policy.
   Acceptance: Selecting a mission priority selects its existing finding; cross-viewport occurrences remain visible; the action explains it records intent but is not approval/deployment; successful transition updates mission state and re-registers contextual tools; 390 px semantics and interaction remain safe by static/build evidence pending authorised browser proof.

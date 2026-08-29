@@ -28,6 +28,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "./audit-service.js";
 import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
+import { findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import { repairMissionState } from "./repair-contract.js";
 import { contextualFrontmendToolNames, registerFrontmendTools } from "./webmcp.js";
 
@@ -464,14 +465,18 @@ function missionFocusLabel(focusAreas) {
     .join(" + ");
 }
 
-function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [] }) {
-  const titleId = useId();
-  const retainedMission = audit?.mission ?? createAuditMission(
+function retainedAuditMission(audit) {
+  return audit?.mission ?? createAuditMission(
     {},
     audit?.source === "agent" ? "agent" : "human",
     0,
   );
-  const state = deriveAuditMissionState({
+}
+
+function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], missionState = null }) {
+  const titleId = useId();
+  const retainedMission = retainedAuditMission(audit);
+  const state = missionState ?? deriveAuditMissionState({
     report: audit?.report ?? null,
     mission: retainedMission,
     diagnosticMissions,
@@ -521,6 +526,121 @@ function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [] }) {
           deployment, and deployment attestation.
         </span>
       </p>
+    </section>
+  );
+}
+
+function missionEvidenceLabel(value) {
+  const labels = {
+    "measured-evidence-sufficient": "Measured evidence ready",
+    "diagnosis-recommended": "Diagnosis needed",
+    "diagnosis-in-progress": "Diagnosis in progress",
+    "diagnosis-contributed": "Diagnosis contributed",
+    "diagnosis-blocked": "Diagnosis blocked",
+    "unsupported-continuation": "No supported continuation",
+  };
+  return labels[value] ?? "Evidence retained";
+}
+
+function MissionPriorities({ state, selectedFindingId, onSelect }) {
+  const titleId = useId();
+  return (
+    <section className="mission-priorities" aria-labelledby={titleId}>
+      <header>
+        <div>
+          <p className="kicker">Mission priorities</p>
+          <h3 id={titleId}>
+            {state.priorityCount
+              ? `${state.priorityCount} ranked ${state.priorityCount === 1 ? "priority" : "priorities"}`
+              : "No matching failed rules"}
+          </h3>
+        </div>
+        <span>{state.assessmentComplete ? "Complete" : "Active"}</span>
+      </header>
+      {state.priorities.length ? (
+        <ol>
+          {state.priorities.map((priority) => (
+            <li key={priority.findingId}>
+              <button
+                type="button"
+                className={priority.findingId === selectedFindingId ? "selected" : ""}
+                onClick={() => onSelect(priority.findingId)}
+              >
+                <span className="mission-priority-rank">{priority.rank}</span>
+                <span className="mission-priority-copy">
+                  <strong>{priority.title}</strong>
+                  <small>
+                    {priority.affectedStrategies.length
+                      ? priority.affectedStrategies.join(" + ")
+                      : "document"}
+                    {priority.occurrenceCount > 1 ? ` · ${priority.occurrenceCount} occurrences` : ""}
+                  </small>
+                </span>
+                <em className={`evidence-state ${priority.evidenceState}`}>
+                  {missionEvidenceLabel(priority.evidenceState)}
+                </em>
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p>
+          The requested focus has no supported failed rule in this run. Scores remain automated
+          evidence, not a complete manual audit.
+        </p>
+      )}
+      <small className="mission-priorities-boundary">
+        Ranked by the retained mission. The complete bounded evidence queue remains below.
+      </small>
+    </section>
+  );
+}
+
+function PrepareRepairIntent({ auditId, priority, mission, preparedFindingTitle }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!priority) return null;
+  const preparedFindingId = mission.repairPreparation?.findingId ?? null;
+  const selectedIsPrepared = preparedFindingId === priority.findingId;
+  const prepare = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await auditService.prepareRepair(auditId, priority.findingId, "human");
+    } catch (cause) {
+      setError(cause instanceof AuditError ? cause.message : "Repair intent could not be recorded.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className={`prepare-repair-intent ${selectedIsPrepared ? "prepared" : ""}`} aria-label="Prepare repair intent">
+      <span aria-hidden="true"><Wrench size={20} weight="duotone" /></span>
+      <div>
+        <p className="kicker">Human intent gate</p>
+        <strong>
+          {selectedIsPrepared
+            ? "This finding is being prepared"
+            : preparedFindingId
+              ? `Already preparing ${preparedFindingTitle ?? "another finding"}`
+              : "Want an implementation-ready fix?"}
+        </strong>
+        <p>
+          {selectedIsPrepared
+            ? "The agent may prepare a bounded draft when its evidence is ready. Approval and deployment remain separate."
+            : preparedFindingId
+              ? "One audit mission freezes one repair target. Start a new assessment to choose a different finding."
+              : "Prepare a fix records this selected priority as your target. It does not approve code, change auto mode, or deploy anything."}
+        </p>
+      </div>
+      {!preparedFindingId ? (
+        <button type="button" onClick={prepare} disabled={busy}>
+          <ClipboardText size={17} weight="bold" />
+          {busy ? "Recording…" : "Prepare a fix"}
+        </button>
+      ) : null}
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
     </section>
   );
 }
@@ -1255,7 +1375,15 @@ function DiagnosticProvenanceCard({ mission }) {
   );
 }
 
-function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify }) {
+function RepairWorkbench({
+  auditId,
+  finding,
+  repair,
+  repairPrepared,
+  diagnosticReady,
+  onRepairChange,
+  onVerify,
+}) {
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [reviewConfirmed, setReviewConfirmed] = useState(false);
@@ -1346,16 +1474,27 @@ function RepairWorkbench({ auditId, finding, repair, onRepairChange, onVerify })
         </span>
         <div>
           <p className="kicker">Repair workspace</p>
-          <h3>Turn this finding into a reviewable change.</h3>
+          <h3>
+            {repairPrepared
+              ? diagnosticReady
+                ? "Turn this finding into a reviewable change."
+                : "Finish the diagnosis before drafting a change."
+              : "Repair drafting waits for explicit intent."}
+          </h3>
           <p>
-            Frontmend will stage a bounded starting point. An agent can propose a richer draft through
-            WebMCP; approval stays in this visible review interface.
+            {repairPrepared
+              ? diagnosticReady
+                ? "Frontmend will stage a bounded starting point. An agent can propose a richer draft through WebMCP; approval stays in this visible review interface."
+                : "The measured symptom still needs browser reproduction and repository ownership. Repair tooling unlocks when that evidence is contributed."
+              : "Use Prepare a fix on the selected mission priority first. That records the target without approving code or changing your repair policy."}
           </p>
         </div>
-        <button type="button" className="repair-button" onClick={stage} disabled={Boolean(busy)}>
-          <ClipboardText size={17} weight="bold" />
-          {busy === "stage" ? "Staging…" : "Stage repair draft"}
-        </button>
+        {repairPrepared && diagnosticReady ? (
+          <button type="button" className="repair-button" onClick={stage} disabled={Boolean(busy)}>
+            <ClipboardText size={17} weight="bold" />
+            {busy === "stage" ? "Staging…" : "Stage repair draft"}
+          </button>
+        ) : null}
         {error ? <p className="repair-error" role="alert">{error}</p> : null}
       </section>
     );
@@ -2076,10 +2215,14 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   const [viewportId, setViewportId] = useState(
     viewports.find((item) => item.id === "mobile")?.id ?? viewports[0]?.id,
   );
-  const [selectedFindingId, setSelectedFindingId] = useState(report.findings[0]?.id ?? null);
   const [repairs, setRepairs] = useState(() => auditService.getRepairs(report.auditId));
   const [diagnosticMissions, setDiagnosticMissions] = useState(() => auditService.getDiagnosticMissions(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
+  const mission = retainedAuditMission(audit);
+  const missionState = deriveAuditMissionState({ report, mission, diagnosticMissions, repairs });
+  const [selectedFindingId, setSelectedFindingId] = useState(
+    () => missionState.priorities[0]?.findingId ?? report.findings[0]?.id ?? null,
+  );
   const [shareState, setShareState] = useState("idle");
   const shareInputRef = useRef(null);
   const shareUrl = new URL(auditWorkspacePath(report.auditId), window.location.origin).href;
@@ -2095,6 +2238,16 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
     : [];
   const selectedRepair = repairs.find((repair) => repair.findingId === selectedFinding?.id) ?? null;
   const selectedDiagnosticMission = diagnosticMissions.find((mission) => mission.findingId === selectedFinding?.id) ?? null;
+  const selectedPriority = missionState.priorities.find(
+    (priority) => priority.findingId === selectedFinding?.id,
+  ) ?? null;
+  const preparedFindingId = mission.repairPreparation?.findingId ?? null;
+  const preparedFinding = report.findings.find((finding) => finding.id === preparedFindingId) ?? null;
+  const selectedRepairPrepared = preparedFindingId === selectedFinding?.id;
+  const selectedDiagnosticReady = selectedFinding
+    ? !findingRequiresDiagnosticMission(selectedFinding) ||
+      selectedDiagnosticMission?.state?.state === "ready-for-repair"
+    : false;
   const omittedFindingCount = Math.max(
     0,
     Number.isFinite(report.findingsOmitted)
@@ -2123,6 +2276,13 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   const rememberRepair = (repair) => {
     setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
     setRepairPolicy(auditService.getRepairPolicy(report.auditId));
+  };
+
+  const selectFinding = (findingId) => {
+    const finding = report.findings.find((item) => item.id === findingId);
+    if (!finding) return;
+    setSelectedFindingId(finding.id);
+    if (finding.source?.strategy) setViewportId(finding.source.strategy);
   };
 
   const copyShareLink = async () => {
@@ -2197,6 +2357,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
         audit={audit}
         diagnosticMissions={diagnosticMissions}
         repairs={repairs}
+        missionState={missionState}
       />
 
       {shareState === "manual" ? (
@@ -2360,10 +2521,18 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
             finding={selectedFinding}
             mission={selectedDiagnosticMission}
           />
+          <PrepareRepairIntent
+            auditId={report.auditId}
+            priority={selectedPriority}
+            mission={mission}
+            preparedFindingTitle={preparedFinding?.title}
+          />
           <RepairWorkbench
             auditId={report.auditId}
             finding={selectedFinding}
             repair={selectedRepair}
+            repairPrepared={selectedRepairPrepared}
+            diagnosticReady={selectedDiagnosticReady}
             onRepairChange={rememberRepair}
             onVerify={onVerify}
           />
@@ -2377,16 +2546,18 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
             </div>
             <span>{report.findingCount}</span>
           </div>
+          <MissionPriorities
+            state={missionState}
+            selectedFindingId={selectedFindingId}
+            onSelect={selectFinding}
+          />
           <div className="finding-list">
             {report.findings.map((finding, index) => (
               <button
                 type="button"
                 key={finding.id}
                 className={finding.id === selectedFindingId ? "selected" : ""}
-                onClick={() => {
-                  setSelectedFindingId(finding.id);
-                  if (finding.source?.strategy) setViewportId(finding.source.strategy);
-                }}
+                onClick={() => selectFinding(finding.id)}
               >
                 <span className={`finding-index ${finding.severity}`}>{index + 1}</span>
                 <span className="finding-copy">
@@ -2412,8 +2583,8 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
             <Sparkle size={18} weight="fill" aria-hidden="true" />
             <p>
               {repairPolicy.mode === "auto-low-risk"
-                ? "An agent can inspect the repository and submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
-                : "An agent can inspect the repository and submit a repair mission through WebMCP. You approve it in this shared workspace."}
+                ? "After you prepare one priority, an agent can inspect the repository and submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
+                : "Prepare one priority, then an agent can inspect the repository and submit a repair mission through WebMCP. You approve it in this shared workspace."}
             </p>
           </div>
         </aside>

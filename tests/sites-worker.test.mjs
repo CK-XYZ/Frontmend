@@ -11,6 +11,18 @@ import { createLocalAuditRuntime } from "../worker/local-runtime.js";
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 
+function preparedAuditMission(findingId, focusAreas = []) {
+  return {
+    schemaVersion: 1,
+    intent: "prepare-fix",
+    focusAreas,
+    maxPriorities: 3,
+    requestedBy: "human",
+    requestedAt: 10,
+    repairPreparation: { findingId, requestedBy: "human", requestedAt: 20 },
+  };
+}
+
 async function ensureSitesBuild() {
   await execFileAsync("bun", ["run", "build"], {
     cwd: projectRoot,
@@ -1354,6 +1366,7 @@ test("audit jobs persist one repair per finding and require human approval befor
         id: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
         url: "https://removemyexif.com/",
         source: "agent",
+        mission: preparedAuditMission("document-content-security-policy", ["security"]),
         status: "complete",
         phase: "complete",
         progress: 100,
@@ -1407,6 +1420,15 @@ test("audit jobs persist one repair per finding and require human approval befor
         }),
       }),
     );
+
+  const preparedState = values.get("state");
+  values.set("state", {
+    ...preparedState,
+    mission: { ...preparedState.mission, intent: "assess", repairPreparation: null },
+  });
+  const blockedByIntent = await stage();
+  assert.equal((await blockedByIntent.json()).error.code, "REPAIR_INTENT_REQUIRED");
+  values.set("state", preparedState);
 
   const firstResponse = await stage();
   const first = (await firstResponse.json()).data;
@@ -1621,6 +1643,7 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
     id: auditId,
     url: "https://example.com/",
     source: "agent",
+    mission: preparedAuditMission(finding.id, ["reliability"]),
     status: "complete",
     phase: "complete",
     progress: 100,
@@ -1680,6 +1703,7 @@ test("audit jobs persist a scoped auto policy and authorise only an eligible age
     id: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
     url: "https://example.com/",
     source: "human",
+    mission: preparedAuditMission("mobile-color-contrast-1", ["accessibility"]),
     status: "complete",
     phase: "complete",
     progress: 100,

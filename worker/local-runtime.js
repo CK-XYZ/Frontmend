@@ -681,6 +681,16 @@ export function createLocalAuditRuntime(options = {}) {
           if (existing) {
             return sendJson(response, 200, { ok: true, data: repairWithMission(existing) });
           }
+          if (baseline.mission?.repairPreparation?.findingId !== finding.id) {
+            return sendError(
+              response,
+              new AuditError(
+                "REPAIR_INTENT_REQUIRED",
+                "Record explicit repair intent for this finding before staging a repair draft.",
+              ),
+              409,
+            );
+          }
           if (baseline.repairs.length >= 10) {
             return sendError(response, new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
           }

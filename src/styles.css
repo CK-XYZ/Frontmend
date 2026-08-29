@@ -2822,6 +2822,85 @@ input:focus-visible,
   background: #f7faed;
 }
 
+.prepare-repair-intent {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px 15px;
+  margin-top: 13px;
+  padding: 15px;
+  border: 1px solid #d9cba4;
+  border-radius: 16px;
+  background: #fffcf3;
+}
+
+.prepare-repair-intent.prepared {
+  border-color: #cbdba9;
+  background: #f6faec;
+}
+
+.prepare-repair-intent > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #fff0c9;
+  color: #8b6829;
+}
+
+.prepare-repair-intent.prepared > span {
+  background: #e5efcf;
+  color: #58762c;
+}
+
+.prepare-repair-intent > div,
+.prepare-repair-intent > div > strong,
+.prepare-repair-intent > div > p {
+  min-width: 0;
+}
+
+.prepare-repair-intent > div > strong {
+  display: block;
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+}
+
+.prepare-repair-intent > div > p:not(.kicker) {
+  margin: 0;
+  color: #756f61;
+  font-size: 9px;
+  line-height: 1.5;
+}
+
+.prepare-repair-intent > button {
+  min-height: 38px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid #252d26;
+  border-radius: 11px;
+  background: #252d26;
+  color: white;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 730;
+  cursor: pointer;
+}
+
+.prepare-repair-intent > button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.prepare-repair-intent > .repair-error {
+  grid-column: 2 / -1;
+  margin: 0;
+}
+
 .repair-workbench.changes-requested {
   border-color: #d7c39e;
   background: #fffdf7;
@@ -4031,6 +4110,155 @@ input:focus-visible,
   font-weight: 750;
 }
 
+.mission-priorities {
+  padding: 16px;
+  border-bottom: 1px solid #3d463b;
+  background: #272e28;
+  color: #f0f2eb;
+}
+
+.mission-priorities > header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 11px;
+}
+
+.mission-priorities .kicker {
+  color: #a9bd83;
+}
+
+.mission-priorities h3 {
+  margin: 4px 0 0;
+  font-size: 14px;
+  font-weight: 590;
+}
+
+.mission-priorities > header > span {
+  padding: 4px 7px;
+  border: 1px solid #4e5b48;
+  border-radius: 999px;
+  color: #c8d7ad;
+  font-size: 7px;
+  font-weight: 760;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mission-priorities ol {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mission-priorities li,
+.mission-priorities button,
+.mission-priority-copy {
+  min-width: 0;
+}
+
+.mission-priorities button {
+  width: 100%;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid #3e473d;
+  border-radius: 11px;
+  background: #303831;
+  color: #e8ece3;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mission-priorities button:hover,
+.mission-priorities button.selected {
+  border-color: #99b965;
+  background: #364133;
+}
+
+.mission-priorities button.selected {
+  box-shadow: inset 2px 0 #b8d87c;
+}
+
+.mission-priority-rank {
+  width: 25px;
+  height: 25px;
+  display: grid;
+  grid-row: 1 / 3;
+  place-items: center;
+  border-radius: 8px;
+  background: #46533f;
+  color: #d8e7bc;
+  font-size: 9px;
+  font-weight: 780;
+}
+
+.mission-priority-copy strong,
+.mission-priority-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mission-priority-copy strong {
+  font-size: 10px;
+  font-weight: 640;
+}
+
+.mission-priority-copy small {
+  margin-top: 3px;
+  color: #98a094;
+  font-size: 7px;
+  text-transform: capitalize;
+}
+
+.evidence-state {
+  grid-column: 2;
+  width: max-content;
+  max-width: 100%;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #3d463c;
+  color: #b9c5b2;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 690;
+  line-height: 1.25;
+}
+
+.evidence-state.diagnosis-recommended,
+.evidence-state.diagnosis-in-progress {
+  background: #5a492d;
+  color: #f2d89e;
+}
+
+.evidence-state.diagnosis-contributed,
+.evidence-state.measured-evidence-sufficient {
+  background: #405433;
+  color: #d0e6a7;
+}
+
+.mission-priorities > p,
+.mission-priorities-boundary {
+  color: #a9b0a6;
+  font-size: 8px;
+  line-height: 1.5;
+}
+
+.mission-priorities > p {
+  margin: 0;
+}
+
+.mission-priorities-boundary {
+  display: block;
+  margin-top: 10px;
+}
+
 .finding-list {
   display: grid;
 }
@@ -4801,6 +5029,15 @@ input:focus-visible,
 
   .audit-mission-authority {
     grid-column: 1;
+  }
+
+  .prepare-repair-intent {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .prepare-repair-intent > button,
+  .prepare-repair-intent > .repair-error {
+    grid-column: 1 / -1;
   }
 
   .progress-stages li {

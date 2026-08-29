@@ -1072,6 +1072,12 @@ export class FrontmendAuditJob {
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       const existing = repairs.find((repair) => repair.findingId === finding.id);
       if (existing) return json({ ok: true, data: repairWithMission(existing) });
+      if (state.mission?.repairPreparation?.findingId !== finding.id) {
+        return errorResponse(new AuditError(
+          "REPAIR_INTENT_REQUIRED",
+          "Record explicit repair intent for this finding before staging a repair draft.",
+        ));
+      }
       if (repairs.length >= 10) {
         return errorResponse(new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
       }

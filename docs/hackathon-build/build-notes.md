@@ -99,3 +99,13 @@
 - Broad human audits display Full frontend audit; legacy retained audits receive a display-only broad fallback without rewriting server state.
 - React best-practices guidance influenced the pure prop-derived component and reuse of the existing subscription rather than a second subscription/state machine.
 - Verification: `bun test tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs` — 69 passed, 0 failed; `bun run build` succeeded with the Sites package prepared.
+
+## 2026-08-29 — Build item 7
+
+- Added a compact ranked mission-priority view above the complete evidence queue. Selecting a priority selects its existing finding rather than creating a parallel issue model.
+- Each priority preserves its cross-viewport strategy occurrences and shows whether its evidence is ready, requires repository/browser diagnosis, or is outside the current focus.
+- Added the human `Prepare a fix` action through the shared application-service transition. The UI explains that this freezes one target and creates no approval, implementation, auto-policy allowance, or deployment authority.
+- The repair workspace remains hidden until the exact priority has explicit repair intent and any required diagnostic mission is complete.
+- Production and local authoritative runtimes now reject direct repair staging without the retained mission transition, while existing idempotent repair replays remain valid.
+- Responsive rules collapse priorities, evidence metadata, and the preparation action to a single column at narrow widths; interactive 390 px browser proof remains pending an authorised server session.
+- Verification: `bun test tests/webmcp.test.mjs tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/repair-contract.test.mjs` — 90 passed, 0 failed; `bun run build` succeeded with the Sites package prepared.
