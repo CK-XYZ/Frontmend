@@ -117,7 +117,7 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 130 contracts.
+`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 136 contracts.
 
 ```powershell
 bun install

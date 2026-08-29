@@ -196,3 +196,10 @@
 - The bounded reason enum covers unavailable browser, unavailable/wrong repository, non-reproduction, and conflicting runtime evidence. A short attributed summary is retained, while raw prompts, source, absolute paths, logs, credentials, and target mutations remain outside Frontmend.
 - The same shared contract now projects `diagnosis-blocked` and a visible **Assessment blocked · evidence retained** state. Missing evidence stages remain required; assessment receipt, repair staging, approval, implementation, deployment, and resolution all remain unavailable.
 - `submit_runtime_diagnosis` stays contextually available as a recovery path. A later capable agent can replace the active blocker with bounded browser/repository evidence while the prior blocker moves into revision history.
+
+## 2026-08-30 — Diagnostic-blocker release gate
+
+- Product slice committed as `49f77330dbf49a5d0d5d04a1bc4ea8e613c049c8` with the CK-XYZ Git identity.
+- Reran the allowed release gate from that exact clean commit: `bun test` passed 136/136, `bun run build` transformed 4,577 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
+- Current assets are `index-lorGx7r8.css` at 77.53 kB raw / 15.83 kB gzip and `index-DpWOhAjT.js` at 430.71 kB raw / 119.74 kB gzip. The dry bundle is 226.90 KiB raw / 49.47 KiB gzip.
+- `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.
