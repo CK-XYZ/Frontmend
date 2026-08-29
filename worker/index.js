@@ -37,6 +37,7 @@ import {
   diagnosticMissionForRepair,
   diagnosticMissionSnapshot,
   findingRequiresDiagnosticMission,
+  recordDiagnosticBlocker,
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
 
@@ -571,7 +572,7 @@ async function routeApi(request, env, url) {
   }
 
   const diagnosticMatch = url.pathname.match(
-    /^\/api\/audits\/([^/]+)\/diagnostics(?:\/([^/]+)(?:\/(evidence))?)?$/,
+    /^\/api\/audits\/([^/]+)\/diagnostics(?:\/([^/]+)(?:\/(evidence|blocker))?)?$/,
   );
   if (diagnosticMatch) {
     const [, auditId, missionId, action] = diagnosticMatch;
@@ -1243,7 +1244,7 @@ export class FrontmendAuditJob {
     if (state.status !== "complete" || !state.report) {
       return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before opening a diagnostic mission."));
     }
-    const match = url.pathname.match(/^\/diagnostics(?:\/([^/]+)(?:\/(evidence))?)?$/);
+    const match = url.pathname.match(/^\/diagnostics(?:\/([^/]+)(?:\/(evidence|blocker))?)?$/);
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That diagnostic route does not exist."));
     const [, rawMissionId, action] = match;
     const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
@@ -1280,6 +1281,20 @@ export class FrontmendAuditJob {
       }
       try {
         missions[missionIndex] = submitDiagnosticEvidence(missions[missionIndex], evidence, source);
+        await this.ctx.storage.put("diagnosticMissions", missions);
+        return json({ ok: true, data: missions[missionIndex] });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (action === "blocker" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const { source, ...blocker } = input ?? {};
+      if (source !== "agent" && source !== "person") {
+        return errorResponse(new AuditError("INVALID_DIAGNOSTIC_BLOCKER", "A diagnostic blocker must identify an agent or person source."));
+      }
+      try {
+        missions[missionIndex] = recordDiagnosticBlocker(missions[missionIndex], blocker, source);
         await this.ctx.storage.put("diagnosticMissions", missions);
         return json({ ok: true, data: missions[missionIndex] });
       } catch (error) {

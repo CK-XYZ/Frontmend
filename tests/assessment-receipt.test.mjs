@@ -5,7 +5,11 @@ import {
   createAssessmentReceipt,
 } from "../src/assessment-receipt.js";
 import { createAuditMission } from "../src/audit-mission-contract.js";
-import { createDiagnosticMission, submitDiagnosticEvidence } from "../src/diagnostic-contract.js";
+import {
+  createDiagnosticMission,
+  recordDiagnosticBlocker,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const finding = {
   id: "mobile-errors-in-console",
@@ -52,6 +56,19 @@ test("withholds an assessment receipt until required diagnosis is contributed", 
   assert.throws(
     () => createAssessmentReceipt({ report, mission, diagnosticMissions: [opened] }),
     (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /submit_runtime_diagnosis/.test(error.message),
+  );
+});
+
+test("withholds an assessment receipt when diagnosis is explicitly blocked", () => {
+  const opened = createDiagnosticMission({ auditId: report.auditId, finding, now: 200 });
+  const blocked = recordDiagnosticBlocker(opened, {
+    reason: "browser-unavailable",
+    summary: "This session cannot open the deployed route in a browser.",
+  }, "agent", 250);
+
+  assert.throws(
+    () => createAssessmentReceipt({ report, mission, diagnosticMissions: [blocked] }),
+    (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /outstanding diagnostic evidence/.test(error.message),
   );
 });
 

@@ -170,8 +170,13 @@ function priorityEvidence(finding, diagnosticMissions) {
   if (!diagnostic) return { evidenceState: "diagnosis-recommended", diagnosticMissionId: null };
   const state = diagnostic?.state?.state ?? diagnosticMissionState(diagnostic).state;
   return {
-    evidenceState: state === "ready-for-repair" ? "diagnosis-contributed" : "diagnosis-in-progress",
+    evidenceState: state === "ready-for-repair"
+      ? "diagnosis-contributed"
+      : state === "blocked"
+        ? "diagnosis-blocked"
+        : "diagnosis-in-progress",
     diagnosticMissionId: diagnostic.id ?? null,
+    diagnosticBlocker: state === "blocked" ? diagnostic.blocker ?? null : null,
   };
 }
 
@@ -267,6 +272,9 @@ export function deriveAuditMissionState({
   const mission = auditMissionSnapshot(missionValue);
   const projection = focusedAuditPriorities(report, mission, diagnosticMissions);
   const unresolved = projection.priorities.find((priority) => diagnosticNextAction(priority));
+  const blocked = projection.priorities.find(
+    (priority) => priority.evidenceState === "diagnosis-blocked",
+  );
   const auditComplete = Boolean(report);
   let status = auditComplete ? "complete" : "in-progress";
   let nextActor = auditComplete ? null : "agent";
@@ -284,14 +292,20 @@ export function deriveAuditMissionState({
     nextAction = diagnosticNextAction(unresolved);
   }
 
-  const assessmentComplete = auditComplete && !unresolved;
+  if (auditComplete && !unresolved && blocked) {
+    status = "blocked";
+    nextActor = null;
+    nextAction = null;
+  }
+
+  const assessmentComplete = auditComplete && !unresolved && !blocked;
   if (auditComplete && mission.intent === "prepare-fix" && !mission.repairPreparation) {
     status = "awaiting-repair-preparation";
     nextActor = "person";
     nextAction = null;
   }
 
-  if (auditComplete && mission.repairPreparation && !unresolved) {
+  if (auditComplete && mission.repairPreparation && !unresolved && !blocked) {
     const selected = projection.priorities.find(
       (priority) => priority.findingId === mission.repairPreparation.findingId,
     );

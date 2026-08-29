@@ -28,6 +28,8 @@ Choose a priority whose evidence says diagnosis is recommended. Show the crucial
 
 Codex opens the mission, reproduces the symptom in the browser, and inspects the repository with its normal repository tools. It then calls `submit_runtime_diagnosis` with a short reproduction, bounded observations, repository-relative ownership locations, and planned checks.
 
+If the controlled take deliberately demonstrates missing capability instead, have the agent call `record_diagnostic_blocker` with the exact bounded reason and a short non-sensitive summary. Show **Assessment blocked · evidence retained**, the blocker card, still-required evidence stages, and the absence of both assessment receipt and repair staging. Then switch to the repository-capable Codex session and submit the real diagnosis; the blocker moves into history. Do not use this branch as an excuse to omit the successful repository-aware path from the final demo.
+
 Show the four-stage evidence chain changing in place: provider measurement remains **Measured**, while browser reproduction, repository ownership, and planned checks move from **Required** to **Contributed**. Open the contribution detail long enough to show one real browser observation, one repository-relative owner, and the planned checks; this is the visual proof that the workflow continued beyond Lighthouse.
 
 Compare the visible and structured state:
@@ -84,4 +86,4 @@ If time permits, use a separate controlled audit. The person visibly enables **D
 
 ## Demo failure conditions
 
-Do not use the take if Codex stops after Lighthouse while `assessmentComplete` is false; repair staging appears without explicit preparation; agent-reported diagnosis is presented as measured; the agent approves, enables auto mode, deploys, or attests deployment; Frontmend receives source or absolute paths; repository work starts before authority exists; visible and structured mission state disagree; or any local build is described as live proof.
+Do not use the take if Codex stops after Lighthouse while `assessmentComplete` is false; a missing capability is narrated but not persisted with `record_diagnostic_blocker`; a blocker unlocks receipt or repair staging; repair staging appears without explicit preparation; agent-reported diagnosis is presented as measured; the agent approves, enables auto mode, deploys, or attests deployment; Frontmend receives source or absolute paths; repository work starts before authority exists; visible and structured mission state disagree; or any local build is described as live proof.

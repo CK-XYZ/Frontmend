@@ -5,7 +5,11 @@ import {
   repairMissionState,
   verificationReceiptMarkdown,
 } from "./repair-contract.js";
-import { diagnosticEvidenceChain, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
+import {
+  DIAGNOSTIC_BLOCKER_REASONS,
+  diagnosticEvidenceChain,
+  findingRequiresDiagnosticMission,
+} from "./diagnostic-contract.js";
 import {
   AUDIT_FOCUS_AREAS,
   auditMissionSnapshot,
@@ -142,9 +146,17 @@ export function contextualFrontmendToolNames(service) {
   }
   if (repairs.length) available.add("get_repair_workspace");
   const diagnosticFindings = findings.filter(findingRequiresDiagnosticMission);
-  if (diagnosticFindings.length) available.add("open_diagnostic_mission");
-  if (diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
+  const openedDiagnosticFindingIds = new Set(
+    diagnosticMissions.map((mission) => mission.findingId).filter(Boolean),
+  );
+  if (diagnosticFindings.some((finding) => !openedDiagnosticFindingIds.has(finding.id))) {
+    available.add("open_diagnostic_mission");
+  }
+  if (diagnosticMissions.some((mission) => ["awaiting-diagnosis", "blocked"].includes(mission.state?.state))) {
     available.add("submit_runtime_diagnosis");
+  }
+  if (diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
+    available.add("record_diagnostic_blocker");
   }
   const preparedFindingId = audit.mission?.repairPreparation?.findingId ?? null;
   const preparedFinding = findings.find((finding) => finding.id === preparedFindingId);
@@ -466,7 +478,7 @@ export function createFrontmendTools(service) {
       name: "open_diagnostic_mission",
       title: "Open diagnostic mission",
       description:
-        "Open an idempotent diagnostic mission for a finding with structured runtime evidence, such as console errors, low-contrast nodes, or main-thread blocking. The mission returns an evidenceChain that keeps the measured symptom separate from required browser reproduction, repository ownership, and planned verification. It does not diagnose the cause, read repository source, stage a repair, or change the target site.",
+        "Open an idempotent diagnostic mission for a finding with structured runtime evidence, such as console errors, low-contrast nodes, or main-thread blocking. The mission returns an evidenceChain that keeps the measured symptom separate from required browser reproduction, repository ownership, and planned verification. Continue with submit_runtime_diagnosis only from evidence you actually obtain; if browser/repository access is unavailable or the runtime conflicts, use record_diagnostic_blocker instead of inventing a cause. This tool does not diagnose, read repository source, stage a repair, or change the target site.",
       inputSchema: {
         type: "object",
         properties: {
@@ -493,7 +505,7 @@ export function createFrontmendTools(service) {
           evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
           requiredInvestigations: mission.requiredInvestigations,
           state: mission.state,
-          nextAction: "Reproduce the issue in the browser, map it to repository-relative source locations, then submit the bounded diagnosis. Do not include source contents or absolute paths.",
+          nextAction: "Reproduce the issue in the browser, map it to repository-relative source locations, then submit the bounded diagnosis. If that evidence is genuinely unavailable or conflicts, record the exact diagnostic blocker instead. Do not include source contents or absolute paths.",
         };
       },
     }),
@@ -569,6 +581,58 @@ export function createFrontmendTools(service) {
           diagnosis: mission.diagnosis,
           state: mission.state,
           nextAction: "The diagnosis is ready for a separate repository repair proposal. Human review or a previously scoped auto-mode grant still controls approval.",
+        };
+      },
+    }),
+    tool({
+      name: "record_diagnostic_blocker",
+      title: "Record diagnostic blocker",
+      description:
+        "Record why a measured symptom cannot currently be reproduced or mapped to repository ownership. Use this instead of inventing diagnosis when browser access, the correct repository, or matching runtime evidence is unavailable. Frontmend preserves the measured evidence, labels the blocker as agent-reported, keeps the assessment incomplete, and exposes runtime diagnosis again if access is later restored. This does not dismiss the finding, approve a repair, or claim resolution.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          missionId: { type: "string", minLength: 1, maxLength: 80, description: "Diagnostic mission ID." },
+          reason: {
+            type: "string",
+            enum: [...DIAGNOSTIC_BLOCKER_REASONS],
+            description: "The bounded capability or evidence conflict preventing an honest diagnosis.",
+          },
+          summary: {
+            type: "string",
+            minLength: 1,
+            maxLength: 300,
+            description: "A concise, non-sensitive explanation of what is unavailable or did not match.",
+          },
+        },
+        required: ["missionId", "reason", "summary"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "missionId", "reason", "summary"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const mission = await service.recordDiagnosticBlocker(
+          auditId,
+          requiredString(value.missionId, "missionId", 80),
+          {
+            reason: value.reason,
+            summary: requiredString(value.summary, "summary", 300),
+          },
+          "agent",
+        );
+        return {
+          auditId,
+          diagnosticMissionId: mission.id,
+          findingId: mission.findingId,
+          measuredEvidence: mission.measuredEvidence,
+          evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
+          blocker: mission.blocker,
+          state: mission.state,
+          assessmentComplete: false,
+          nextAction: "The finding remains unresolved and no repair can be staged from this blocker. When browser and repository access match the measured runtime, submit the bounded diagnosis to resume.",
         };
       },
     }),

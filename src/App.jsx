@@ -43,7 +43,7 @@ const LANDING_SIGNALS = [
   { label: "Accessibility", detail: "Evidence attached", state: "neutral", icon: ShieldCheck },
   { label: "Verification", detail: "Before and after", state: "good", icon: CheckCircle },
 ];
-const WEBMCP_TOOL_COUNT = 18;
+const WEBMCP_TOOL_COUNT = 19;
 const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
@@ -53,6 +53,7 @@ const WEBMCP_TOOL_COPY = {
   get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
   open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into a visible browser, repository, and verification evidence chain."],
   submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Complete the labelled evidence chain with browser observations, repository ownership, and planned checks."],
+  record_diagnostic_blocker: ["Record an honest blocker", "Preserve why browser or repository diagnosis cannot proceed without dismissing the measured finding."],
   record_repository_implementation: ["Record repository implementation", "Attach bounded file and check evidence after an approved repair is implemented by a coding agent."],
   start_related_page_audit: ["Audit an observed route", "Start a new audit from a same-site path found in this evidence."],
   start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
@@ -445,6 +446,9 @@ function Landing({ value, setValue, onSubmit, error, inputRef, isSubmitting }) {
 
 function missionActionLabel(state) {
   if (!state.nextAction) {
+    if (state.status === "blocked") {
+      return "Measured evidence retained · resume when browser and repository access match";
+    }
     return state.assessmentComplete
       ? "No required continuation"
       : "The person chooses the next repair target";
@@ -486,9 +490,11 @@ function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], mis
   const focusLabel = missionFocusLabel(state.requestedFocusAreas);
   const statusLabel = !state.auditComplete
     ? "Measurement in progress"
-    : state.assessmentComplete
-      ? "Assessment complete"
-      : "Measurement complete · diagnosis active";
+    : state.status === "blocked"
+      ? "Assessment blocked · evidence retained"
+      : state.assessmentComplete
+        ? "Assessment complete"
+        : "Measurement complete · diagnosis active";
   const tone = state.assessmentComplete ? "complete" : state.auditComplete ? "attention" : "running";
 
   return (
@@ -510,9 +516,11 @@ function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], mis
         <span className="audit-mission-status-icon" aria-hidden="true">
           {state.assessmentComplete
             ? <CheckCircle size={18} weight="fill" />
-            : state.auditComplete
-              ? <MagnifyingGlass size={18} weight="bold" />
-              : <Pulse size={18} weight="bold" />}
+            : state.status === "blocked"
+              ? <Warning size={18} weight="fill" />
+              : state.auditComplete
+                ? <MagnifyingGlass size={18} weight="bold" />
+                : <Pulse size={18} weight="bold" />}
         </span>
         <div>
           <strong>{statusLabel}</strong>
@@ -556,7 +564,7 @@ function MissionPriorities({ state, selectedFindingId, onSelect }) {
               : "No matching failed rules"}
           </h3>
         </div>
-        <span>{state.assessmentComplete ? "Complete" : "Active"}</span>
+        <span>{state.assessmentComplete ? "Complete" : state.status === "blocked" ? "Blocked" : "Active"}</span>
       </header>
       {state.priorities.length ? (
         <ol>
@@ -1316,7 +1324,7 @@ function DiagnosticEvidenceChain({ mission }) {
           <p className="kicker">Evidence chain</p>
           <strong>Measurement stays separate from contributed diagnosis</strong>
         </div>
-        <span>{chain.status === "ready-for-repair" ? "Evidence ready" : "Contribution required"}</span>
+        <span>{chain.status === "ready-for-repair" ? "Evidence ready" : chain.status === "blocked" ? "Blocked honestly" : "Contribution required"}</span>
       </div>
       <ol>
         {chain.stages.map((stage, index) => (
@@ -1337,11 +1345,23 @@ function DiagnosticEvidenceChain({ mission }) {
   );
 }
 
+function diagnosticBlockerReasonLabel(reason) {
+  const labels = {
+    "browser-unavailable": "Browser unavailable",
+    "repository-unavailable": "Repository unavailable",
+    "not-reproduced": "Symptom not reproduced",
+    "wrong-repository": "Repository does not match runtime",
+    "conflicting-runtime": "Runtime evidence conflicts",
+  };
+  return labels[reason] ?? "Diagnostic evidence unavailable";
+}
+
 function DiagnosticMissionCard({ auditId, finding, mission }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   if (!finding?.diagnosticEvidence) return null;
   const ready = mission?.state?.state === "ready-for-repair";
+  const blocked = mission?.state?.state === "blocked";
   const openMission = async () => {
     setBusy(true);
     setError("");
@@ -1354,19 +1374,29 @@ function DiagnosticMissionCard({ auditId, finding, mission }) {
     }
   };
   return (
-    <section className={`diagnostic-mission ${ready ? "ready" : ""}`} aria-label="Diagnostic mission">
+    <section className={`diagnostic-mission ${ready ? "ready" : blocked ? "blocked" : ""}`} aria-label="Diagnostic mission">
       <header>
-        <span aria-hidden="true"><MagnifyingGlass size={20} weight="duotone" /></span>
+        <span aria-hidden="true">{blocked ? <Warning size={20} weight="duotone" /> : <MagnifyingGlass size={20} weight="duotone" />}</span>
         <div>
           <p className="kicker">Measured symptom → owned cause</p>
-          <strong>{ready ? "Diagnosis ready for a repair proposal" : "Add browser and repository diagnosis"}</strong>
+          <strong>{ready ? "Diagnosis ready for a repair proposal" : blocked ? "Diagnosis paused without inventing evidence" : "Add browser and repository diagnosis"}</strong>
           <p>Lighthouse remains the sensor. The diagnosis is separate, labelled evidence contributed by a person or agent.</p>
         </div>
-        <span className="diagnostic-mission-state">{ready ? "Ready" : mission ? "In progress" : "Not opened"}</span>
+        <span className="diagnostic-mission-state">{ready ? "Ready" : blocked ? "Blocked" : mission ? "In progress" : "Not opened"}</span>
       </header>
       {mission ? (
         <>
           <DiagnosticEvidenceChain mission={mission} />
+          {mission.blocker ? (
+            <div className="diagnostic-blocker" role="status">
+              <Warning size={19} weight="fill" aria-hidden="true" />
+              <div>
+                <strong>{diagnosticBlockerReasonLabel(mission.blocker.reason)}</strong>
+                <p>{mission.blocker.summary}</p>
+                <small>{mission.blocker.agentReported ? "Agent-reported" : "Person-reported"} · measured evidence is still unresolved</small>
+              </div>
+            </div>
+          ) : null}
           {!mission.diagnosis ? (
             <ol className="diagnostic-investigations">
               {mission.requiredInvestigations.map((item) => <li key={item}>{item}</li>)}
@@ -1410,9 +1440,13 @@ function DiagnosticMissionCard({ auditId, finding, mission }) {
                 </section>
               </div>
             </div>
-          ) : (
+          ) : !mission.blocker ? (
             <p className="diagnostic-mission-note">
               A connected coding agent can now reproduce the issue, inspect repository ownership, and call <code>submit_runtime_diagnosis</code>. Manual repair drafting remains available below.
+            </p>
+          ) : (
+            <p className="diagnostic-mission-note blocked">
+              Frontmend will not offer repair staging or a completed assessment receipt from this blocker. A capable agent can call <code>submit_runtime_diagnosis</code> later to replace it with bounded evidence.
             </p>
           )}
         </>

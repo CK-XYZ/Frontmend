@@ -272,6 +272,42 @@ test("proxies the bounded repair-intent transition to the authoritative audit jo
   });
 });
 
+test("proxies a bounded diagnostic blocker to the authoritative audit job", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const missionId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  const calls = [];
+  const response = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/diagnostics/${missionId}/blocker`,
+    {
+      method: "POST",
+      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      body: JSON.stringify({
+        reason: "repository-unavailable",
+        summary: "The deployment repository is unavailable in this session.",
+        source: "agent",
+      }),
+    },
+  ), {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init) => {
+          calls.push({ url: new URL(url), input: JSON.parse(init.body) });
+          return Response.json({ ok: true, data: { id: missionId, state: { state: "blocked" } } });
+        },
+      }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url.pathname, `/diagnostics/${missionId}/blocker`);
+  assert.deepEqual(calls[0].input, {
+    reason: "repository-unavailable",
+    summary: "The deployment repository is unavailable in this session.",
+    source: "agent",
+  });
+});
+
 test("starts a related audit only from the parent job's authoritative route input", async () => {
   const parentId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
   const childId = "232d593c-6c81-48c3-b137-a3df269454ff";
@@ -1739,6 +1775,25 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
   assert.equal(earlyRepair.status, 409);
   assert.equal((await earlyRepair.json()).error.code, "DIAGNOSTIC_MISSION_REQUIRED");
 
+  const blockedResponse = await post(`/diagnostics/${opened.id}/blocker`, {
+    source: "agent",
+    reason: "repository-unavailable",
+    summary: "The browser symptom reproduced, but the repository owning this deployment is unavailable in the current session.",
+  });
+  assert.equal(blockedResponse.status, 200);
+  const blocked = (await blockedResponse.json()).data;
+  assert.equal(blocked.state.state, "blocked");
+  assert.equal(blocked.evidenceChain.status, "blocked");
+  assert.equal(blocked.measuredEvidence.provenance, "measured-lighthouse");
+
+  const blockedAssessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(blockedAssessment.status, 409);
+  assert.equal((await blockedAssessment.json()).error.code, "ASSESSMENT_INCOMPLETE");
+
+  const blockedRepair = await post("/repairs", { findingId: finding.id, source: "agent" });
+  assert.equal(blockedRepair.status, 409);
+  assert.equal((await blockedRepair.json()).error.code, "DIAGNOSTIC_MISSION_REQUIRED");
+
   const diagnosedResponse = await post(`/diagnostics/${opened.id}/evidence`, {
     source: "agent",
     summary: "A first-party fetch rejects without handling its expected response.",
@@ -1749,7 +1804,10 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
     confidence: "high",
   });
   assert.equal(diagnosedResponse.status, 200);
-  assert.equal((await diagnosedResponse.json()).data.state.state, "ready-for-repair");
+  const diagnosed = (await diagnosedResponse.json()).data;
+  assert.equal(diagnosed.state.state, "ready-for-repair");
+  assert.equal(diagnosed.blocker, null);
+  assert.equal(diagnosed.blockerHistory[0].reason, "repository-unavailable");
 
   const assessmentResponse = await job.fetch(new Request("https://frontmend.internal/assessment"));
   assert.equal(assessmentResponse.status, 200);

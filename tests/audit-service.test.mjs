@@ -454,6 +454,48 @@ test("HTTP transport uses bounded site-exploration collection and detail routes"
   assert.equal(calls[2].url, `https://frontmend.test/api/audits/${AUDIT_ID}/explorations/${missionId}`);
 });
 
+test("records and remembers a diagnostic blocker through the bounded transport route", async () => {
+  const calls = [];
+  const missionId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  const blockedMission = {
+    id: missionId,
+    auditId: AUDIT_ID,
+    findingId: "mobile-errors-in-console",
+    blocker: {
+      reason: "conflicting-runtime",
+      summary: "The current route no longer emits the measured console failure.",
+      agentReported: true,
+    },
+    state: { state: "blocked" },
+  };
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: blockedMission });
+    },
+  });
+  const service = createAuditService({ transport });
+
+  const result = await service.recordDiagnosticBlocker(AUDIT_ID, missionId, {
+    reason: "conflicting-runtime",
+    summary: "The current route no longer emits the measured console failure.",
+  }, "agent");
+
+  assert.equal(result.state.state, "blocked");
+  assert.equal(service.getDiagnosticMissions(AUDIT_ID)[0].blocker.reason, "conflicting-runtime");
+  assert.equal(
+    calls[0].url,
+    `https://frontmend.test/api/audits/${AUDIT_ID}/diagnostics/${missionId}/blocker`,
+  );
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    reason: "conflicting-runtime",
+    summary: "The current route no longer emits the measured console failure.",
+    source: "agent",
+  });
+});
+
 test("keeps a bounded metadata-only browser-agent activity ledger", () => {
   let timestamp = 100;
   const service = createAuditService({ now: () => timestamp++ });

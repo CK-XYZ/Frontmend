@@ -5,6 +5,7 @@ import {
   diagnosticEvidenceChain,
   diagnosticMissionForRepair,
   findingRequiresDiagnosticMission,
+  recordDiagnosticBlocker,
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
 
@@ -100,6 +101,65 @@ test("derives a bounded evidence chain for legacy diagnostic snapshots", () => {
     "person-reported",
     "person-reported",
   ]);
+});
+
+test("records an honest blocker without completing diagnosis or granting repair authority", () => {
+  const mission = createDiagnosticMission({ auditId: "audit-1", finding, now: 10 });
+  const blocked = recordDiagnosticBlocker(mission, {
+    reason: "repository-unavailable",
+    summary: "The browser symptom reproduced, but this session cannot access the repository that owns the deployed bundle.",
+  }, "agent", 20);
+
+  assert.equal(blocked.state.state, "blocked");
+  assert.equal(blocked.state.diagnosisEvidence, "blocked-agent-reported");
+  assert.deepEqual(blocked.state.nextActions, []);
+  assert.equal(blocked.state.recoveryAction.id, "submit_runtime_diagnosis");
+  assert.equal(blocked.evidenceChain.status, "blocked");
+  assert.equal(blocked.evidenceChain.blocker.reason, "repository-unavailable");
+  assert.equal(blocked.measuredEvidence.provenance, "measured-lighthouse");
+  assert.equal(blocked.diagnosis, null);
+  assert.deepEqual(blocked.evidenceChain.stages.slice(1).map((stage) => stage.state), [
+    "required",
+    "required",
+    "required",
+  ]);
+  assert.throws(() => diagnosticMissionForRepair(blocked), /Complete the runtime and repository diagnosis/);
+
+  const resumed = submitDiagnosticEvidence(blocked, {
+    summary: "The route initialiser reads a missing vendor global.",
+    reproduction: "Reload the deployed route and observe the first console failure.",
+    observations: [{ kind: "console", detail: "The first-party ReferenceError reproduces before interaction." }],
+    sourceLocations: [{ file: "src/runtime.js", reason: "Owns the early vendor-global read." }],
+    verificationChecks: ["bun test"],
+    confidence: "high",
+  }, "agent", 30);
+  assert.equal(resumed.state.state, "ready-for-repair");
+  assert.equal(resumed.blocker, null);
+  assert.equal(resumed.blockerHistory.length, 1);
+  assert.equal(resumed.blockerHistory[0].reason, "repository-unavailable");
+});
+
+test("rejects unbounded or invented diagnostic blocker fields", () => {
+  const mission = createDiagnosticMission({ auditId: "audit-1", finding });
+  assert.throws(
+    () => recordDiagnosticBlocker(mission, { reason: "agent-got-bored", summary: "No." }),
+    /reason must be one of/,
+  );
+  assert.throws(
+    () => recordDiagnosticBlocker(mission, {
+      reason: "browser-unavailable",
+      summary: "Browser access is unavailable.",
+      resolved: true,
+    }),
+    /Unknown diagnostic blocker field/,
+  );
+  assert.throws(
+    () => recordDiagnosticBlocker(mission, {
+      reason: "browser-unavailable",
+      summary: "x".repeat(301),
+    }),
+    /1 to 300 characters/,
+  );
 });
 
 test("rejects source contents, absolute files, and unknown diagnosis fields", () => {

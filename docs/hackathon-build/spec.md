@@ -134,7 +134,7 @@ Each returned priority has exactly one of:
 - `diagnosis-blocked`
 - `unsupported-continuation`
 
-The initial implementation can produce every state except `diagnosis-blocked` unless an existing diagnostic record contains an explicit blocked result. Do not invent blocked evidence. If no blocked-record contract exists, leave it for the later-time list rather than encoding fake completeness.
+The implemented blocker contract can produce `diagnosis-blocked` only from an explicit bounded `record_diagnostic_blocker` contribution. It preserves reason, summary, source, timestamp, and revision history; keeps missing evidence stages required; leaves `assessmentComplete` false; and cannot unlock receipt or repair staging. A later `submit_runtime_diagnosis` contribution clears the active blocker into bounded history and resumes the existing mission. Never infer or invent blocked evidence.
 
 ### Assessment state
 
@@ -314,6 +314,7 @@ Rules:
 
 - Completed Assess mission: results, applicable read-only evidence/exploration tools, diagnostics, and `prepare_site_repair`; do not expose `stage_site_repair` until repair preparation is recorded.
 - Awaiting diagnosis: expose `submit_runtime_diagnosis` and keep results.
+- Awaiting diagnosis: also expose `record_diagnostic_blocker`; after a blocker is recorded, keep `submit_runtime_diagnosis` as a recovery capability but remove blocker creation until real access changes.
 - Prepare fix: expose existing staging/workspace actions according to diagnostic readiness and repair state.
 - Existing revisions, implementation receipts, verification receipts, and verification start continue to follow current repair state.
 - A verification audit's existing receipt tools remain available regardless of root mission intent.

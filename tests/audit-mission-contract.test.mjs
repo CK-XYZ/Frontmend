@@ -7,7 +7,11 @@ import {
   focusedAuditPriorities,
   prepareRepairIntent,
 } from "../src/audit-mission-contract.js";
-import { createDiagnosticMission, submitDiagnosticEvidence } from "../src/diagnostic-contract.js";
+import {
+  createDiagnosticMission,
+  recordDiagnosticBlocker,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const consoleFinding = (strategy, severity = "medium") => ({
   id: `${strategy}-errors-in-console`,
@@ -112,6 +116,28 @@ test("keeps assessment incomplete until supported diagnosis is contributed", () 
   assert.equal(complete.status, "complete");
   assert.equal(complete.priorities[0].evidenceState, "diagnosis-contributed");
   assert.equal(complete.nextAction, null);
+});
+
+test("projects a diagnostic blocker as an incomplete terminal assessment state", () => {
+  const mission = createAuditMission({ focusAreas: ["reliability"] }, "agent", 10);
+  const diagnostic = createDiagnosticMission({ auditId: "audit-1", finding: report.findings[0], now: 20 });
+  const blockedDiagnostic = recordDiagnosticBlocker(diagnostic, {
+    reason: "wrong-repository",
+    summary: "The available checkout does not produce the deployed asset that emitted the measured error.",
+  }, "agent", 30);
+  const state = deriveAuditMissionState({
+    report,
+    mission,
+    diagnosticMissions: [blockedDiagnostic],
+  });
+
+  assert.equal(state.status, "blocked");
+  assert.equal(state.auditComplete, true);
+  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.nextActor, null);
+  assert.equal(state.nextAction, null);
+  assert.equal(state.priorities[0].evidenceState, "diagnosis-blocked");
+  assert.equal(state.priorities[0].diagnosticBlocker.reason, "wrong-repository");
 });
 
 test("completes an honest zero-match assessment without inventing work", () => {

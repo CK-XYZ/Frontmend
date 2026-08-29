@@ -189,3 +189,10 @@
 - Added app-scoped Bypass/Everyone policy `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` named **Temporary public testing** instead of editing the reusable policy or deleting the application.
 - Connector re-read confirmed both policies. A fresh unauthenticated in-app browser then reached the original Frontmend URL, rendered **Where does your site break?**, and discovered only `start_site_audit` without an Access login.
 - No Worker deployment, server start, code push, reusable-policy change, or other Access application change occurred. Removing the temporary bypass restores the prior **Only CK** protection.
+
+## 2026-08-30 — Honest diagnostic blocker
+
+- Added `record_diagnostic_blocker` as the nineteenth contextual tool for sessions that cannot honestly reproduce a measured symptom or access/reconcile the owning repository.
+- The bounded reason enum covers unavailable browser, unavailable/wrong repository, non-reproduction, and conflicting runtime evidence. A short attributed summary is retained, while raw prompts, source, absolute paths, logs, credentials, and target mutations remain outside Frontmend.
+- The same shared contract now projects `diagnosis-blocked` and a visible **Assessment blocked · evidence retained** state. Missing evidence stages remain required; assessment receipt, repair staging, approval, implementation, deployment, and resolution all remain unavailable.
+- `submit_runtime_diagnosis` stays contextually available as a recovery path. A later capable agent can replace the active blocker with bounded browser/repository evidence while the prior blocker moves into revision history.

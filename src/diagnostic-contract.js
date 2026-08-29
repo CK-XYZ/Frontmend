@@ -13,6 +13,13 @@ const OBSERVATION_KINDS = Object.freeze([
   "accessibility",
 ]);
 const CONFIDENCE_LEVELS = Object.freeze(["low", "medium", "high"]);
+export const DIAGNOSTIC_BLOCKER_REASONS = Object.freeze([
+  "browser-unavailable",
+  "repository-unavailable",
+  "not-reproduced",
+  "wrong-repository",
+  "conflicting-runtime",
+]);
 const MAX_DIAGNOSTIC_REVISIONS = 5;
 
 function boundedString(value, field, maximum) {
@@ -137,8 +144,22 @@ function diagnosisSnapshot(diagnosis) {
   };
 }
 
+function blockerSnapshot(blocker) {
+  if (!blocker) return null;
+  return {
+    revision: blocker.revision,
+    reason: blocker.reason,
+    summary: blocker.summary,
+    source: blocker.source,
+    sourceChangedByFrontmend: false,
+    reportedAt: blocker.reportedAt,
+    agentReported: blocker.agentReported,
+  };
+}
+
 export function diagnosticEvidenceChain(mission) {
   const diagnosis = mission?.diagnosis ?? null;
+  const blocker = blockerSnapshot(mission?.blocker);
   const contributedBy = diagnosis
     ? diagnosis.agentReported
       ? "agent-reported"
@@ -176,10 +197,13 @@ export function diagnosticEvidenceChain(mission) {
   ];
   return {
     schemaVersion: 1,
-    status: stages.slice(1).every((stage) => stage.state === "contributed")
-      ? "ready-for-repair"
-      : "awaiting-diagnosis",
+    status: blocker
+      ? "blocked"
+      : stages.slice(1).every((stage) => stage.state === "contributed")
+        ? "ready-for-repair"
+        : "awaiting-diagnosis",
     stages,
+    blocker,
     authority: {
       repair: "separate-review-or-delegation",
       deployment: "site-owner",
@@ -197,8 +221,9 @@ export function diagnosticMissionState(mission) {
     diagnosis?.sourceLocations?.length &&
     diagnosis?.verificationChecks?.length,
   );
+  const blocked = !ready && Boolean(mission?.blocker);
   return {
-    state: ready ? "ready-for-repair" : "awaiting-diagnosis",
+    state: ready ? "ready-for-repair" : blocked ? "blocked" : "awaiting-diagnosis",
     measuredEvidence: mission?.measuredEvidence?.completeness === "actionable"
       ? "actionable"
       : "partial",
@@ -206,10 +231,21 @@ export function diagnosticMissionState(mission) {
       ? diagnosis?.agentReported
         ? "agent-reported"
         : "person-reported"
-      : "none",
+      : blocked
+        ? "blocked-agent-reported"
+        : "none",
     nextActions: ready
       ? [{ id: "submit_repository_mission", actor: "person-or-agent" }]
-      : [{ id: "submit_runtime_diagnosis", actor: "person-or-agent" }],
+      : blocked
+        ? []
+        : [{ id: "submit_runtime_diagnosis", actor: "person-or-agent" }],
+    recoveryAction: blocked
+      ? {
+          id: "submit_runtime_diagnosis",
+          actor: "person-or-agent",
+          condition: "browser-and-repository-access-restored",
+        }
+      : null,
     repairAuthority: "separate-review-or-delegation",
     deploymentAuthority: "site-owner",
   };
@@ -220,6 +256,10 @@ export function diagnosticMissionSnapshot(mission) {
     ...mission,
     diagnosis: diagnosisSnapshot(mission.diagnosis),
     history: (mission.history ?? []).slice(-MAX_DIAGNOSTIC_REVISIONS).map(diagnosisSnapshot),
+    blocker: blockerSnapshot(mission.blocker),
+    blockerHistory: (mission.blockerHistory ?? [])
+      .slice(-MAX_DIAGNOSTIC_REVISIONS)
+      .map(blockerSnapshot),
     state: diagnosticMissionState(mission),
   };
   return {
@@ -250,6 +290,8 @@ export function createDiagnosticMission({ auditId, finding, now = Date.now() }) 
     requiredInvestigations: requiredInvestigations(kind),
     diagnosis: null,
     history: [],
+    blocker: null,
+    blockerHistory: [],
     createdAt: now,
     updatedAt: now,
   });
@@ -337,6 +379,59 @@ export function submitDiagnosticEvidence(mission, input = {}, source = "agent", 
     history: previous
       ? [...(mission.history ?? []), previous].slice(-MAX_DIAGNOSTIC_REVISIONS)
       : (mission.history ?? []).slice(-MAX_DIAGNOSTIC_REVISIONS),
+    blocker: null,
+    blockerHistory: mission.blocker
+      ? [...(mission.blockerHistory ?? []), blockerSnapshot(mission.blocker)].slice(-MAX_DIAGNOSTIC_REVISIONS)
+      : (mission.blockerHistory ?? []).slice(-MAX_DIAGNOSTIC_REVISIONS),
+    updatedAt: now,
+  });
+}
+
+export function recordDiagnosticBlocker(mission, input = {}, source = "agent", now = Date.now()) {
+  if (!mission?.id) {
+    throw new AuditError("DIAGNOSTIC_NOT_FOUND", "That diagnostic mission does not exist.");
+  }
+  if (diagnosticMissionState(mission).state === "ready-for-repair") {
+    throw new AuditError(
+      "DIAGNOSTIC_ALREADY_COMPLETE",
+      "This diagnostic mission already contains repair-ready evidence.",
+    );
+  }
+  if (!input || typeof input !== "object" || Array.isArray(input)) {
+    throw new AuditError("INVALID_DIAGNOSTIC_BLOCKER", "The diagnostic blocker must be an object.");
+  }
+  const extra = Object.keys(input).find((key) => !["reason", "summary"].includes(key));
+  if (extra) {
+    throw new AuditError("INVALID_DIAGNOSTIC_BLOCKER", `Unknown diagnostic blocker field: ${extra}.`);
+  }
+  if (!DIAGNOSTIC_BLOCKER_REASONS.includes(input.reason)) {
+    throw new AuditError(
+      "INVALID_DIAGNOSTIC_BLOCKER",
+      `reason must be one of: ${DIAGNOSTIC_BLOCKER_REASONS.join(", ")}.`,
+    );
+  }
+  if (typeof input.summary !== "string" || !input.summary.trim() || input.summary.length > 300) {
+    throw new AuditError(
+      "INVALID_DIAGNOSTIC_BLOCKER",
+      "summary must contain 1 to 300 characters.",
+    );
+  }
+  const previous = blockerSnapshot(mission.blocker);
+  const blocker = {
+    revision: previous ? previous.revision + 1 : 1,
+    reason: input.reason,
+    summary: input.summary.replace(/\r\n/g, "\n").trim(),
+    source: source === "agent" ? "agent" : "person",
+    sourceChangedByFrontmend: false,
+    reportedAt: now,
+    agentReported: source === "agent",
+  };
+  return diagnosticMissionSnapshot({
+    ...mission,
+    blocker,
+    blockerHistory: previous
+      ? [...(mission.blockerHistory ?? []), previous].slice(-MAX_DIAGNOSTIC_REVISIONS)
+      : (mission.blockerHistory ?? []).slice(-MAX_DIAGNOSTIC_REVISIONS),
     updatedAt: now,
   });
 }

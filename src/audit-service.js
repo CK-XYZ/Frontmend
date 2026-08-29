@@ -167,6 +167,19 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
+    async recordDiagnosticBlocker(auditId, missionId, input, source = "agent") {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics/${encodeURIComponent(missionId)}/blocker`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent" }),
+          },
+        ),
+      );
+    },
+
     async getRepairPolicy(auditId) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repair-policy`, {
@@ -529,6 +542,17 @@ export function createAuditService(options = {}) {
       const expectedGeneration = generation;
       return rememberDiagnosticMission(
         await transport.submitDiagnosticEvidence(auditId, missionId, input, source),
+        expectedGeneration,
+      );
+    },
+
+    async recordDiagnosticBlocker(auditId, missionId, input, source = "agent") {
+      if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
+        throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberDiagnosticMission(
+        await transport.recordDiagnosticBlocker(auditId, missionId, input, source),
         expectedGeneration,
       );
     },

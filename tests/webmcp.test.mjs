@@ -23,6 +23,7 @@ const TOOL_NAMES = [
   "start_related_page_audit",
   "open_diagnostic_mission",
   "submit_runtime_diagnosis",
+  "record_diagnostic_blocker",
   "start_site_exploration",
   "get_site_exploration",
   "get_verification_receipt",
@@ -547,6 +548,23 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   diagnosticMissions = [{
     id: "diagnostic-1",
     findingId: "mobile-color-contrast",
+    blocker: {
+      reason: "not-reproduced",
+      summary: "The measured contrast state was not present in the current runtime.",
+      agentReported: true,
+    },
+    state: { state: "blocked" },
+  }];
+  const blocked = await tool.execute({});
+  assert.equal(blocked.data.priorities[0].evidenceState, "diagnosis-blocked");
+  assert.equal(blocked.data.priorities[0].diagnosticBlocker.reason, "not-reproduced");
+  assert.equal(blocked.data.missionState.status, "blocked");
+  assert.equal(blocked.data.missionState.assessmentComplete, false);
+  assert.equal(blocked.data.recommendedNextAction, null);
+
+  diagnosticMissions = [{
+    id: "diagnostic-1",
+    findingId: "mobile-color-contrast",
     state: { state: "ready-for-repair" },
   }];
   const contributed = await tool.execute({});
@@ -906,7 +924,19 @@ test("diagnostic tools keep measured evidence separate from agent-reported repos
       mission = {
         ...mission,
         diagnosis: { ...input, source: "agent", agentReported: true, reportedAt: 20 },
+        blocker: null,
         state: { state: "ready-for-repair" },
+      };
+      return mission;
+    },
+    recordDiagnosticBlocker: async (receivedAuditId, receivedMissionId, input, source) => {
+      assert.equal(receivedAuditId, auditId);
+      assert.equal(receivedMissionId, missionId);
+      assert.equal(source, "agent");
+      mission = {
+        ...mission,
+        blocker: { ...input, source: "agent", agentReported: true, reportedAt: 15 },
+        state: { state: "blocked" },
       };
       return mission;
     },
@@ -921,6 +951,17 @@ test("diagnostic tools keep measured evidence separate from agent-reported repos
     "required",
     "required",
   ]);
+
+  const blocked = await findTool(tools, "record_diagnostic_blocker").execute({
+    missionId,
+    reason: "repository-unavailable",
+    summary: "This session can reproduce the symptom but cannot access the repository that owns the deployed bundle.",
+  });
+  assert.equal(blocked.ok, true);
+  assert.equal(blocked.data.assessmentComplete, false);
+  assert.equal(blocked.data.blocker.agentReported, true);
+  assert.equal(blocked.data.evidenceChain.status, "blocked");
+  assert.match(blocked.data.nextAction, /no repair can be staged/);
 
   const diagnosed = await findTool(tools, "submit_runtime_diagnosis").execute({
     missionId,
@@ -1111,7 +1152,14 @@ test("contextual tool availability follows the visible audit and human review st
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
-    "open_diagnostic_mission",
+    "submit_runtime_diagnosis",
+    "record_diagnostic_blocker",
+    "prepare_site_repair",
+  ]);
+  diagnosticMissions = [{ findingId: "console", state: { state: "blocked" } }];
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
     "submit_runtime_diagnosis",
     "prepare_site_repair",
   ]);
@@ -1119,14 +1167,12 @@ test("contextual tool availability follows the visible audit and human review st
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
-    "open_diagnostic_mission",
     "prepare_site_repair",
   ]);
   audit.mission = { repairPreparation: { findingId: "console" } };
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
-    "open_diagnostic_mission",
     "prepare_site_repair",
     "stage_site_repair",
   ]);
@@ -1154,7 +1200,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 18);
+  assert.equal(snapshots.at(-1).totalTools, 19);
   dispose();
 });
 
@@ -1222,7 +1268,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 18);
+  assert.equal(snapshots.at(-1).totalTools, 19);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

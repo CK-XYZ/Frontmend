@@ -36,6 +36,7 @@ import {
   diagnosticMissionForRepair,
   diagnosticMissionSnapshot,
   findingRequiresDiagnosticMission,
+  recordDiagnosticBlocker,
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
 
@@ -605,7 +606,7 @@ export function createLocalAuditRuntime(options = {}) {
       }
 
       const diagnosticMatch = requestUrl.pathname.match(
-        /^\/api\/audits\/([^/]+)\/diagnostics(?:\/([^/]+)(?:\/(evidence))?)?$/,
+        /^\/api\/audits\/([^/]+)\/diagnostics(?:\/([^/]+)(?:\/(evidence|blocker))?)?$/,
       );
       if (diagnosticMatch) {
         const [, auditId, rawMissionId, action] = diagnosticMatch;
@@ -644,6 +645,16 @@ export function createLocalAuditRuntime(options = {}) {
             return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", "Diagnostic evidence must identify an agent or person source."));
           }
           Object.assign(mission, submitDiagnosticEvidence(mission, evidence, source));
+          return sendJson(response, 200, { ok: true, data: mission });
+        }
+        if (action === "blocker" && request.method === "POST") {
+          assertSameOrigin(request);
+          const input = await readBody(request);
+          const { source, ...blocker } = input ?? {};
+          if (source !== "agent" && source !== "person") {
+            return sendError(response, new AuditError("INVALID_DIAGNOSTIC_BLOCKER", "A diagnostic blocker must identify an agent or person source."));
+          }
+          Object.assign(mission, recordDiagnosticBlocker(mission, blocker, source));
           return sendJson(response, 200, { ok: true, data: mission });
         }
         return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."), 405);
