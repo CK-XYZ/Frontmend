@@ -27,7 +27,11 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "./audit-service.js";
-import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
+import {
+  assessmentFindings,
+  createAuditMission,
+  deriveAuditMissionState,
+} from "./audit-mission-contract.js";
 import { diagnosticEvidenceChain, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import { repairMissionState } from "./repair-contract.js";
 import { contextualFrontmendToolNames, registerFrontmendTools } from "./webmcp.js";
@@ -39,16 +43,18 @@ const VIEWPORTS = [
 ];
 
 const LANDING_SIGNALS = [
-  { label: "Responsive", detail: "Mobile + desktop", state: "warn", icon: DeviceMobile },
-  { label: "Accessibility", detail: "Evidence attached", state: "neutral", icon: ShieldCheck },
-  { label: "Verification", detail: "Before and after", state: "good", icon: CheckCircle },
+  { label: "Live measurement", detail: "Mobile + desktop", state: "warn", icon: DeviceMobile },
+  { label: "Agent browser", detail: "Rendered checks", state: "neutral", icon: Robot },
+  { label: "Fresh proof", detail: "Before + after", state: "good", icon: CheckCircle },
 ];
-const WEBMCP_TOOL_COUNT = 19;
+const WEBMCP_TOOL_COUNT = 21;
 const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
   cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
   get_site_audit_results: ["Read focused audit evidence", "Return up to three deduplicated priorities for requested areas such as accessibility and SEO."],
+  open_browser_review: ["Open rendered-browser review", "Turn an agent-started accessibility or SEO audit into exact browser checks beyond Lighthouse."],
+  record_browser_review_check: ["Contribute one browser check", "Retain directly observed facts, issues, or an honest blocker with separate provenance."],
   get_assessment_receipt: ["Export completed assessment", "Carry measured and contributed evidence forward in one bounded portable receipt."],
   get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
   open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into a visible browser, repository, and verification evidence chain."],
@@ -183,7 +189,7 @@ function WebMcpCapabilitySheet({ status, onClose }) {
       : activeTools.includes("check_site_audit_progress")
         ? "A live audit is running, so progress is the only valid agent action right now."
         : activeTools.includes("start_site_audit")
-          ? "No audit is active. An agent can start the same workflow as the URL form."
+          ? "No audit is active. An agent can start the same workflow as the URL form; accessibility and SEO missions then unlock exact rendered-browser checks after measurement."
           : "The audit is complete. Only actions supported by its evidence and review state are active.";
 
   return (
@@ -338,27 +344,27 @@ function HowItWorks({ onClose }) {
           <X size={18} weight="bold" />
         </button>
         <p className="kicker">The Frontmend loop</p>
-        <h2 id="how-title">Inspect. Repair. Prove it held.</h2>
+        <h2 id="how-title">Measure. Inspect. Prove it held.</h2>
         <ol className="how-list">
           <li>
             <span>01</span>
             <div>
-              <strong>Audit the live URL</strong>
-              <p>Measure public browser evidence, or clearly label the bounded document fallback.</p>
+              <strong>Measure the live URL</strong>
+              <p>Retain mobile, desktop, and document evidence with its provider and limits attached.</p>
             </div>
           </li>
           <li>
             <span>02</span>
             <div>
-              <strong>Stage a reviewable repair</strong>
-              <p>Keep source evidence, proposal versions, ownership, and human feedback together.</p>
+              <strong>Inspect what automation misses</strong>
+              <p>WebMCP gives the agent one exact rendered-browser check at a time, then maps real issues to repository ownership.</p>
             </div>
           </li>
           <li>
             <span>03</span>
             <div>
-              <strong>Deploy elsewhere, then prove it</strong>
-              <p>The site owner deploys the approved change; Frontmend reruns the exact rule and exports the receipt.</p>
+              <strong>Review the fix, then prove it</strong>
+              <p>The site owner controls approval and deployment; Frontmend reruns the exact rule and exports the fresh receipt.</p>
             </div>
           </li>
         </ol>
@@ -371,11 +377,11 @@ function Landing({ value, setValue, onSubmit, error, inputRef, isSubmitting }) {
   return (
     <section className="landing" aria-labelledby="landing-title">
       <div className="landing-copy">
-        <p className="kicker">A repair bench for the open web</p>
+        <p className="kicker">Provider evidence + agent-observed browser review</p>
         <h1 id="landing-title">Where does your site break?</h1>
         <p className="landing-intro">
-          Paste a public URL. Frontmend finds frontend failures, attaches the evidence, and helps
-          people and agents prove the repair.
+          Paste a public URL. Frontmend combines live measurement with rendered-browser evidence,
+          then carries the strongest accessibility and SEO issues into reviewable fixes and fresh proof.
         </p>
 
         <form className="site-search" onSubmit={onSubmit} noValidate>
@@ -456,6 +462,8 @@ function missionActionLabel(state) {
   const labels = {
     check_site_audit_progress: "Agent waits for the live measurement",
     open_diagnostic_mission: "Agent opens the measured issue for diagnosis",
+    open_browser_review: "Agent opens the rendered-browser evidence mission",
+    record_browser_review_check: "Agent performs the next exact browser check",
     submit_runtime_diagnosis: "Agent contributes browser and repository diagnosis",
     stage_site_repair: "Agent prepares a bounded repair draft",
     get_repair_workspace: "Agent continues the reviewed repair workspace",
@@ -494,7 +502,9 @@ function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], mis
       ? "Assessment blocked · evidence retained"
       : state.assessmentComplete
         ? "Assessment complete"
-        : "Measurement complete · diagnosis active";
+        : state.browserReview?.required && state.browserReview.status !== "complete"
+          ? "Measurement complete · browser review active"
+          : "Measurement complete · diagnosis active";
   const tone = state.assessmentComplete ? "complete" : state.auditComplete ? "attention" : "running";
 
   return (
@@ -539,6 +549,112 @@ function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], mis
   );
 }
 
+function BrowserReviewMission({ state, review }) {
+  const titleId = useId();
+  const reviewState = state?.browserReview;
+  if (!reviewState?.required) return null;
+  const resultByCheck = new Map((review?.results ?? []).map((result) => [result.checkId, result]));
+  const complete = reviewState.status === "complete";
+  const blocked = reviewState.status === "blocked";
+  const statusLabel = complete
+    ? "Browser contribution complete"
+    : blocked
+      ? "Browser check blocked honestly"
+      : reviewState.status === "not-opened"
+        ? "Waiting for the agent"
+        : "Browser review in progress";
+
+  return (
+    <section className={`browser-review-mission ${complete ? "complete" : blocked ? "blocked" : "active"}`} aria-labelledby={titleId}>
+      <header>
+        <span aria-hidden="true"><Browser size={20} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Agent browser review · not Lighthouse</p>
+          <h2 id={titleId}>Rendered evidence, one check at a time</h2>
+          <p>
+            Frontmend asks the agent to inspect the actual page in a browser, then keeps those
+            observations separate from provider measurement.
+          </p>
+        </div>
+        <div className="browser-review-state">
+          <strong>{statusLabel}</strong>
+          <span>{reviewState.completedCheckCount} / {reviewState.requestedCheckCount || "—"} checks</span>
+        </div>
+      </header>
+
+      {reviewState.status === "not-opened" ? (
+        <div className="browser-review-next" role="status">
+          <Robot size={18} weight="fill" aria-hidden="true" />
+          <div>
+            <strong>Provider evidence is ready. Rendered review is next.</strong>
+            <p>The agent can now call <code>open_browser_review</code>; the completed assessment stays locked until its requested browser checks are recorded.</p>
+          </div>
+        </div>
+      ) : null}
+
+      {review?.requestedChecks?.length ? (
+        <ol className="browser-review-checks">
+          {review.requestedChecks.map((check, index) => {
+            const result = resultByCheck.get(check.id);
+            const isCurrent = reviewState.nextCheck?.id === check.id;
+            const outcome = result?.outcome ?? (isCurrent ? "current" : "pending");
+            return (
+              <li key={check.id} className={outcome}>
+                <span className="browser-review-number" aria-hidden="true">
+                  {result?.outcome === "passed"
+                    ? <Check size={14} weight="bold" />
+                    : result?.outcome === "issue" || result?.outcome === "blocked"
+                      ? <Warning size={14} weight="fill" />
+                      : index + 1}
+                </span>
+                <div>
+                  <div className="browser-review-check-heading">
+                    <strong>{check.label}</strong>
+                    <span>{result ? result.outcome : isCurrent ? "Current browser task" : "Queued"}</span>
+                  </div>
+                  <p>{result?.summary ?? (isCurrent ? check.instruction : "This check unlocks after the prior browser task is recorded.")}</p>
+                  {result?.observations?.length ? (
+                    <ul>
+                      {result.observations.map((observation) => <li key={observation}>{observation}</li>)}
+                    </ul>
+                  ) : null}
+                  {result?.blockerReason ? <small>Blocker: {result.blockerReason.replaceAll("-", " ")}</small> : null}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+
+      <footer>
+        <ShieldCheck size={16} weight="duotone" aria-hidden="true" />
+        <span>
+          <strong>{reviewState.issueCount} browser-observed {reviewState.issueCount === 1 ? "issue" : "issues"}</strong>
+          Agent-reported browser facts can become ranked priorities, but still require repository mapping before repair and never prove deployment or resolution.
+        </span>
+      </footer>
+    </section>
+  );
+}
+
+function BrowserFindingProvenance({ finding }) {
+  const evidence = finding?.browserReviewEvidence;
+  if (!evidence) return null;
+  return (
+    <section className="browser-finding-provenance" aria-label="Browser review provenance">
+      <Browser size={18} weight="duotone" aria-hidden="true" />
+      <div>
+        <strong>Agent-observed browser finding</strong>
+        <p>
+          Contributed through {evidence.checkLabel ?? evidence.checkId}. This is rendered-browser
+          evidence, not a Lighthouse finding or repository diagnosis.
+        </p>
+      </div>
+      <span>Agent-reported</span>
+    </section>
+  );
+}
+
 function missionEvidenceLabel(value) {
   const labels = {
     "measured-evidence-sufficient": "Measured evidence ready",
@@ -579,7 +695,9 @@ function MissionPriorities({ state, selectedFindingId, onSelect }) {
                 <span className="mission-priority-copy">
                   <strong>{priority.title}</strong>
                   <small>
-                    {priority.affectedStrategies.length
+                    {priority.evidenceProvenance === "agent-reported-browser"
+                      ? "agent browser"
+                      : priority.affectedStrategies.length
                       ? priority.affectedStrategies.join(" + ")
                       : "document"}
                     {priority.occurrenceCount > 1 ? ` · ${priority.occurrenceCount} occurrences` : ""}
@@ -2321,20 +2439,22 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   );
   const [repairs, setRepairs] = useState(() => auditService.getRepairs(report.auditId));
   const [diagnosticMissions, setDiagnosticMissions] = useState(() => auditService.getDiagnosticMissions(report.auditId));
+  const [browserReview, setBrowserReview] = useState(() => auditService.getBrowserReview(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
   const mission = retainedAuditMission(audit);
-  const missionState = deriveAuditMissionState({ report, mission, diagnosticMissions, repairs });
+  const missionState = deriveAuditMissionState({ report, mission, diagnosticMissions, repairs, browserReview });
+  const findings = useMemo(() => assessmentFindings(report, browserReview), [report, browserReview]);
   const [selectedFindingId, setSelectedFindingId] = useState(
-    () => missionState.priorities[0]?.findingId ?? report.findings[0]?.id ?? null,
+    () => missionState.priorities[0]?.findingId ?? findings[0]?.id ?? null,
   );
   const [shareState, setShareState] = useState("idle");
   const shareInputRef = useRef(null);
   const shareUrl = new URL(auditWorkspacePath(report.auditId), window.location.origin).href;
   const viewport = viewports.find((item) => item.id === viewportId) ?? viewports[0];
   const selectedFinding =
-    report.findings.find((finding) => finding.id === selectedFindingId) ?? report.findings[0];
+    findings.find((finding) => finding.id === selectedFindingId) ?? findings[0];
   const selectedFindingScope = selectedFinding
-    ? report.findings.filter(
+    ? findings.filter(
         (finding) =>
           finding.source?.provider === selectedFinding.source?.provider &&
           finding.source?.auditId === selectedFinding.source?.auditId,
@@ -2346,7 +2466,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
     (priority) => priority.findingId === selectedFinding?.id,
   ) ?? null;
   const preparedFindingId = mission.repairPreparation?.findingId ?? null;
-  const preparedFinding = report.findings.find((finding) => finding.id === preparedFindingId) ?? null;
+  const preparedFinding = findings.find((finding) => finding.id === preparedFindingId) ?? null;
   const selectedRepairPrepared = preparedFindingId === selectedFinding?.id;
   const selectedDiagnosticReady = selectedFinding
     ? !findingRequiresDiagnosticMission(selectedFinding) ||
@@ -2365,17 +2485,25 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
       if (active) {
         setRepairs([...auditService.getRepairs(report.auditId)]);
         setDiagnosticMissions([...auditService.getDiagnosticMissions(report.auditId)]);
+        setBrowserReview(auditService.getBrowserReview(report.auditId));
         setRepairPolicy(auditService.getRepairPolicy(report.auditId));
       }
     };
     const unsubscribe = auditService.subscribe(refresh);
     void auditService.listRepairs(report.auditId).then(refresh).catch(() => {});
     void auditService.listDiagnosticMissions(report.auditId).then(refresh).catch(() => {});
+    void auditService.loadBrowserReview(report.auditId).then(refresh).catch(() => {});
     return () => {
       active = false;
       unsubscribe();
     };
   }, [report.auditId]);
+
+  useEffect(() => {
+    if (findings.length && !findings.some((finding) => finding.id === selectedFindingId)) {
+      setSelectedFindingId(missionState.priorities[0]?.findingId ?? findings[0].id);
+    }
+  }, [findings, missionState.priorities, selectedFindingId]);
 
   const rememberRepair = (repair) => {
     setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
@@ -2383,7 +2511,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
   };
 
   const selectFinding = (findingId) => {
-    const finding = report.findings.find((item) => item.id === findingId);
+    const finding = findings.find((item) => item.id === findingId);
     if (!finding) return;
     setSelectedFindingId(finding.id);
     if (finding.source?.strategy) setViewportId(finding.source.strategy);
@@ -2474,6 +2602,8 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
         missionState={missionState}
       />
 
+      <BrowserReviewMission state={missionState} review={browserReview} />
+
       {shareState === "manual" ? (
         <div className="manual-share" role="status">
           <label htmlFor="manual-share-url">Stable audit link</label>
@@ -2542,7 +2672,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
 
       <VerificationBanner verification={report.verification} />
 
-      {report.findings.length ? (
+      {findings.length ? (
         <RepairPolicyControl
           auditId={report.auditId}
           policy={repairPolicy}
@@ -2626,6 +2756,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
                   <dd>{selectedFinding.repair}</dd>
                 </div>
               </dl>
+              <BrowserFindingProvenance finding={selectedFinding} />
               <DiagnosticEvidenceCard evidence={selectedFinding.diagnosticEvidence} />
               <CspResourceInventory context={selectedFinding.repairContext} />
             </article>
@@ -2658,7 +2789,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
               <p className="kicker">Evidence queue</p>
               <h2>What needs attention</h2>
             </div>
-            <span>{report.findingCount}</span>
+            <span>{findings.length}</span>
           </div>
           <MissionPriorities
             state={missionState}
@@ -2666,7 +2797,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
             onSelect={selectFinding}
           />
           <div className="finding-list">
-            {report.findings.map((finding, index) => (
+            {findings.map((finding, index) => (
               <button
                 type="button"
                 key={finding.id}
@@ -2682,8 +2813,12 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
                 <ArrowRight size={16} weight="bold" aria-hidden="true" />
               </button>
             ))}
-            {!report.findings.length ? (
-              <p className="empty-findings">No material failures were found in this audit slice.</p>
+            {!findings.length ? (
+              <p className="empty-findings">
+                {missionState.browserReview.required && missionState.browserReview.status !== "complete"
+                  ? "No provider failure matched this focus. The rendered-browser review is still active."
+                  : "No material failures were found in this completed assessment slice."}
+              </p>
             ) : null}
           </div>
           {omittedFindingCount > 0 ? (

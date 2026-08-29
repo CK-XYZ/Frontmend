@@ -1,6 +1,7 @@
 import { diagnosticMissionState, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import {
   browserReviewFindings,
+  browserReviewChecksForMission,
   browserReviewRequired,
   browserReviewState,
 } from "./browser-review-contract.js";
@@ -296,6 +297,8 @@ export function deriveAuditMissionState({
   const projection = focusedAuditPriorities(report, mission, diagnosticMissions, browserReview);
   const reviewRequired = browserReviewRequired(mission);
   const reviewState = browserReview ? browserReviewState(browserReview) : null;
+  const requestedBrowserCheckCount = reviewState?.requestedCheckCount
+    ?? (reviewRequired ? browserReviewChecksForMission(mission).length : 0);
   const reviewOutstanding = reviewRequired && !reviewState?.complete;
   const unresolved = projection.priorities.find((priority) => diagnosticNextAction(priority));
   const blocked = projection.priorities.find(
@@ -399,7 +402,7 @@ export function deriveAuditMissionState({
       required: reviewRequired,
       status: reviewRequired ? reviewState?.status ?? "not-opened" : "not-required",
       reviewId: browserReview?.id ?? null,
-      requestedCheckCount: reviewState?.requestedCheckCount ?? 0,
+      requestedCheckCount: requestedBrowserCheckCount,
       completedCheckCount: reviewState?.completedCheckCount ?? 0,
       issueCount: reviewState?.issueCount ?? 0,
       blockedCheckCount: reviewState?.blockedCheckCount ?? 0,
