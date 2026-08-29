@@ -4,7 +4,7 @@ Prepared: 29 August 2026 (Australia/Perth)
 
 Latest local gate: 30 August 2026 (Australia/Perth)
 
-This is the release-candidate receipt and production verification runbook. It records historical public HTTP/API proof for the deployed revision; the current hostname is temporarily protected by Cloudflare Access, the newer local mission candidate is not deployed, and fresh ChatGPT/Chrome WebMCP proof is still outstanding.
+This is the release-candidate receipt and production verification runbook. It records historical public HTTP/API proof for the deployed revision; the hostname is currently public through a temporary app-scoped Cloudflare Access bypass, the newer local mission candidate is not deployed, and fresh ChatGPT/Chrome WebMCP proof is still outstanding.
 
 Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Chrome WebMCP guide](https://developer.chrome.com/docs/ai/webmcp), [Google's Model Context Tool Inspector](https://chromewebstore.google.com/detail/webmcp-model-context-tool/gbpdfapgefenggkahomfgkhfehlcenpd), and [Cloudflare Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/).
 
@@ -53,7 +53,7 @@ The older deployed revision is HTTP/API-verified. The current local mission cand
 - [x] Verify public DNS through `1.1.1.1` and `8.8.8.8`, valid HTTPS, current hashed assets, SPA restoration, private-target rejection, and Durable Object persistence.
 - [x] Complete the production PageSpeed path on the deployed application commit: final audit `cac6da7e-ca38-4084-a0e1-c5e181451432` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 98, recorded 22 passed checks, zero findings and zero viewport failures, and used no fallback. Mobile scored 98/100/100/91 and desktop 100/100/100/91 for performance/accessibility/best-practices/SEO.
 - [x] Verify the deployed production asset hashes over public HTTPS (`index-BR_ayGCH.css`, `index-CkJVqSRf.js`), SPA restoration, security/WebMCP headers, and structured private-target rejection.
-- [ ] Remove the temporary Cloudflare Access policy **Only CK** before judging, or provide tested judge credentials through an allowed private channel. An authorised owner session is not proof of free judging access.
+- [x] Temporarily bypass Access for everyone on only the `Frontmend frontend` application while preserving reusable policy **Only CK** for rollback. Connector policy `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` and a fresh unauthenticated in-app-browser load both confirmed the public path on 30 August 2026.
 - [ ] Complete a fresh Chrome console smoke on the currently deployed asset hashes with zero errors or warnings.
 - [ ] Complete the required fresh-session procedures below against the exact production URL.
 
@@ -165,4 +165,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC3 deployed, HTTP/API-verified, and production-Lighthouse-verified**. The current local mission candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, freely judge-accessible, or submission-ready until temporary Cloudflare Access is resolved and the procedures above have genuine receipts. The deployed application source is `a20e1ff`; current application source `946a793` and this newer judge documentation have not been pushed to a public remote or deployed.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, production-Lighthouse-verified, and currently publicly reachable**. The current local mission candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, or submission-ready until the procedures above have genuine receipts. The deployed application source is `a20e1ff`; current application source `946a793` and this newer judge documentation have not been pushed to a public remote or deployed. Keep the temporary public bypass active throughout judge testing unless it is deliberately replaced by another verified public-access arrangement.

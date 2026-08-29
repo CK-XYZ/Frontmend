@@ -98,6 +98,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Tracked publication preflight: no credential-like filenames, common token/private-key signatures, or absolute user-home paths detected; `.env*` and Cloudflare `.dev.vars*` secrets are ignored with safe examples explicitly allowlisted.
 - [ ] Public source repository and challenge-period commit history.
 - [x] Stable production HTTPS deployment exists and is verified from an authorised owner session.
+- [x] Current unauthenticated entry proof: an app-scoped Cloudflare Access Bypass/Everyone policy exposes only `frontmend.test.knightware.xyz`; a fresh in-app browser reached the Frontmend heading and discovered `start_site_audit` without login on 30 August 2026.
 - [ ] Production URL verified in ChatGPT's in-app browser.
 - [ ] Production URL verified in the supported Chrome WebMCP path.
 - [ ] Free judging access confirmed through the full judging window.
@@ -109,7 +110,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
 2. Current application source `946a793` adds the persisted Assess/Prepare-fix mission, focused priorities, diagnostic evidence chain, and contextual assessment receipt; it is newer than deployed application commit `a20e1ff` and has no live proof.
-3. Temporary Cloudflare Access policy **Only CK** currently protects the Frontmend hostname. It must be removed before judging or replaced with tested judge credentials delivered through an allowed private channel.
+3. Temporary app-scoped Access bypass `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` currently makes the hostname public while preserving reusable **Only CK** for rollback. Keep the bypass active through testing and judging, or replace it only with another verified public-access arrangement.
 4. The current deployment needs a fresh Chrome console smoke on its asset hashes.
 5. The eventual current deployment must be exercised through WebMCP from fresh ChatGPT, Codex-repository, and Chrome sessions before any submission claim.
 6. Video capture, narration, upload, and Devpost submission remain external deliverables.

@@ -182,3 +182,10 @@
 - Reran the allowed release gate from that exact clean commit: `bun run test` passed 130/130, `bun run build` transformed 4,577 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
 - Current assets are `index-ntU8Lm1i.css` at 76.72 kB raw / 15.70 kB gzip and `index-D1ZHTB7o.js` at 425.34 kB raw / 118.53 kB gzip. The dry bundle is 222.65 KiB raw / 48.87 KiB gzip.
 - `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.
+
+## 2026-08-30 — Temporary public judge window
+
+- Resolved the exact Cloudflare Access application through the connector: `Frontmend frontend` protects only `frontmend.test.knightware.xyz` and retained the reusable **Only CK** policy.
+- Added app-scoped Bypass/Everyone policy `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` named **Temporary public testing** instead of editing the reusable policy or deleting the application.
+- Connector re-read confirmed both policies. A fresh unauthenticated in-app browser then reached the original Frontmend URL, rendered **Where does your site break?**, and discovered only `start_site_audit` without an Access login.
+- No Worker deployment, server start, code push, reusable-policy change, or other Access application change occurred. Removing the temporary bypass restores the prior **Only CK** protection.

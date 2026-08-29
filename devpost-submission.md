@@ -125,7 +125,7 @@ Fresh local receipt on 30 August 2026 from tracked revision `946a7933246fea5bb91
 
 Planned URL: `https://frontmend.test.knightware.xyz/`
 
-Status: **TODO before final submission.** The hostname currently serves an older deployed revision and is temporarily protected by Cloudflare Access policy **Only CK**. Deploy the current candidate only after explicit authorisation, then remove temporary Access or place tested judge credentials in Devpost's private testing-instructions field.
+Status: **TODO before final submission.** The hostname currently serves an older deployed revision. It is publicly reachable through a temporary app-scoped Cloudflare Access bypass while the reusable **Only CK** policy remains available for rollback. Deploy the current candidate only after explicit authorisation, then re-run the fresh judge procedures against the exact deployed revision.
 
 ## Public Repository Link
 
@@ -171,7 +171,7 @@ Judging fit:
 Current blockers:
 
 - current mission candidate is not deployed;
-- temporary Cloudflare Access is not yet judge-ready;
+- the temporary public Access bypass must remain active through judging or be replaced by another verified public-access arrangement;
 - fresh current-version ChatGPT, Codex-repository, and Chrome WebMCP receipts are missing;
 - current Chrome console and 390 px browser proof are missing;
 - public repository URL and visible repository About licence are missing;
