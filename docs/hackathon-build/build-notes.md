@@ -200,6 +200,17 @@
 ## 2026-08-30 — Diagnostic-blocker release gate
 
 - Product slice committed as `49f77330dbf49a5d0d5d04a1bc4ea8e613c049c8` with the CK-XYZ Git identity.
+
+## 30 August 2026 — Ordered agent browser review
+
+- Added a pure, focus-aware browser-review contract that requires agent-started accessibility/SEO missions to continue beyond provider measurement through exact rendered-structure, primary-journey, responsive-reflow, and search-discovery checks as applicable.
+- Added `open_browser_review` and `record_browser_review_check` as the twentieth and twenty-first contextual WebMCP tools, with durable Worker/local persistence, strict sequencing, pass/issue/blocker outcomes, and separately attributed browser findings.
+- Integrated browser observations into mission priorities, assessment receipts, repository fix briefs, diagnostics, repair preparation, and verification without promoting them to Lighthouse or repository evidence.
+- Added the visible **Agent browser review · not Lighthouse** card and updated the landing, explainer, demo, Devpost draft, and fresh ChatGPT/Codex/Chrome verification runbooks around the collaborative browser-agent story.
+- Committed code slices as `45a34c3`, `c9c1672`, and `c39882d`; committed the judge-documentation slice as `7fa65b1`, all with the CK-XYZ Git identity.
+- Final local gate from `7fa65b1`: 147/147 tests passed; Vite transformed 4,578 modules; strict Wrangler 4.126.0 dry run read five assets, recognised both Durable Objects plus `ASSETS`, emitted 251.58 KiB raw / 54.28 KiB gzip, and exited without upload.
+- Wrangler type binding hash remained `1fceb1fc38391a32e57618cd2bbf1564`. Exact `types --check` is a known warning because this Wrangler version changes the generated command banner and inserts six trailing spaces; the clean declaration was retained and `git diff --check` remained clean.
+- No server was started, no deployment or push occurred, and the public hostname still serves the older candidate. Fresh current-candidate visual, ChatGPT, Codex-repository, and Chrome receipts remain required.
 - Reran the allowed release gate from that exact clean commit: `bun test` passed 136/136, `bun run build` transformed 4,577 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
 - Current assets are `index-lorGx7r8.css` at 77.53 kB raw / 15.83 kB gzip and `index-DpWOhAjT.js` at 430.71 kB raw / 119.74 kB gzip. The dry bundle is 226.90 KiB raw / 49.47 KiB gzip.
 - `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.

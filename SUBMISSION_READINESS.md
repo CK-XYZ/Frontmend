@@ -56,9 +56,10 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Current proof receipt
 
 - [x] `bun test`: 147 passing tests across browser review, mission, assessment receipt, diagnostic blocker, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
-- [x] `bun run build`: 4,577 Vite modules transformed; current client assets `index-lorGx7r8.css` and `index-DpWOhAjT.js`, bundled Worker, and Sites metadata emitted successfully.
-- [x] `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: Wrangler 4.126.0 read five static assets, recognized `AUDIT_GATE`, `AUDIT_JOBS`, and `ASSETS`, and produced a 226.90 KiB raw / 49.47 KiB gzip bundle without upload.
-- [x] Command-safe release gate ran from tracked revision `49f77330dbf49a5d0d5d04a1bc4ea8e613c049c8`; worktree and whitespace checks were clean before and after.
+- [x] `bun run build`: 4,578 Vite modules transformed; current client assets `index-BYWFuMOk.css` and `index-Cg_dC0xN.js`, bundled Worker, and Sites metadata emitted successfully.
+- [x] `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: Wrangler 4.126.0 read five static assets, recognised `AUDIT_GATE`, `AUDIT_JOBS`, and `ASSETS`, and produced a 251.58 KiB raw / 54.28 KiB gzip bundle without upload.
+- [x] Command-safe release gate ran from tracked revision `7fa65b1b7062bd0a2ee09046628d8a66c5f44228`; worktree and whitespace checks were clean before and after.
+- [x] Wrangler type generation retained binding hash `1fceb1fc38391a32e57618cd2bbf1564`; exact `types --check` remains a documented warning because Wrangler 4.126.0 changes its generated command banner and inserts six trailing spaces. Strict dry-run binding discovery is the current packaging proof.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
 - [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current twenty-one-tool library and the ordered browser-review transition, so it is not current-candidate browser proof.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.
@@ -112,7 +113,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Current application source `c39882d` adds the persisted agent browser review, browser-observed findings, contextual tools, and visible evidence card on top of the Assess/Prepare-fix mission; it is newer than deployed application commit `a20e1ff` and has no live proof.
+2. Gated candidate content `7fa65b1` (application source through `c39882d`) adds the persisted agent browser review, browser-observed findings, contextual tools, visible evidence card, and judge runbook on top of the Assess/Prepare-fix mission; it is newer than deployed application commit `a20e1ff` and has no live proof.
 3. Temporary app-scoped Access bypass `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` currently makes the hostname public while preserving reusable **Only CK** for rollback. Keep the bypass active through testing and judging, or replace it only with another verified public-access arrangement.
 4. The current deployment needs a fresh Chrome console smoke on its asset hashes.
 5. The eventual current deployment must be exercised through WebMCP from fresh ChatGPT, Codex-repository, and Chrome sessions before any submission claim.
