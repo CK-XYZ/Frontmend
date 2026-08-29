@@ -15,10 +15,10 @@
   "project": {
     "name": "Frontmend",
     "summary": "A repository-aware accessibility and SEO audit workspace that lets people and agents measure a site, investigate the highest-impact issues, and turn evidence into reviewable fixes.",
-    "ai_usage": "",
-    "codex_usage": ""
+    "ai_usage": "Seventeen contextual WebMCP tools let a compatible coding agent carry a bounded mission from public evidence through repository-aware diagnosis and an authorised repair handoff.",
+    "codex_usage": "Codex helped scope, implement, test, release-harden, and document the product, and is the repository-aware agent used in the primary workflow."
   },
-  "current_stage": "resources",
+  "current_stage": "prepare-submission",
   "completed_stages": [
     "start-hackathon",
     "review",
@@ -26,21 +26,22 @@
   ],
   "rules_acknowledged": true,
   "learning": {
-    "status": "active",
+    "status": "completed",
     "current_step": "build",
     "completed_steps": [
       "onboard",
       "scope",
       "prd",
       "spec",
-      "checklist"
+      "checklist",
+      "build"
     ],
     "plan_file": "docs/hackathon-build/scope.md",
     "checklist_file": "docs/hackathon-build/checklist.md"
   },
   "submission": {
     "draft_file": "devpost-submission.md",
-    "status": "not-started"
+    "status": "drafting"
   },
-  "next_command": "build-project"
+  "next_command": "prepare-submission"
 }

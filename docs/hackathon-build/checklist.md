@@ -77,7 +77,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: All commands succeed from the current worktree; release ledger distinguishes local tests/build/dry-run from deployment and browser proof; worktree contains only intentional tracked changes before commit.
   Verify: `bun run test`; `bun run build`; `bunx wrangler deploy --dry-run --strict`; `git diff --check`; `git status --short`
 
-- [ ] **11. Prepare Devpost handoff**
+- [x] **11. Prepare Devpost handoff**
   Spec ref: `prd.md > Submission Proof Points`; `spec.md > Demo And Submission Flow > Judge self-test`
   What to build: Gather the final product story, exact judge prompt, live URL, public repository link, licence visibility, challenge-period history, fresh ChatGPT/Chrome receipts, screenshots, under-three-minute public YouTube demo, AI/Codex usage, testing instructions, and temporary-access resolution. Draft the Devpost fields only from verified evidence.
   Acceptance: The participant has enough truthful material to run `$prepare-submission`; external gaps remain blockers rather than invented placeholders; no Devpost submission, deployment, server start, Access removal, repository publication, or video upload occurs without its required user action/authorisation.

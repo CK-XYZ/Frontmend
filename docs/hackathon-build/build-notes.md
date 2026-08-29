@@ -140,3 +140,14 @@
 - `bun run build`: 4,576 modules transformed; CSS `index-By0mrP6s.css` is 73.54 kB raw / 15.17 kB gzip and JavaScript `index-CsoRpCO4.js` is 412.21 kB raw / 115.26 kB gzip.
 - `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: five assets, 210.20 KiB raw / 46.27 KiB gzip, both Durable Object bindings plus assets recognized, and explicit `--dry-run: exiting now` output.
 - This is local test/build/package evidence only. It is not deployment, current-version browser discovery, live mission continuity, public-repository publication, free judge access, or submission proof.
+
+## 2026-08-29 — Build item 11
+
+- The live Devpost able-to-submit gate passed for the authenticated CK-XYZ Knight account; the account is registered for The WebMCP Challenge and submissions are open.
+- Fetched the live submission requirements, four five-point judging criteria, and current key dates from the Devpost MCP rather than relying on memory or web search.
+- Created `devpost-submission.md` from the official template with a product-facing problem/solution, WebMCP and Codex usage, features, architecture, exact judge/local testing, screenshot list, demo outline, limitations, judging-criteria mapping, and every live custom field ID.
+- The draft uses verified facts only: seventeen contextual tools, 124 tests, current bundle evidence, Apache-2.0 source, current/historical deployment boundary, and challenge-period commit history.
+- Public repository, current deployment, temporary Access resolution, fresh ChatGPT/Codex/Chrome receipts, 390 px and console proof, screenshots, video, participant form choices, and final Devpost write remain explicit TODOs.
+- The official form does not request a Codex session ID, so no machine-wide session identifier was inspected or recorded.
+- State advances to Prepare/drafting, but `prepare-submission` is not marked complete and remains the next command because the packet still has material external gaps.
+- No Devpost project write, submission, deployment, server start, Access change, repository publication, push, or video upload occurred.
