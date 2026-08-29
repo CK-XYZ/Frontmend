@@ -1,4 +1,5 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import {
   auditMissionSignature,
   createAuditMission,
@@ -76,6 +77,7 @@ function publicError(error) {
             "CHANGES_REQUESTED",
             "REVISION_NOT_REQUESTED",
             "DIAGNOSTIC_MISSION_REQUIRED",
+            "ASSESSMENT_INCOMPLETE",
           ].includes(error.code)
           ? 409
           : 400;
@@ -613,7 +615,7 @@ async function routeApi(request, env, url) {
   }
 
   const match = url.pathname.match(
-    /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|evidence)(?:\/([^/]+))?)?$/,
+    /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|assessment|evidence)(?:\/([^/]+))?)?$/,
   );
   if (!match) {
     return errorResponse(new AuditError("NOT_FOUND", "That API route does not exist."));
@@ -637,6 +639,8 @@ async function routeApi(request, env, url) {
         ? "/report"
       : resource === "receipt"
         ? "/receipt"
+      : resource === "assessment"
+        ? "/assessment"
       : resource === "evidence"
         ? `/evidence/${evidenceId ?? ""}`
         : "/";
@@ -1015,6 +1019,29 @@ export class FrontmendAuditJob {
           headers: {
             "content-type": "text/markdown; charset=utf-8",
             "content-disposition": `attachment; filename="frontmend-audit-${state.id}.md"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (url.pathname === "/assessment") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
+      }
+      try {
+        const diagnosticMissions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
+        const receipt = createAssessmentReceipt({
+          report: state.report,
+          mission: state.mission,
+          diagnosticMissions,
+        });
+        return new Response(assessmentReceiptMarkdown(receipt), {
+          headers: {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="frontmend-assessment-${state.id}.md"`,
             "cache-control": "no-store",
             "x-content-type-options": "nosniff",
           },

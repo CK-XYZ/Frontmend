@@ -38,6 +38,8 @@ Compare the visible and structured state:
 - The visible evidence chain and the `evidenceChain` returned through WebMCP agree stage for stage.
 - `assessmentComplete` becomes true only after the required evidence is present.
 
+Refresh the contextual tool view. `get_assessment_receipt` should appear only now. Call it with `{}` and briefly compare its structured priorities, evidence-chain provenance, and all-false repair/deployment authority with the new visible **Export assessment** Markdown action. This is the portable handoff artifact the agent can carry into the next coding task without reducing the assessment to a Lighthouse score.
+
 Narration: “The agent keeps source access. Frontmend keeps the public evidence, shared mission, and authority boundary.”
 
 ## 1:25–1:55 — Explicitly cross into repair

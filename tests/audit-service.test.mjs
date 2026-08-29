@@ -50,7 +50,14 @@ test("uses the remote job transport and synchronizes active state", async () => 
       report: null,
     },
   ];
-  const report = { auditId: AUDIT_ID, schemaVersion: 2, findings: [] };
+  const report = {
+    auditId: AUDIT_ID,
+    schemaVersion: 2,
+    url: "https://removemyexif.com/",
+    finalUrl: "https://removemyexif.com/",
+    engine: { mode: "live-document", provider: "Frontmend document audit" },
+    findings: [],
+  };
   const service = createAuditService({
     now: () => 10,
     transport: {
@@ -77,6 +84,7 @@ test("uses the remote job transport and synchronizes active state", async () => 
   assert.equal(service.getActiveAudit().phase, "capture");
   assert.equal(await service.getResults(AUDIT_ID), report);
   assert.equal(service.getActiveAudit().status, "complete");
+  assert.equal(service.getAssessmentReceipt(AUDIT_ID).assessment.complete, true);
   assert.deepEqual(calls[0], [
     "start",
     {
@@ -538,6 +546,7 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
       repairExportUrl: (auditId, id) => `/api/audits/${auditId}/repairs/${id}/export`,
       verificationReceiptUrl: (auditId) => `/api/audits/${auditId}/receipt`,
       auditReportUrl: (auditId) => `/api/audits/${auditId}/report`,
+      assessmentReceiptUrl: (auditId) => `/api/audits/${auditId}/assessment`,
     },
   });
 
@@ -564,6 +573,7 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
   assert.match(service.getRepairExportUrl(AUDIT_ID, repairId), /\/export$/);
   assert.match(service.getVerificationReceiptUrl(AUDIT_ID), /\/receipt$/);
   assert.match(service.getAuditReportUrl(AUDIT_ID), /\/report$/);
+  assert.match(service.getAssessmentReceiptUrl(AUDIT_ID), /\/assessment$/);
   assert.equal((await service.startVerification(AUDIT_ID, repairId)).source, "verification");
   assert.equal(service.getActiveAudit().id, verification.id);
 });

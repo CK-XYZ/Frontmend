@@ -662,6 +662,31 @@ test("proxies a completed audit report through the stable public route", async (
   assert.deepEqual(calls, [{ id: auditId, pathname: "/report" }]);
 });
 
+test("proxies a completed assessment receipt through the stable public route", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const calls = [];
+  const response = await worker.fetch(
+    new Request(`https://frontmend.test/api/audits/${auditId}/assessment`),
+    {
+      AUDIT_JOBS: {
+        idFromName: (name) => name,
+        get: (id) => ({
+          fetch: async (url) => {
+            calls.push({ id, pathname: new URL(url).pathname });
+            return new Response("# Frontmend assessment receipt", {
+              headers: { "content-type": "text/markdown; charset=utf-8" },
+            });
+          },
+        }),
+      },
+    },
+  );
+
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-type"), /text\/markdown/);
+  assert.deepEqual(calls, [{ id: auditId, pathname: "/assessment" }]);
+});
+
 test("proxies same-origin audit cancellation through the stable public route", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const calls = [];
@@ -774,6 +799,16 @@ test("local development exports the same completed audit report contract", async
   assert.match(report.body, /# Frontmend audit report/);
   assert.match(report.body, /https:\/\/removemyexif\.com\//);
   assert.match(report.body, /does not claim it deployed, changed/);
+
+  const assessment = await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/assessment`,
+  });
+  assert.equal(assessment.status, 200);
+  assert.match(assessment.headers.get("content-type"), /text\/markdown/);
+  assert.match(assessment.headers.get("content-disposition"), new RegExp(auditId));
+  assert.equal(assessment.headers.get("cache-control"), "no-store");
+  assert.match(assessment.body, /^# Frontmend assessment receipt/m);
+  assert.match(assessment.body, /does not prove a repair, deployment, or resolution/);
 });
 
 test("local development persists related-route lineage into snapshots and reports", async () => {
@@ -1649,6 +1684,7 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
     title: "Browser errors were logged",
     severity: "medium",
     category: "Best practices",
+    focusAreas: ["reliability"],
     evidence: "One console error was measured.",
     repair: "Resolve the first-party runtime error.",
     source: { provider: "Lighthouse", auditId: "errors-in-console", strategy: "mobile" },
@@ -1672,7 +1708,7 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
       auditId,
       url: "https://example.com/",
       finalUrl: "https://example.com/",
-      engine: { mode: "live-pagespeed" },
+      engine: { mode: "live-pagespeed", provider: "PageSpeed Insights / Lighthouse" },
       findings: [finding],
       ruleOutcomes: [{ source: finding.source, status: "failed" }],
     },
@@ -1695,6 +1731,10 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
   assert.equal(opened.state.state, "awaiting-diagnosis");
   assert.equal(opened.measuredEvidence.provenance, "measured-lighthouse");
 
+  const earlyAssessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(earlyAssessment.status, 409);
+  assert.equal((await earlyAssessment.json()).error.code, "ASSESSMENT_INCOMPLETE");
+
   const earlyRepair = await post("/repairs", { findingId: finding.id, source: "agent" });
   assert.equal(earlyRepair.status, 409);
   assert.equal((await earlyRepair.json()).error.code, "DIAGNOSTIC_MISSION_REQUIRED");
@@ -1710,6 +1750,15 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
   });
   assert.equal(diagnosedResponse.status, 200);
   assert.equal((await diagnosedResponse.json()).data.state.state, "ready-for-repair");
+
+  const assessmentResponse = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(assessmentResponse.status, 200);
+  assert.match(assessmentResponse.headers.get("content-type"), /text\/markdown/);
+  assert.match(assessmentResponse.headers.get("content-disposition"), new RegExp(auditId));
+  const assessment = await assessmentResponse.text();
+  assert.match(assessment, /^# Frontmend assessment receipt/m);
+  assert.match(assessment, /Measured symptom \| retained \| measured-lighthouse/);
+  assert.match(assessment, /Browser reproduction \| contributed \| agent-reported/);
 
   const repairResponse = await post("/repairs", { findingId: finding.id, source: "agent" });
   assert.equal(repairResponse.status, 201);

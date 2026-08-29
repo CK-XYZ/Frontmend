@@ -1,4 +1,5 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import {
   auditMissionSignature,
   createAuditMission,
@@ -842,7 +843,7 @@ export function createLocalAuditRuntime(options = {}) {
       }
 
       const match = requestUrl.pathname.match(
-        /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|evidence)(?:\/([^/]+))?)?$/,
+        /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|assessment|evidence)(?:\/([^/]+))?)?$/,
       );
       if (!match) {
         return sendError(response, new AuditError("NOT_FOUND", "That API route does not exist."), 404);
@@ -911,6 +912,29 @@ export function createLocalAuditRuntime(options = {}) {
         response.setHeader("cache-control", "no-store");
         response.setHeader("x-content-type-options", "nosniff");
         return response.end(markdown);
+      }
+      if (resource === "assessment") {
+        if (job.status !== "complete" || !job.report) {
+          return sendError(response, new AuditError("AUDIT_NOT_READY", "The audit is still running."), 409);
+        }
+        try {
+          const receipt = createAssessmentReceipt({
+            report: job.report,
+            mission: job.mission,
+            diagnosticMissions: job.diagnosticMissions ?? [],
+          });
+          response.statusCode = 200;
+          response.setHeader("content-type", "text/markdown; charset=utf-8");
+          response.setHeader(
+            "content-disposition",
+            `attachment; filename="frontmend-assessment-${job.id}.md"`,
+          );
+          response.setHeader("cache-control", "no-store");
+          response.setHeader("x-content-type-options", "nosniff");
+          return response.end(assessmentReceiptMarkdown(receipt));
+        } catch (error) {
+          return sendError(response, error, error?.code === "ASSESSMENT_INCOMPLETE" ? 409 : 400);
+        }
       }
       if (resource === "evidence") {
         const dataUrl = job.screenshots[evidenceId];

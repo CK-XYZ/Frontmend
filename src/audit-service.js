@@ -1,5 +1,6 @@
 import { AuditError, normalizePublicUrl } from "./url-policy.js";
 import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
+import { createAssessmentReceipt } from "./assessment-receipt.js";
 
 export { AuditError, normalizePublicUrl } from "./url-policy.js";
 
@@ -282,6 +283,10 @@ export function createHttpAuditTransport(options = {}) {
 
     auditReportUrl(auditId) {
       return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/report`;
+    },
+
+    assessmentReceiptUrl(auditId) {
+      return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/assessment`;
     },
 
     explorationReportUrl(auditId, missionId) {
@@ -641,6 +646,22 @@ export function createAuditService(options = {}) {
 
     getAuditReportUrl(auditId) {
       return transport.auditReportUrl(auditId);
+    },
+
+    getAssessmentReceipt(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const audit = jobs.get(auditId);
+      return createAssessmentReceipt({
+        report: audit?.report ?? null,
+        mission: audit?.mission,
+        diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+      });
+    },
+
+    getAssessmentReceiptUrl(auditId) {
+      return transport.assessmentReceiptUrl(auditId);
     },
 
     getSiteExplorations(auditId) {

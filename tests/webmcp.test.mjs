@@ -18,6 +18,7 @@ const TOOL_NAMES = [
   "check_site_audit_progress",
   "cancel_site_audit",
   "get_site_audit_results",
+  "get_assessment_receipt",
   "get_repository_fix_brief",
   "start_related_page_audit",
   "open_diagnostic_mission",
@@ -232,6 +233,46 @@ test("agent tools use the same audit service as the human interface", async () =
     ],
   );
   assert.equal(activities.every((activity) => !("input" in activity)), true);
+});
+
+test("assessment receipt tool returns one portable completion artifact without broadening authority", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const receipt = {
+    auditId,
+    target: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 1_777_000_000_000,
+    engine: { mode: "live-pagespeed", provider: "PageSpeed Insights / Lighthouse" },
+    mission: { intent: "assess", focusAreas: ["accessibility", "seo"], requestedBy: "agent" },
+    assessment: { complete: true, matchingFindingCount: 0, priorityCount: 0, categoryScores: {} },
+    priorities: [],
+    authority: {
+      deploymentProved: false,
+      resolutionProved: false,
+      boundary: "This receipt proves a completed bounded assessment, not repair approval, implementation, deployment, or resolution.",
+    },
+  };
+  const calls = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getAssessmentReceipt: (id) => {
+      calls.push(id);
+      return receipt;
+    },
+    recordAgentActivity() {},
+  };
+  const tool = findTool(createFrontmendTools(service), "get_assessment_receipt");
+  const result = await tool.execute({});
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [auditId]);
+  assert.equal(result.data.assessment.complete, true);
+  assert.equal(result.data.authority.deploymentProved, false);
+  assert.equal(result.data.downloadPath, `/api/audits/${auditId}/assessment`);
+  assert.equal(result.data.format, "text/markdown");
+  assert.match(result.data.markdown, /^# Frontmend assessment receipt/m);
+  assert.equal(tool.annotations.readOnlyHint, true);
+  assert.equal(tool.annotations.untrustedContentHint, true);
 });
 
 test("repair tools use visible audit context while preserving explicit repair IDs", async () => {
@@ -961,6 +1002,29 @@ test("contextual tool availability follows the visible audit and human review st
   audit = {
     id: "audit-1",
     status: "complete",
+    mission: {
+      schemaVersion: 1,
+      intent: "assess",
+      focusAreas: [],
+      maxPriorities: 3,
+      requestedBy: "agent",
+      requestedAt: 1_777_000_000_000,
+      repairPreparation: null,
+    },
+    report: {
+      auditId: "audit-1",
+      engine: { mode: "live-pagespeed", provider: "PageSpeed Insights / Lighthouse" },
+      findings: [],
+    },
+  };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_assessment_receipt",
+  ]);
+
+  audit = {
+    id: "audit-1",
+    status: "complete",
     report: { findings: [], documentProfile: { routes: ["/privacy"] } },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
@@ -1090,7 +1154,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 17);
+  assert.equal(snapshots.at(-1).totalTools, 18);
   dispose();
 });
 
@@ -1158,7 +1222,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 17);
+  assert.equal(snapshots.at(-1).totalTools, 18);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

@@ -852,6 +852,17 @@ input:focus-visible,
   color: var(--ink);
 }
 
+.assessment-receipt-action {
+  border-color: color-mix(in srgb, #16724a 24%, #dfe1da);
+  background: color-mix(in srgb, #dff4e7 42%, rgba(255, 255, 255, 0.72));
+  color: #11663f;
+}
+
+.assessment-receipt-action:hover {
+  border-color: color-mix(in srgb, #16724a 45%, #dfe1da);
+  color: #0b5131;
+}
+
 .manual-share {
   width: min(480px, calc(100vw - 48px));
   display: grid;

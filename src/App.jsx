@@ -43,12 +43,13 @@ const LANDING_SIGNALS = [
   { label: "Accessibility", detail: "Evidence attached", state: "neutral", icon: ShieldCheck },
   { label: "Verification", detail: "Before and after", state: "good", icon: CheckCircle },
 ];
-const WEBMCP_TOOL_COUNT = 17;
+const WEBMCP_TOOL_COUNT = 18;
 const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
   cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
   get_site_audit_results: ["Read focused audit evidence", "Return up to three deduplicated priorities for requested areas such as accessibility and SEO."],
+  get_assessment_receipt: ["Export completed assessment", "Carry measured and contributed evidence forward in one bounded portable receipt."],
   get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
   open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into a visible browser, repository, and verification evidence chain."],
   submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Complete the labelled evidence chain with browser observations, repository ownership, and planned checks."],
@@ -2407,6 +2408,16 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
               <DownloadSimple size={16} weight="bold" aria-hidden="true" />
               Export report
             </a>
+            {missionState.assessmentComplete ? (
+              <a
+                className="share-audit assessment-receipt-action"
+                href={auditService.getAssessmentReceiptUrl(report.auditId)}
+                download
+              >
+                <ClipboardText size={16} weight="bold" aria-hidden="true" />
+                Export assessment
+              </a>
+            ) : null}
           </div>
           <p className="kicker">
             Audit complete · {evidenceLabel}

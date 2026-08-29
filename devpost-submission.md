@@ -34,7 +34,7 @@ The potential impact extends beyond frontend quality. The same pattern can suppo
 
 ## How We Used AI
 
-Frontmend does not hide an autonomous model behind the page. It exposes seventeen semantic WebMCP tools so a compatible agent can participate in the same application state as a person.
+Frontmend does not hide an autonomous model behind the page. It exposes eighteen semantic WebMCP tools so a compatible agent can participate in the same application state as a person.
 
 The agent uses reasoning where it is valuable:
 
@@ -65,8 +65,9 @@ The intended live demonstration uses Codex inside a controlled target repository
 - No more than five bounded priorities by contract and three in the natural demo, deduplicated across viewports with occurrence and evidence state preserved.
 - Distinct `auditComplete` and `assessmentComplete` states with an exact next tool/input when supported diagnosis remains.
 - Durable diagnostic missions with a shared four-stage evidence chain that keeps provider measurement separate from agent-reported browser reproduction, repository ownership, and planned checks.
+- A portable completion receipt that becomes available only when the retained assessment is complete and carries provider evidence beside separately attributed agent contributions without claiming repair, deployment, or resolution.
 - Explicit `prepare_site_repair` transition that freezes one finding before repair staging is eligible.
-- Seventeen contextual WebMCP tools; only actions valid for the visible mission state are registered.
+- Eighteen contextual WebMCP tools; only actions valid for the visible mission state are registered.
 - Source-safe repository fix briefs, bounded repository plans, human review/revision, and optional low-risk delegated-auto approval capped at three uses.
 - Agent implementation receipts that accept only relative files, check outcomes, a summary, and optional Git object ID.
 - Person-only deployment attestation and fresh rule-by-rule verification across every captured strategy, with deltas withheld when coverage is not comparable.
@@ -103,8 +104,9 @@ Built with: React, Vite, Bun, Cloudflare Workers, Cloudflare Durable Objects, We
 4. Confirm the audit starts in Assess mode, retains both focus areas, returns a stable `/audits/<id>` workspace, and exposes only progress/cancel while running.
 5. Confirm `get_site_audit_results` with `{}` returns no more than three deduplicated priorities and the same `missionState` shown in the page.
 6. If `assessmentComplete` is false, confirm Codex follows the exact diagnostic action, reproduces the symptom, inspects repository ownership, and contributes bounded relative-path evidence without staging a repair.
-7. Send: “Please prepare the first priority for a fix, but don't approve, change, or deploy anything.” Confirm the intent transition occurs before staging becomes eligible and consumes no auto allowance.
-8. Confirm any staged plan remains visibly reviewable, deployment is person-only, and verification fails with `DEPLOYMENT_NOT_ATTESTED` until a genuine external handoff is recorded.
+7. When `assessmentComplete` becomes true, confirm `get_assessment_receipt` appears, invoke it with `{}`, and compare its structured provenance and authority boundary with the visible **Export assessment** Markdown action.
+8. Send: “Please prepare the first priority for a fix, but don't approve, change, or deploy anything.” Confirm the intent transition occurs before staging becomes eligible and consumes no auto allowance.
+9. Confirm any staged plan remains visibly reviewable, deployment is person-only, and verification fails with `DEPLOYMENT_NOT_ATTESTED` until a genuine external handoff is recorded.
 
 Exact fresh-session ChatGPT, Codex, delegated-auto, and Chrome Inspector procedures are in `RELEASE_CANDIDATE.md`.
 
@@ -161,8 +163,8 @@ Official live Devpost data was fetched on 29 August 2026. Submissions close at `
 
 Judging fit:
 
-- **WebMCP Leverage:** seventeen contextual semantic tools share the human application's service, validation, persistence, and state transitions; tool availability is itself part of the authority protocol.
-- **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 125 tests, production build, and strict deployment dry run.
+- **WebMCP Leverage:** eighteen contextual semantic tools share the human application's service, validation, persistence, and state transitions; the assessment receipt itself appears only after the mission's evidence gate closes, so tool availability becomes part of the proof and authority protocol.
+- **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 130 tests, production build, and strict deployment dry run.
 - **Potential Impact:** replaces a fragmented developer workflow with a durable, inspectable path from live evidence to repository work and fresh proof.
 - **Creativity & Ambition:** applies WebMCP to a multi-actor engineering protocol with changing authority rather than a single stateless agent action.
 

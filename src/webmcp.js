@@ -1,4 +1,5 @@
 import { AuditError } from "./audit-service.js";
+import { assessmentReceiptMarkdown } from "./assessment-receipt.js";
 import {
   createRepositoryFixBrief,
   repairMissionState,
@@ -113,8 +114,23 @@ export function contextualFrontmendToolNames(service) {
   const repairs = service?.getRepairs?.(audit.id) ?? [];
   const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
   const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
+  const missionState = audit.mission?.schemaVersion === 1
+    ? deriveAuditMissionState({
+        report: audit.report,
+        mission: audit.mission,
+        diagnosticMissions,
+        repairs,
+      })
+    : null;
 
   if (audit.report?.verification) available.add("get_verification_receipt");
+  if (
+    !audit.report?.verification &&
+    audit.report?.engine?.provider &&
+    missionState?.assessmentComplete
+  ) {
+    available.add("get_assessment_receipt");
+  }
   if (routes.length) {
     available.add("start_related_page_audit");
     available.add("start_site_exploration");
@@ -358,6 +374,31 @@ export function createFrontmendTools(service) {
           recommendedNextAction: missionState.nextAction
             ? { tool: missionState.nextAction.tool, ...missionState.nextAction.input, reason: missionState.nextAction.reason }
             : null,
+        };
+      },
+    }),
+    tool({
+      name: "get_assessment_receipt",
+      title: "Get assessment receipt",
+      description:
+        "Return the completed Frontmend assessment as both structured evidence and portable Markdown. The receipt freezes the retained mission, ranked provider measurements, and any separately attributed browser, repository, and planned-check contributions. It becomes available only when assessmentComplete is true and does not prove repair approval, implementation, deployment, or resolution.",
+      inputSchema: {
+        ...emptySchema,
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed assessment audit ID; defaults to the visible audit." },
+        },
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const receipt = service.getAssessmentReceipt(auditId);
+        return {
+          ...receipt,
+          format: "text/markdown",
+          downloadPath: `/api/audits/${encodeURIComponent(auditId)}/assessment`,
+          markdown: assessmentReceiptMarkdown(receipt),
         };
       },
     }),
