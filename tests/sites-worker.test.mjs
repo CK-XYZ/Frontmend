@@ -344,6 +344,137 @@ test("proxies a sequenced browser-review contribution to the authoritative audit
   assert.deepEqual(calls[0].input, body);
 });
 
+test("proxies server-issued verification candidates and aggregate repair receipts", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const calls = [];
+  const env = {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url) => {
+          const path = new URL(url).pathname;
+          calls.push(path);
+          if (path.endsWith("verification-receipt")) {
+            return new Response("# Aggregate receipt", { headers: { "content-type": "text/markdown" } });
+          }
+          return Response.json({ ok: true, data: path === "/verification-candidates"
+            ? { candidates: [{ id: "audit:pricing", path: "/pricing" }] }
+            : { repairId, status: "resolved", rows: [] } });
+        },
+      }),
+    },
+  };
+  const candidates = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/verification-candidates?findingId=color-contrast`,
+  ), env);
+  const aggregate = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/repairs/${repairId}/verification`,
+  ), env);
+  const receipt = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/repairs/${repairId}/verification/receipt`,
+  ), env);
+  assert.equal((await candidates.json()).data.candidates[0].path, "/pricing");
+  assert.equal((await aggregate.json()).data.status, "resolved");
+  assert.match(await receipt.text(), /Aggregate receipt/);
+  assert.deepEqual(calls, [
+    "/verification-candidates",
+    `/repairs/${repairId}/verification`,
+    `/repairs/${repairId}/verification-receipt`,
+  ]);
+});
+
+test("starts one existing audit job per reviewed verification target", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const runId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  const childIds = [
+    "232d593c-6c81-48c3-b137-a3df269454ff",
+    "19474d5a-a536-4cb3-84bf-99f00ba585c0",
+  ];
+  const source = { provider: "Frontmend document audit", auditId: "description", strategy: "document" };
+  const started = [];
+  const baselineJob = {
+    fetch: async (url, init = {}) => {
+      const path = new URL(url).pathname;
+      if (path.endsWith("verification-start-input")) {
+        return Response.json({ ok: true, data: {
+          repair: {
+            id: repairId,
+            revision: 1,
+            findingId: "description",
+            findingTitle: "Description missing",
+            findingSource: source,
+            findingScope: { sources: [source], occurrenceCount: 1, occurrencesOmitted: 0 },
+            status: "approved",
+            deploymentAttestedAt: 20,
+            approval: { mode: "explicit-review", approvedAt: 10 },
+          },
+          run: { id: runId },
+          targets: ["/", "/docs"].map((pathName, index) => ({
+            id: `audit:baseline-${index}`,
+            path: pathName,
+            url: `https://example.com${pathName}`,
+            baselineReport: {
+              auditId: `baseline-${index}`,
+              url: `https://example.com${pathName}`,
+              finalUrl: `https://example.com${pathName}`,
+              engine: { mode: "live-document", provider: "Frontmend document audit", ruleSetVersion: 1 },
+              ruleOutcomes: [{ source, status: "failed" }],
+            },
+            rows: [{ id: `row-${index}`, proofKind: "provider-rule", source }],
+          })),
+          missionCheckpoint: { auditId, missionRevision: 8 },
+        } });
+      }
+      if (path.endsWith("verification-assignments")) {
+        const input = JSON.parse(init.body);
+        assert.deepEqual(input.assignments.map((item) => item.auditId), childIds);
+        return Response.json({ ok: true, data: { aggregateVerification: { status: "waiting" } } });
+      }
+      if (path.endsWith("verification")) {
+        return Response.json({ ok: true, data: { repairId, status: "waiting", rows: [] } });
+      }
+      throw new Error(`Unexpected baseline path ${path}`);
+    },
+  };
+  const env = {
+    AUDIT_GATE: {
+      idFromName: (name) => name,
+      get: () => ({ fetch: async () => Response.json({
+        allowed: true,
+        admissions: childIds.map((jobId) => ({ jobId, reused: false })),
+      }) }),
+    },
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: (id) => id === auditId ? baselineJob : ({
+        fetch: async (_url, init) => {
+          const input = JSON.parse(init.body);
+          started.push(input);
+          return Response.json({ ok: true, data: { id, url: input.url, status: "queued" } }, { status: 202 });
+        },
+      }),
+    },
+  };
+  const response = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/repairs/${repairId}/verify`,
+    {
+      method: "POST",
+      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      body: JSON.stringify({ expectedMissionRevision: 7 }),
+    },
+  ), env);
+  const payload = await response.json();
+  assert.equal(response.status, 202);
+  assert.deepEqual(payload.data.verificationAuditIds, childIds);
+  assert.equal(started.length, 2);
+  assert.deepEqual(started.map((item) => item.verification.aggregateMatrix.targetId), [
+    "audit:baseline-0",
+    "audit:baseline-1",
+  ]);
+});
+
 test("starts a related audit only from the parent job's authoritative route input", async () => {
   const parentId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
   const childId = "232d593c-6c81-48c3-b137-a3df269454ff";
@@ -1215,7 +1346,24 @@ test("local development shares the bounded repair-intent transition without cons
 
   const staged = await stage();
   assert.equal(staged.status, 201);
-  assert.equal(JSON.parse(staged.body).data.findingId, findingId);
+  const stagedRepair = JSON.parse(staged.body).data;
+  assert.equal(stagedRepair.findingId, findingId);
+  assert.equal(stagedRepair.verificationImpact.status, "unreviewed");
+  assert.equal(stagedRepair.verificationImpact.previewRows.length >= 1, true);
+
+  const candidates = JSON.parse((await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
+  })).body).data;
+  assert.equal(candidates.limit, 3);
+
+  const approved = JSON.parse((await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/repairs/${stagedRepair.id}/approve`,
+    headers: writeHeaders,
+    body: "{}",
+  })).body).data;
+  assert.equal(approved.verificationImpact.status, "reviewed");
+  assert.equal(approved.verificationImpact.matrix.reviewedBy, "person");
 
   const repairs = JSON.parse((await callLocalRuntime(
     middleware,
@@ -1863,6 +2011,8 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.equal(first.mission.state, "awaiting-human-review");
   assert.deepEqual(first.repositoryPlan.files, ["worker/index.js", "tests/sites-worker.test.mjs"]);
   assert.deepEqual(first.repositoryPlan.checks, ["bun test", "bun run build"]);
+  assert.equal(first.verificationImpact.status, "unreviewed");
+  assert.equal(first.verificationImpact.previewRows.length, 1);
   assert.deepEqual(first.mission.nextActions, [{ id: "review_in_ui", actor: "person" }]);
 
   const changesResponse = await job.fetch(
@@ -1924,6 +2074,9 @@ test("audit jobs persist one repair per finding and require human approval befor
   );
   const approvedRepair = (await approved.json()).data;
   assert.equal(approvedRepair.status, "approved");
+  assert.equal(approvedRepair.verificationImpact.status, "reviewed");
+  assert.equal(approvedRepair.verificationImpact.matrix.reviewedBy, "person");
+  assert.equal(approvedRepair.verificationImpact.matrix.rows.length, 1);
   assert.equal(approvedRepair.mission.targetMutation, "external-only");
   assert.equal(approvedRepair.mission.state, "awaiting-external-deployment");
   assert.equal(
@@ -2212,6 +2365,8 @@ test("audit jobs persist a scoped auto policy and authorise only an eligible age
   const repair = (await stageResponse.json()).data;
   assert.equal(repair.status, "approved");
   assert.equal(repair.approval.mode, "delegated-auto");
+  assert.equal(repair.verificationImpact.status, "reviewed");
+  assert.equal(repair.verificationImpact.matrix.reviewedBy, "delegated-auto-policy");
   assert.equal(repair.mission.approvalEvidence, "prior-human-auto-policy");
   assert.equal(repair.mission.deploymentEvidence, "none");
   assert.equal(values.get("repairPolicy").remainingAutoApprovals, 2);

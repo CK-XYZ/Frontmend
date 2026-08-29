@@ -266,3 +266,14 @@
 - Added `/api/audits/:id/checkpoint`; completed results and relevant mutation responses return the same checkpoint, and the mission inspector now consumes it. The contextual library remains exactly 21 tools and Human mode remains complete.
 - Checkpoint, service, WebMCP, Durable Object, local-runtime, and Sites packaging suites passed 91/91. The production build transformed 4,582 modules and emitted `index-DVFarWPd.css` at 87.96 kB raw / 17.64 kB gzip and `index-CoPblb_Z.js` at 500.78 kB raw / 136.31 kB gzip.
 - Vite emitted its existing-style chunk-size advisory because the main JavaScript chunk crossed 500 kB. No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — Reviewed repair impact and aggregate verification
+
+- Added one pure repair-impact contract inside the existing repair record. It derives root and completed-exploration rows only from the exact retained rule, exposes at most three server-issued optional audited-route IDs, and rejects raw paths, URLs, duplicates, discovered-only routes, and routes where that rule was not evaluated.
+- Explicit human approval and eligible delegated-auto approval now stamp the exact impact matrix before deployment. Revision and change-request transitions invalidate the old review and verification run; verification cannot start from an unreviewed matrix.
+- The existing verification operation now starts one existing audit job per reviewed route, bounded to the root plus the existing three-route exploration limit. Provider rows compare the exact rule and evidence engine; browser rows reuse the existing exact replay without embedding browser automation.
+- Repair workspaces, `get_repository_fix_brief`, `stage_site_repair`, `revise_site_repair`, `start_repair_verification`, and `get_verification_receipt` expose the same impact, candidates, assignments, aggregate status, and portable receipt without adding a WebMCP tool or Durable Object class. Deployment remains person-owned.
+- Aggregate rows are waiting, running, resolved, still present, or inconclusive. A retained failure prevents resolution; missing, blocked, or incomparable proof stays inconclusive. Legacy repairs project as one reviewed root row at read time, while completed legacy receipts remain on their original route.
+- The targeted contract, repair, exploration, route, service, WebMCP, Durable Object, local-runtime, and Sites packaging gate passed 128/128 tests across seven files.
+- The production build transformed 4,583 modules and emitted `index-D0dRpatv.css` at 89.80 kB raw / 17.98 kB gzip and `index-Peqf3JrG.js` at 507.40 kB raw / 137.80 kB gzip. Vite retained the chunk-size advisory for the main JavaScript bundle.
+- No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.

@@ -21,6 +21,7 @@ import {
   BROWSER_REVIEW_BLOCKER_REASONS,
   BROWSER_REVIEW_OUTCOMES,
 } from "./browser-review-contract.js";
+import { repairVerificationReceiptMarkdown } from "./verification-impact-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 const expectedMissionRevisionProperty = {
@@ -73,6 +74,18 @@ function observedPaths(value) {
     throw new AuditError("INVALID_INPUT", "paths must contain between 1 and 3 observed routes.");
   }
   return value.map((path) => requiredString(path, "path", 256));
+}
+
+function optionalVerificationTargetIds(value) {
+  if (value === undefined) return undefined;
+  if (!Array.isArray(value) || value.length > 3) {
+    throw new AuditError("INVALID_INPUT", "verificationTargetIds must contain at most three server-issued IDs.");
+  }
+  const ids = value.map((id) => requiredString(id, "verificationTargetIds", 180));
+  if (new Set(ids).size !== ids.length) {
+    throw new AuditError("INVALID_INPUT", "verificationTargetIds must be unique.");
+  }
+  return ids;
 }
 
 function auditIdForTool(service, value) {
@@ -179,6 +192,9 @@ export function contextualFrontmendToolNames(service) {
   const browserReviewComplete = !missionState?.browserReview?.required || missionState.browserReview.status === "complete";
 
   if (audit.report?.verification && verificationReplayComplete) available.add("get_verification_receipt");
+  if (repairs.some((repair) => repair.aggregateVerification?.receiptAvailable)) {
+    available.add("get_verification_receipt");
+  }
   if (
     !audit.report?.verification &&
     audit.report?.engine?.provider &&
@@ -665,11 +681,15 @@ export function createFrontmendTools(service) {
         noExtra(value, ["auditId", "findingId"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
-        const report = await service.getResults(auditId);
+        const [report, verificationCandidates] = await Promise.all([
+          service.getResults(auditId),
+          service?.getVerificationCandidates?.(auditId, findingId) ?? null,
+        ]);
         return createRepositoryFixBrief(
           report,
           findingId,
           assessmentFindings(report, service?.getBrowserReview?.(auditId) ?? null),
+          verificationCandidates,
         );
       },
     }),
@@ -960,14 +980,28 @@ export function createFrontmendTools(service) {
       inputSchema: {
         ...emptySchema,
         properties: {
-          auditId: { type: "string", minLength: 1, description: "Optional verification audit ID; defaults to the visible audit." },
+          auditId: { type: "string", minLength: 1, description: "Optional verification or baseline audit ID; defaults to the visible audit." },
+          repairId: { type: "string", minLength: 1, maxLength: 80, description: "Optional repair ID for its aggregate reviewed-matrix receipt." },
         },
       },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId"]);
+        noExtra(value, ["auditId", "repairId"]);
         const auditId = auditIdForTool(service, value.auditId);
+        const repairId = optionalString(value.repairId, "repairId", 80);
+        if (repairId) {
+          const aggregate = await service.getRepairVerification(auditId, repairId);
+          return {
+            auditId,
+            repairId,
+            status: aggregate.status,
+            matrix: aggregate,
+            format: "text/markdown",
+            downloadPath: `/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verification/receipt`,
+            receipt: repairVerificationReceiptMarkdown(aggregate),
+          };
+        }
         const report = await service.getResults(auditId);
         return {
           auditId,
@@ -1059,6 +1093,13 @@ export function createFrontmendTools(service) {
             items: { type: "string", minLength: 1, maxLength: 120 },
             description: "Optional checks the coding agent plans to run before reporting implementation.",
           },
+          verificationTargetIds: {
+            type: "array",
+            maxItems: 3,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 180 },
+            description: "Optional server-issued audited-route candidate IDs from get_repository_fix_brief.",
+          },
         },
         required: ["findingId"],
         additionalProperties: false,
@@ -1066,7 +1107,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "verificationTargetIds", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
@@ -1089,6 +1130,7 @@ export function createFrontmendTools(service) {
             risk: value.risk,
             repositoryFiles: value.repositoryFiles,
             repositoryChecks: value.repositoryChecks,
+            verificationTargetIds: optionalVerificationTargetIds(value.verificationTargetIds),
           },
           expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
@@ -1107,6 +1149,8 @@ export function createFrontmendTools(service) {
           requiresHumanReview: repair.requiresHumanReview,
           approval: repair.approval,
           automation: repair.automation,
+          verificationImpact: repair.verificationImpact,
+          verificationCandidates: repair.verificationImpact?.candidates ?? [],
           mission: repair.mission ?? repairMissionState(repair),
           missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: repair.status === "approved" && repair.approval?.mode === "delegated-auto"
@@ -1150,6 +1194,13 @@ export function createFrontmendTools(service) {
             items: { type: "string", minLength: 1, maxLength: 120 },
             description: "Optional revised repository checks planned before implementation is reported.",
           },
+          verificationTargetIds: {
+            type: "array",
+            maxItems: 3,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 180 },
+            description: "Optional replacement set of server-issued audited-route candidate IDs.",
+          },
         },
         required: ["repairId", "summary", "patchType", "patch", "verificationPlan", "risk"],
         additionalProperties: false,
@@ -1157,7 +1208,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "repairId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "repairId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "verificationTargetIds", "expectedMissionRevision"]);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
         const risks = ["low", "medium", "high"];
         if (!patchTypes.includes(value.patchType)) {
@@ -1179,6 +1230,7 @@ export function createFrontmendTools(service) {
             risk: value.risk,
             repositoryFiles: value.repositoryFiles,
             repositoryChecks: value.repositoryChecks,
+            verificationTargetIds: optionalVerificationTargetIds(value.verificationTargetIds),
           },
           expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
@@ -1193,6 +1245,8 @@ export function createFrontmendTools(service) {
           risk: repair.risk,
           findingScope: repair.findingScope,
           repositoryPlan: repair.repositoryPlan,
+          verificationImpact: repair.verificationImpact,
+          verificationCandidates: repair.verificationImpact?.candidates ?? [],
           requiresHumanReview: true,
           mission: repair.mission ?? repairMissionState(repair),
           missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
@@ -1248,6 +1302,10 @@ export function createFrontmendTools(service) {
             requiresHumanReview: repair.requiresHumanReview,
             approval: repair.approval,
             automation: repair.automation,
+            verificationImpact: repair.verificationImpact ?? null,
+            verificationCandidates: repair.verificationImpact?.candidates ?? [],
+            verificationRun: repair.verificationRun ?? null,
+            aggregateVerification: repair.aggregateVerification ?? null,
             reviewedAt: repair.reviewedAt,
             implementationReceipt: repair.implementationReceipt
               ? {

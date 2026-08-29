@@ -104,7 +104,12 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Fresh provider measurement cannot resolve a browser finding; the exact original observation and viewport drive one agent browser task; pass resolves, issue remains, blocker is resumable; the receipt stays unavailable until a non-blocked comparison completes; no new tool or hidden browser authority is introduced.
   Verify: `bun test tests/browser-review-contract.test.mjs tests/repair-contract.test.mjs tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs`; `bun run build`; strict no-upload Wrangler release gate.
 
-- [ ] **14. Prove the browser-review and replay candidate in fresh supported sessions**
+- [x] **14. Add a reviewed repair-impact and aggregate verification matrix**
+  What was built: A pure impact contract persisted inside repair records, exact-rule route derivation, server-issued optional candidate IDs, approval-time matrix stamping, one existing audit job per reviewed route, provider and exact-browser rows, aggregate outcomes and receipts, Worker/local parity, and deterministic legacy projections.
+  Acceptance: Only completed retained audits where the exact rule was evaluated can enter scope; root and failed exploration occurrences are automatic; at most three optional candidates are accepted by ID; deployment stays person-owned; an unreviewed matrix cannot start; every row must resolve for the aggregate to resolve; failures remain present and incomplete or incomparable proof remains inconclusive.
+  Verify: `bun test tests/verification-impact-contract.test.mjs tests/repair-contract.test.mjs tests/site-exploration-contract.test.mjs tests/route-contract.test.mjs tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs`; `bun run build`; full release gate before deployment.
+
+- [ ] **15. Prove the browser-review and replay candidate in fresh supported sessions**
   What remains: Deploy the combined Worker/UI candidate only with explicit authority, then run the exact fresh ChatGPT/Codex and Chrome procedures in `RELEASE_CANDIDATE.md` and capture tool subsets, IDs, visible state, console output, narrow layout, and provenance.
   Acceptance: The agent follows the short natural prompt through real rendered checks without coaching; the page and structured state agree; a browser-only issue or honest blocker is visible; one genuine repaired browser finding reappears as the exact post-deployment replay with receipt gating; no provider-only or build-only evidence is presented as this proof.
 

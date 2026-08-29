@@ -424,7 +424,7 @@ bun run build
 - [x] **2. Evidence reconciliation contract** — completed and verified locally on 30 August 2026
 - [x] **3. WebMCP mission inspector** — implemented and statically verified on 30 August 2026; fresh visual/keyboard proof remains separate
 - [x] **4. Fresh-session mission checkpoints** — completed and verified locally on 30 August 2026
-- [ ] **5. Reviewed repair impact and verification matrix**
+- [x] **5. Reviewed repair impact and verification matrix** — completed and verified locally on 30 August 2026
 - [ ] **6. Full command-safe regression and release gate**
 - [ ] **7. Fresh current-candidate browser proof after explicit deployment/server authority**
 

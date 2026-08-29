@@ -316,6 +316,31 @@ test("HTTP transport uses the browser-review singleton and sequenced check route
   assert.equal(JSON.parse(calls[2].init.body).source, "agent");
 });
 
+test("HTTP transport exposes verification candidates and aggregate repair proof without changing tool names", async () => {
+  const calls = [];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { candidates: [], status: "resolved" } });
+    },
+  });
+  await transport.verificationCandidates(AUDIT_ID, "color-contrast");
+  await transport.repairVerification(AUDIT_ID, "repair-1");
+  assert.equal(
+    calls[0].url,
+    `https://frontmend.test/api/audits/${AUDIT_ID}/verification-candidates?findingId=color-contrast`,
+  );
+  assert.equal(
+    calls[1].url,
+    `https://frontmend.test/api/audits/${AUDIT_ID}/repairs/repair-1/verification`,
+  );
+  assert.equal(
+    transport.repairVerificationReceiptUrl(AUDIT_ID, "repair-1"),
+    `https://frontmend.test/api/audits/${AUDIT_ID}/repairs/repair-1/verification/receipt`,
+  );
+});
+
 test("prepares one retained finding through the service and derives the remembered mission", async () => {
   const calls = [];
   let audit;

@@ -54,6 +54,18 @@ import {
   auditMissionRevision,
   createMissionCheckpoint,
 } from "../src/mission-checkpoint-contract.js";
+import {
+  aggregateRepairVerification,
+  assignRepairVerificationJobs,
+  createLegacyRepairVerificationImpact,
+  createRepairVerificationImpact,
+  createRepairVerificationRun,
+  repairVerificationReceiptMarkdown,
+  reviewRepairVerificationImpact,
+  reviewedVerificationTargets,
+  verificationCandidateProjection,
+  verificationImpactLimits,
+} from "../src/verification-impact-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -81,6 +93,7 @@ function publicError(error) {
       "EXPLORATION_NOT_FOUND",
       "DIAGNOSTIC_NOT_FOUND",
       "BROWSER_REVIEW_NOT_FOUND",
+      "VERIFICATION_RUN_NOT_FOUND",
     ].includes(error.code)
       ? 404
       : error.code === "METHOD_NOT_ALLOWED"
@@ -95,6 +108,7 @@ function publicError(error) {
             "DIAGNOSTIC_MISSION_REQUIRED",
             "ASSESSMENT_INCOMPLETE",
             "VERIFICATION_RECEIPT_UNAVAILABLE",
+            "VERIFICATION_MATRIX_REQUIRED",
             "BROWSER_REVIEW_SEQUENCE",
             "BROWSER_REVIEW_COMPLETE",
             "BROWSER_REVIEW_CHECK_COMPLETE",
@@ -246,12 +260,12 @@ async function checkpointedJobData(ctx, state, data) {
     : { value: data, missionCheckpoint };
 }
 
-async function gateAdmissions(request, env, routes, missionId) {
+async function gateAdmissions(request, env, routes, missionId, operation = "exploration") {
   const ip = request.headers.get("cf-connecting-ip") ?? "local-preview";
   const fingerprint = await sha256(ip);
   const items = await Promise.all(
     routes.map(async (route) => ({
-      urlHash: await sha256(`${route.url}\nexploration:${missionId}:${route.path}`),
+      urlHash: await sha256(`${route.url}\n${operation}:${missionId}:${route.path}`),
     })),
   );
   const gate = env.AUDIT_GATE.get(env.AUDIT_GATE.idFromName("frontmend-gate-v1"));
@@ -262,7 +276,11 @@ async function gateAdmissions(request, env, routes, missionId) {
   });
   const admission = await response.json();
   if (!admission.allowed) {
-    const error = new Error("This site exploration exceeds the current live-audit budget. Try again in a few minutes.");
+    const error = new Error(
+      operation === "verification"
+        ? "This reviewed verification matrix exceeds the current live-audit budget. Try again in a few minutes."
+        : "This site exploration exceeds the current live-audit budget. Try again in a few minutes.",
+    );
     error.code = "RATE_LIMITED";
     error.retryAfterMs = admission.retryAfterMs;
     throw error;
@@ -556,43 +574,88 @@ async function startRepairVerification(request, env, baselineAuditId, repairId) 
   if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
   const baselineJob = jobFromId(env, baselineAuditId);
   const inputResponse = await baselineJob.fetch(
-    `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-input`,
+    `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-start-input`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ expectedMissionRevision: input.expectedMissionRevision }),
+    },
   );
   const inputPayload = await inputResponse.json();
   if (!inputResponse.ok || inputPayload?.ok === false) {
     return json(inputPayload, { status: inputResponse.status });
   }
-  const verification = inputPayload.data;
-  const admission = await gateAdmission(request, env, verification.url, `repair:${repairId}`);
-  if (!admission.reused) {
-    const revisionResponse = await baselineJob.fetch(
-      `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-input`,
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expectedMissionRevision: input.expectedMissionRevision }),
+  const { repair, run, targets, missionCheckpoint } = inputPayload.data;
+  const routes = targets.map((target) => ({ path: target.path, url: target.url }));
+  const admissions = await gateAdmissions(request, env, routes, run.id, "verification");
+  const started = await Promise.all(targets.map(async (target, index) => {
+    const providerRows = target.rows.filter((row) => row.proofKind === "provider-rule");
+    const scopedRepair = {
+      ...repair,
+      findingSource: providerRows[0]?.source ?? repair.findingSource,
+      findingScope: {
+        occurrenceCount: Math.max(1, providerRows.length),
+        occurrencesOmitted: 0,
+        sources: providerRows.map((row) => row.source),
       },
-    );
-    const revisionPayload = await revisionResponse.json();
-    if (!revisionResponse.ok || revisionPayload?.ok === false) {
-      return json(revisionPayload, { status: revisionResponse.status });
-    }
+    };
+    const verification = {
+      ...createVerificationContext(target.baselineReport, scopedRepair),
+      aggregateMatrix: {
+        schemaVersion: 1,
+        runId: run.id,
+        targetId: target.id,
+        rowIds: target.rows.map((row) => row.id),
+      },
+    };
+    const admission = admissions[index];
+    const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
+    const response = await job.fetch("https://frontmend.internal/start", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        id: admission.jobId,
+        url: target.url,
+        source: "verification",
+        verification,
+      }),
+    });
+    return { target, admission, response, payload: await response.json() };
+  }));
+  const assignments = started.map(({ target, admission }) => ({
+    targetId: target.id,
+    auditId: admission.jobId,
+  }));
+  const assignmentResponse = await baselineJob.fetch(
+    `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-assignments`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ runId: run.id, assignments }),
+    },
+  );
+  const assignmentPayload = await assignmentResponse.json();
+  if (!assignmentResponse.ok || assignmentPayload?.ok === false) {
+    return json(assignmentPayload, { status: assignmentResponse.status });
   }
-  const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
-  const response = await job.fetch("https://frontmend.internal/start", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      id: admission.jobId,
-      url: verification.url,
-      source: "verification",
-      verification,
-    }),
-  });
-  const payload = await response.json();
-  return json(payload, {
-    status: admission.reused ? 200 : 202,
-    headers: { location: `/api/audits/${encodeURIComponent(admission.jobId)}` },
+  const aggregateResponse = await baselineJob.fetch(
+    `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification`,
+  );
+  const aggregatePayload = await aggregateResponse.json();
+  const primary = started[0];
+  return json({
+    ok: true,
+    data: {
+      ...(primary.payload?.data ?? {}),
+      baselineAuditId,
+      repairId,
+      verificationAuditIds: assignments.map((assignment) => assignment.auditId),
+      aggregateVerification: aggregatePayload?.data ?? assignmentPayload?.data?.aggregateVerification ?? null,
+      missionCheckpoint,
+    },
+  }, {
+    status: admissions.every((admission) => admission.reused) ? 200 : 202,
+    headers: { location: `/api/audits/${encodeURIComponent(primary.admission.jobId)}` },
   });
 }
 
@@ -703,6 +766,38 @@ async function routeApi(request, env, url) {
       ? `/browser-review/${encodeURIComponent(reviewId)}/${action}`
       : "/browser-review";
     const response = await proxyJobRequest(jobFromId(env, auditId), suffix, request, body);
+    return new Response(response.body, response);
+  }
+
+  const verificationCandidateMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/verification-candidates$/,
+  );
+  if (verificationCandidateMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "Verification candidates are read-only."));
+    }
+    const job = jobFromId(env, verificationCandidateMatch[1]);
+    const findingId = url.searchParams.get("findingId") ?? "";
+    const response = await job.fetch(
+      `https://frontmend.internal/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
+    );
+    return new Response(response.body, response);
+  }
+
+  const aggregateVerificationMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/repairs\/([^/]+)\/verification(?:\/(receipt))?$/,
+  );
+  if (aggregateVerificationMatch) {
+    if (request.method !== "GET") {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "Aggregate verification reads are GET-only."));
+    }
+    const [, auditId, repairId, receipt] = aggregateVerificationMatch;
+    validateRepairId(repairId);
+    const job = jobFromId(env, auditId);
+    const suffix = receipt ? "verification-receipt" : "verification";
+    const response = await job.fetch(
+      `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/${suffix}`,
+    );
     return new Response(response.body, response);
   }
 
@@ -835,7 +930,7 @@ export class FrontmendAuditGate {
       typeof fingerprint !== "string" ||
       !Array.isArray(batchItems) ||
       batchItems.length < 1 ||
-      batchItems.length > siteExplorationLimits.maxRoutes ||
+      batchItems.length > verificationImpactLimits.maxTargets ||
       batchItems.some((item) => typeof item?.urlHash !== "string" || !item.urlHash) ||
       new Set(batchItems.map((item) => item.urlHash)).size !== batchItems.length ||
       !Number.isFinite(now)
@@ -1060,6 +1155,25 @@ export class FrontmendAuditJob {
       }
       return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair policy operation is not supported."));
     }
+    if (url.pathname === "/verification-candidates" && request.method === "GET") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before reading verification candidates."));
+      }
+      const findingId = url.searchParams.get("findingId");
+      const browserReview = await this.ctx.storage.get("browserReview");
+      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === findingId);
+      if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
+      const previewRepair = createRepairDraft({
+        repairId: `candidate-${state.id}`,
+        auditId: state.id,
+        finding,
+        report: state.report,
+        input: { findingId: finding.id },
+        source: "human",
+      });
+      const impact = await this.verificationImpactForRepair(state, previewRepair, []);
+      return json({ ok: true, data: verificationCandidateProjection(impact) });
+    }
     if (url.pathname.startsWith("/repairs")) {
       return this.handleRepairs(request, url, state);
     }
@@ -1261,20 +1375,108 @@ export class FrontmendAuditJob {
     return json({ ok: true, data: auditSnapshot(state, await auditJobCheckpoint(this.ctx, state)) });
   }
 
+  async retainedExplorationReports() {
+    if (!this.env?.AUDIT_JOBS?.get || !this.env?.AUDIT_JOBS?.idFromName) return [];
+    const explorations = (await this.ctx.storage.get("explorations")) ?? [];
+    const children = [];
+    for (const mission of explorations) {
+      for (const child of mission?.children ?? []) {
+        if (
+          child?.auditId &&
+          !children.some((item) => item.auditId === child.auditId) &&
+          children.length < verificationImpactLimits.maxOptionalTargets
+        ) {
+          children.push(child);
+        }
+      }
+    }
+    return Promise.all(children.map(async (child) => {
+      try {
+        const job = this.env.AUDIT_JOBS.get(this.env.AUDIT_JOBS.idFromName(child.auditId));
+        const response = await job.fetch("https://frontmend.internal/");
+        const payload = await response.json();
+        return {
+          auditId: child.auditId,
+          path: child.path,
+          url: child.url,
+          status: payload?.data?.status ?? "failed",
+          report: payload?.data?.report ?? null,
+        };
+      } catch {
+        return { auditId: child.auditId, path: child.path, url: child.url, status: "failed", report: null };
+      }
+    }));
+  }
+
+  async verificationImpactForRepair(state, repair, verificationTargetIds) {
+    const impact = createRepairVerificationImpact({
+      repairId: repair.id,
+      repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
+      rootReport: state.report,
+      findingSource: repair.findingSource,
+      findingScope: repair.findingScope,
+      findingEvidence: repair.findingEvidence,
+      auditedReports: await this.retainedExplorationReports(),
+      verificationTargetIds,
+    });
+    if (repair.status !== "approved") return impact;
+    return reviewRepairVerificationImpact(
+      impact,
+      repair.approval?.mode === "delegated-auto" ? "delegated-auto-policy" : "person",
+      repair.reviewedAt,
+    );
+  }
+
+  async aggregateVerificationForRepair(repair) {
+    if (!repair?.verificationImpact?.matrix || !repair?.verificationRun?.id) return null;
+    const audits = await Promise.all((repair.verificationRun.assignments ?? []).map(async (assignment) => {
+      if (!assignment.auditId || !this.env?.AUDIT_JOBS?.get || !this.env?.AUDIT_JOBS?.idFromName) {
+        return null;
+      }
+      try {
+        const job = this.env.AUDIT_JOBS.get(this.env.AUDIT_JOBS.idFromName(assignment.auditId));
+        const response = await job.fetch("https://frontmend.internal/");
+        const payload = await response.json();
+        return response.ok && payload?.data
+          ? payload.data
+          : { id: assignment.auditId, status: "failed", report: null };
+      } catch {
+        return { id: assignment.auditId, status: "failed", report: null };
+      }
+    }));
+    return aggregateRepairVerification(
+      repair.verificationImpact,
+      repair.verificationRun,
+      audits.filter(Boolean),
+    );
+  }
+
+  async repairWorkspaceItem(repair, state = null) {
+    const effectiveRepair = !repair.verificationImpact && state?.report
+      ? { ...repair, verificationImpact: createLegacyRepairVerificationImpact({ repair, rootReport: state.report }) }
+      : repair;
+    const aggregateVerification = await this.aggregateVerificationForRepair(effectiveRepair);
+    return repairWithMission({
+      ...effectiveRepair,
+      aggregateVerification,
+    });
+  }
+
   async handleRepairs(request, url, state) {
     if (state.status !== "complete" || !state.report) {
       return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before staging a repair."));
     }
-    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|export|verification-input))?)?$/);
+    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|export|verification-input|verification-start-input|verification-assignments|verification|verification-receipt))?)?$/);
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That repair route does not exist."));
     const [, rawRepairId, action] = match;
     const repairs = (await this.ctx.storage.get("repairs")) ?? [];
     let repairPolicy = repairPolicySnapshot(await this.ctx.storage.get("repairPolicy"));
 
     if (!rawRepairId && request.method === "GET") {
+      const workspaceRepairs = await Promise.all(repairs.map((repair) => this.repairWorkspaceItem(repair, state)));
       return json({
         ok: true,
-        data: { auditId: state.id, repairs: repairs.map(repairWithMission), policy: repairPolicy },
+        data: { auditId: state.id, repairs: workspaceRepairs, policy: repairPolicy },
       });
     }
     if (!rawRepairId && request.method === "POST") {
@@ -1287,7 +1489,7 @@ export class FrontmendAuditJob {
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       const existing = repairs.find((repair) => repair.findingId === finding.id);
       if (existing) {
-        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, repairWithMission(existing)) });
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(existing, state)) });
       }
       if (state.mission?.repairPreparation?.findingId !== finding.id) {
         return errorResponse(new AuditError(
@@ -1298,7 +1500,7 @@ export class FrontmendAuditJob {
       if (repairs.length >= 10) {
         return errorResponse(new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
       }
-      const { source, expectedMissionRevision, ...proposal } = input;
+      const { source, expectedMissionRevision, verificationTargetIds, ...proposal } = input;
       await assertJobRevision(this.ctx, state, expectedMissionRevision);
       let diagnosticMission = null;
       const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
@@ -1320,13 +1522,23 @@ export class FrontmendAuditJob {
           ));
         }
       }
+      const repairId = crypto.randomUUID();
       let repair = createRepairDraft({
+        repairId,
         auditId: state.id,
         finding,
         report: state.report,
         input: proposal,
         source,
       });
+      repair = {
+        ...repair,
+        verificationImpact: await this.verificationImpactForRepair(
+          state,
+          repair,
+          verificationTargetIds ?? [],
+        ),
+      };
       if (diagnosticMission) repair = { ...repair, diagnosticMission: diagnosticMissionForRepair(diagnosticMission) };
       const policyResult = applyRepairPolicy(repair, repairPolicy);
       repair = policyResult.repair;
@@ -1335,7 +1547,7 @@ export class FrontmendAuditJob {
       await this.ctx.storage.put("repairs", repairs);
       await this.ctx.storage.put("repairPolicy", repairPolicy);
       const updated = await advanceJobRevision(this.ctx, state);
-      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repair)) }, { status: 201 });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repair, updated)) }, { status: 201 });
     }
 
     const repairId = validateRepairId(decodeURIComponent(rawRepairId ?? ""));
@@ -1345,7 +1557,7 @@ export class FrontmendAuditJob {
     }
     const repair = repairs[repairIndex];
     if (!action && request.method === "GET") {
-      return json({ ok: true, data: repairWithMission(repair) });
+      return json({ ok: true, data: await this.repairWorkspaceItem(repair, state) });
     }
 
     if (action === "approve" && request.method === "POST") {
@@ -1355,14 +1567,16 @@ export class FrontmendAuditJob {
         );
       }
       if (repair.status === "approved") {
-        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, repairWithMission(repair)) });
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(repair, state)) });
       }
       const input = await readJsonBody(request);
       await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
       if (repair.status !== "approved") {
         const approvedAt = Date.now();
+        const impact = repair.verificationImpact ?? await this.verificationImpactForRepair(state, repair, []);
         repairs[repairIndex] = {
           ...repair,
+          verificationImpact: reviewRepairVerificationImpact(impact, "person", approvedAt),
           status: "approved",
           requiresHumanReview: false,
           reviewedAt: approvedAt,
@@ -1371,7 +1585,7 @@ export class FrontmendAuditJob {
         await this.ctx.storage.put("repairs", repairs);
       }
       const updated = await advanceJobRevision(this.ctx, state);
-      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repairs[repairIndex], updated)) });
     }
     if (action === "changes" && request.method === "POST") {
       const input = await readJsonBody(request);
@@ -1381,7 +1595,7 @@ export class FrontmendAuditJob {
       repairs[repairIndex] = requestRepairChanges(repair, input?.feedback);
       await this.ctx.storage.put("repairs", repairs);
       const updated = await advanceJobRevision(this.ctx, state);
-      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repairs[repairIndex], updated)) });
     }
     if (action === "revise" && request.method === "POST") {
       const input = await readJsonBody(request);
@@ -1390,10 +1604,13 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("INVALID_REPAIR", "Repair revisions must be agent-authored."));
       }
       await assertJobRevision(this.ctx, state, expectedMissionRevision);
-      repairs[repairIndex] = reviseRepairDraft(repair, proposal, "agent");
+      const repairWithImpact = repair.verificationImpact
+        ? repair
+        : { ...repair, verificationImpact: await this.verificationImpactForRepair(state, repair, []) };
+      repairs[repairIndex] = reviseRepairDraft(repairWithImpact, proposal, "agent");
       await this.ctx.storage.put("repairs", repairs);
       const updated = await advanceJobRevision(this.ctx, state);
-      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repairs[repairIndex], updated)) });
     }
     if (action === "implementation" && request.method === "POST") {
       const input = await readJsonBody(request);
@@ -1407,7 +1624,7 @@ export class FrontmendAuditJob {
       repairs[repairIndex] = recordRepositoryImplementation(repair, receipt);
       await this.ctx.storage.put("repairs", repairs);
       const updated = await advanceJobRevision(this.ctx, state);
-      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repairs[repairIndex], updated)) });
     }
     if (action === "deployment" && request.method === "POST") {
       if (repair.status !== "approved") {
@@ -1421,9 +1638,81 @@ export class FrontmendAuditJob {
         repairs[repairIndex] = { ...repair, deploymentAttestedAt: Date.now() };
         await this.ctx.storage.put("repairs", repairs);
         const updated = await advanceJobRevision(this.ctx, state);
-        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repairs[repairIndex], updated)) });
       }
-      return json({ ok: true, data: await checkpointedJobData(this.ctx, state, repairWithMission(repairs[repairIndex])) });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(repairs[repairIndex], state)) });
+    }
+    if (action === "verification-start-input" && request.method === "POST") {
+      if (repair.status !== "approved") {
+        return errorResponse(new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before verification."));
+      }
+      if (!Number.isFinite(repair.deploymentAttestedAt)) {
+        return errorResponse(new AuditError(
+          "DEPLOYMENT_NOT_ATTESTED",
+          "A person must confirm the reviewed change was deployed before verification.",
+        ));
+      }
+      const input = await readJsonBody(request);
+      const effectiveImpact = repair.verificationImpact
+        ?? createLegacyRepairVerificationImpact({ repair, rootReport: state.report });
+      reviewedVerificationTargets(effectiveImpact);
+      if (repair.verificationRun?.id && repair.verificationRun.repairRevision === effectiveImpact.repairRevision) {
+        return json({
+          ok: true,
+          data: await checkpointedJobData(this.ctx, state, {
+            repair: await this.repairWorkspaceItem({ ...repair, verificationImpact: effectiveImpact }, state),
+            run: repair.verificationRun,
+            targets: reviewedVerificationTargets(effectiveImpact),
+          }),
+        });
+      }
+      await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
+      const run = createRepairVerificationRun(effectiveImpact, crypto.randomUUID());
+      repairs[repairIndex] = { ...repair, verificationImpact: effectiveImpact, verificationRun: run };
+      await this.ctx.storage.put("repairs", repairs);
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({
+        ok: true,
+        data: await checkpointedJobData(this.ctx, updated, {
+          repair: await this.repairWorkspaceItem(repairs[repairIndex], updated),
+          run,
+          targets: reviewedVerificationTargets(effectiveImpact),
+        }),
+      });
+    }
+    if (action === "verification-assignments" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      if (!repair.verificationRun?.id || input?.runId !== repair.verificationRun.id) {
+        return errorResponse(new AuditError("VERIFICATION_RUN_NOT_FOUND", "That aggregate verification run does not exist."));
+      }
+      repairs[repairIndex] = {
+        ...repair,
+        verificationRun: assignRepairVerificationJobs(repair.verificationRun, input.assignments),
+      };
+      await this.ctx.storage.put("repairs", repairs);
+      return json({ ok: true, data: await this.repairWorkspaceItem(repairs[repairIndex], state) });
+    }
+    if (action === "verification" && request.method === "GET") {
+      const aggregate = await this.aggregateVerificationForRepair(repair);
+      return aggregate
+        ? json({ ok: true, data: aggregate })
+        : errorResponse(new AuditError("VERIFICATION_RUN_NOT_FOUND", "No aggregate verification run exists."));
+    }
+    if (action === "verification-receipt" && request.method === "GET") {
+      try {
+        const aggregate = await this.aggregateVerificationForRepair(repair);
+        if (!aggregate) throw new AuditError("VERIFICATION_RUN_NOT_FOUND", "No aggregate verification run exists.");
+        return new Response(repairVerificationReceiptMarkdown(aggregate), {
+          headers: {
+            "content-type": "text/markdown; charset=utf-8",
+            "content-disposition": `attachment; filename="frontmend-repair-verification-${repair.id}.md"`,
+            "cache-control": "no-store",
+            "x-content-type-options": "nosniff",
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
     }
     if (action === "verification-input" && ["GET", "POST"].includes(request.method)) {
       if (repair.status !== "approved") {

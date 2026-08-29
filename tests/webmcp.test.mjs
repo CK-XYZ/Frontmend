@@ -963,6 +963,71 @@ test("staged repair tools disclose delegated auto authority and the next agent a
   assert.match(result.data.nextAction, /record the implementation receipt/);
 });
 
+test("repair tools carry only server-issued verification target IDs and return the reviewed matrix", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const candidateId = "audit:pricing-audit";
+  const calls = [];
+  const impact = {
+    status: "reviewed",
+    selectedTargetIds: [candidateId],
+    candidates: [{ id: candidateId, auditId: "pricing-audit", path: "/pricing", strategies: ["mobile"] }],
+    matrix: { rows: [{ id: "row-1", path: "/pricing", status: "waiting" }] },
+  };
+  const service = {
+    getActiveAudit: () => ({ id: auditId }),
+    stageRepair: async (_auditId, input) => {
+      calls.push(input);
+      return {
+        id: "repair-1",
+        auditId,
+        findingId: input.findingId,
+        status: "approved",
+        revision: 1,
+        summary: "Adjust contrast.",
+        patchType: "css",
+        risk: "low",
+        findingScope: { sources: [] },
+        repositoryPlan: null,
+        requiresHumanReview: false,
+        approval: { mode: "delegated-auto" },
+        automation: { eligible: true },
+        verificationImpact: impact,
+      };
+    },
+  };
+  const result = await findTool(createFrontmendTools(service), "stage_site_repair").execute({
+    findingId: "contrast",
+    verificationTargetIds: [candidateId],
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls[0].verificationTargetIds, [candidateId]);
+  assert.equal(result.data.verificationImpact.matrix.rows[0].path, "/pricing");
+  assert.deepEqual(result.data.verificationCandidates, impact.candidates);
+});
+
+test("verification receipt tool returns the aggregate reviewed repair matrix", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const aggregate = {
+    id: "run-1",
+    repairId: "repair-1",
+    repairRevision: 2,
+    status: "resolved",
+    reviewedBy: "person",
+    reviewedAt: 10,
+    completedAt: 20,
+    receiptAvailable: true,
+    rows: [{ id: "row-1", path: "/", proofKind: "provider-rule", strategy: "mobile", status: "resolved", outcome: "passed" }],
+  };
+  const result = await findTool(createFrontmendTools({
+    getActiveAudit: () => ({ id: auditId }),
+    getRepairVerification: async () => aggregate,
+  }), "get_verification_receipt").execute({ repairId: "repair-1" });
+  assert.equal(result.ok, true);
+  assert.equal(result.data.matrix.status, "resolved");
+  assert.match(result.data.receipt, /Reviewed verification matrix/);
+  assert.match(result.data.downloadPath, /repair-1\/verification\/receipt$/);
+});
+
 test("implementation receipt tool reports bounded repository evidence only", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";

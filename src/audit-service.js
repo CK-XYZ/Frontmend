@@ -148,6 +148,24 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
+    async verificationCandidates(auditId, findingId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
+          { headers: { accept: "application/json" } },
+        ),
+      );
+    },
+
+    async repairVerification(auditId, repairId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verification`,
+          { headers: { accept: "application/json" } },
+        ),
+      );
+    },
+
     async listDiagnosticMissions(auditId) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics`, {
@@ -335,6 +353,10 @@ export function createHttpAuditTransport(options = {}) {
 
     verificationReceiptUrl(auditId) {
       return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/receipt`;
+    },
+
+    repairVerificationReceiptUrl(auditId, repairId) {
+      return `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verification/receipt`;
     },
 
     auditReportUrl(auditId) {
@@ -643,6 +665,29 @@ export function createAuditService(options = {}) {
       return workspace;
     },
 
+    async getVerificationCandidates(auditId, findingId) {
+      if (typeof auditId !== "string" || !auditId || typeof findingId !== "string" || !findingId) {
+        throw new AuditError("INVALID_INPUT", "auditId and findingId must be non-empty strings.");
+      }
+      return transport.verificationCandidates(auditId, findingId);
+    },
+
+    async getRepairVerification(auditId, repairId) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      const aggregate = await transport.repairVerification(auditId, repairId);
+      if (expectedGeneration === generation) {
+        const current = repairs.get(auditId) ?? [];
+        repairs.set(auditId, current.map((repair) => repair.id === repairId
+          ? { ...repair, aggregateVerification: aggregate }
+          : repair));
+        emit();
+      }
+      return aggregate;
+    },
+
     async listDiagnosticMissions(auditId) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
@@ -901,6 +946,10 @@ export function createAuditService(options = {}) {
 
     getVerificationReceiptUrl(auditId) {
       return transport.verificationReceiptUrl(auditId);
+    },
+
+    getRepairVerificationReceiptUrl(auditId, repairId) {
+      return transport.repairVerificationReceiptUrl(auditId, repairId);
     },
 
     getAuditReportUrl(auditId) {

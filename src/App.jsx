@@ -1756,6 +1756,53 @@ function DiagnosticProvenanceCard({ mission }) {
   );
 }
 
+function RepairImpactMatrix({ repair }) {
+  const impact = repair?.verificationImpact;
+  if (!impact) return null;
+  const aggregate = repair.aggregateVerification;
+  const rows = aggregate?.rows ?? impact.matrix?.rows ?? impact.previewRows ?? [];
+  const routeCount = new Set(rows.map((row) => row.targetId)).size;
+  const status = aggregate?.status ?? (impact.status === "reviewed" ? "reviewed" : "awaiting review");
+  return (
+    <section className="repair-impact-matrix" aria-labelledby={`repair-impact-${repair.id}`}>
+      <header>
+        <span aria-hidden="true"><TestTube size={20} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Reviewed repair impact</p>
+          <strong id={`repair-impact-${repair.id}`}>
+            {routeCount} audited route{routeCount === 1 ? "" : "s"} · {rows.length} proof row{rows.length === 1 ? "" : "s"}
+          </strong>
+        </div>
+        <em data-status={status}>{status}</em>
+      </header>
+      <div className="repair-impact-table" role="table" aria-label="Repair verification matrix">
+        <div className="repair-impact-row repair-impact-head" role="row">
+          <span role="columnheader">Route</span>
+          <span role="columnheader">Proof</span>
+          <span role="columnheader">Strategy</span>
+          <span role="columnheader">Status</span>
+        </div>
+        {rows.map((row) => (
+          <div className="repair-impact-row" role="row" key={row.id}>
+            <code role="cell">{row.path}</code>
+            <span role="cell">{row.proofKind === "browser-replay" ? "Browser replay" : "Provider rule"}</span>
+            <span role="cell">{row.strategy}</span>
+            <strong role="cell" data-status={row.status}>{row.status}</strong>
+          </div>
+        ))}
+      </div>
+      {impact.candidates?.length ? (
+        <p>
+          {impact.candidates.length} additional completed audited route{impact.candidates.length === 1 ? " is" : "s are"} eligible by server-issued ID before approval.
+        </p>
+      ) : null}
+      <small>
+        Scope is frozen at approval. Missing, blocked, or incomparable evidence stays inconclusive; deployment remains person-owned.
+      </small>
+    </section>
+  );
+}
+
 function RepairWorkbench({
   auditId,
   finding,
@@ -1946,6 +1993,7 @@ function RepairWorkbench({
           <p>{repair.verificationPlan}</p>
         </div>
       </div>
+      <RepairImpactMatrix repair={repair} />
       {repair.implementationReceipt ? (
         <section className="implementation-receipt" aria-labelledby="implementation-receipt-title">
           <div className="implementation-receipt-heading">

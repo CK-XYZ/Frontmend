@@ -1,4 +1,9 @@
 import { AuditError } from "./url-policy.js";
+import {
+  reviewRepairVerificationImpact,
+  selectRepairVerificationTargets,
+  verificationCandidateProjection,
+} from "./verification-impact-contract.js";
 
 export const PATCH_TYPES = Object.freeze([
   "html",
@@ -82,6 +87,13 @@ export function applyRepairPolicy(repair, policy, now = Date.now()) {
   return {
     repair: {
       ...repair,
+      verificationImpact: repair.verificationImpact
+        ? reviewRepairVerificationImpact(
+            repair.verificationImpact,
+            "delegated-auto-policy",
+            now,
+          )
+        : null,
       status: "approved",
       requiresHumanReview: false,
       reviewedAt: now,
@@ -433,7 +445,12 @@ function repositorySourceHints(patchType) {
   return hints[patchType] ?? hints.guidance;
 }
 
-export function createRepositoryFixBrief(report, findingId, findingCandidates = report?.findings) {
+export function createRepositoryFixBrief(
+  report,
+  findingId,
+  findingCandidates = report?.findings,
+  verificationImpact = null,
+) {
   if (!report || typeof report !== "object") {
     throw new AuditError("AUDIT_REPORT_UNAVAILABLE", "A completed audit report is required.");
   }
@@ -513,6 +530,7 @@ export function createRepositoryFixBrief(report, findingId, findingCandidates = 
         "A fresh Frontmend audit must observe the public deployment before resolution is claimed.",
       ],
     },
+    verificationCandidates: verificationCandidateProjection(verificationImpact),
     authority: {
       sourceAccess: "coding-agent-only",
       frontmendChangedTarget: false,
@@ -611,11 +629,13 @@ function browserFindingEvidenceSnapshot(finding) {
 }
 
 export function createRepairDraft({
+  repairId = crypto.randomUUID(),
   auditId,
   finding,
   report = null,
   input = {},
   source = "human",
+  verificationImpact = null,
   now = Date.now(),
 }) {
   if (!finding?.id) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
@@ -629,6 +649,7 @@ export function createRepairDraft({
       "risk",
       "repositoryFiles",
       "repositoryChecks",
+      "verificationTargetIds",
     ].includes(key),
   );
   if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
@@ -642,7 +663,7 @@ export function createRepairDraft({
     throw new AuditError("INVALID_REPAIR", "risk is not supported.");
   }
   return {
-    id: crypto.randomUUID(),
+    id: repairId,
     auditId,
     findingId: finding.id,
     findingTitle: finding.title,
@@ -673,6 +694,14 @@ export function createRepairDraft({
     deploymentAttestedAt: null,
     approval: null,
     automation: null,
+    verificationImpact: verificationImpact
+      ? selectRepairVerificationTargets(
+          verificationImpact,
+          input.verificationTargetIds ?? verificationImpact.selectedTargetIds ?? [],
+          1,
+        )
+      : null,
+    verificationRun: null,
   };
 }
 
@@ -694,6 +723,14 @@ export function requestRepairChanges(repair, feedback, now = Date.now()) {
     deploymentAttestedAt: null,
     approval: null,
     automation: null,
+    verificationImpact: repair.verificationImpact
+      ? selectRepairVerificationTargets(
+          repair.verificationImpact,
+          repair.verificationImpact.selectedTargetIds ?? [],
+          Number.isFinite(repair.revision) ? repair.revision : 1,
+        )
+      : null,
+    verificationRun: null,
     updatedAt: now,
   };
 }
@@ -714,6 +751,7 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     "risk",
     "repositoryFiles",
     "repositoryChecks",
+    "verificationTargetIds",
   ];
   const extra = Object.keys(input).find((key) => !allowed.includes(key));
   if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
@@ -740,10 +778,20 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     risk,
     repositoryPlan: repositoryPlanForProposal(input, repair.repositoryPlan, source),
   };
+  const nextRevision = (Number.isFinite(repair.revision) ? repair.revision : 1) + 1;
+  const nextImpact = repair.verificationImpact
+    ? selectRepairVerificationTargets(
+        repair.verificationImpact,
+        input.verificationTargetIds ?? repair.verificationImpact.selectedTargetIds ?? [],
+        nextRevision,
+      )
+    : null;
   const proposalChanged = ["summary", "patchType", "patch", "verificationPlan", "risk"]
     .some((key) => next[key] !== repair[key]);
   const repositoryPlanChanged = JSON.stringify(next.repositoryPlan) !== JSON.stringify(repair.repositoryPlan ?? null);
-  if (!proposalChanged && !repositoryPlanChanged) {
+  const impactChanged = JSON.stringify(nextImpact?.selectedTargetIds ?? []) !==
+    JSON.stringify(repair.verificationImpact?.selectedTargetIds ?? []);
+  if (!proposalChanged && !repositoryPlanChanged && !impactChanged) {
     throw new AuditError("INVALID_REPAIR", "The revised proposal must differ from the current version.");
   }
   const previous = {
@@ -770,7 +818,7 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     ...next,
     status: "draft",
     source: source === "agent" ? "agent" : "human",
-    revision: previous.revision + 1,
+    revision: nextRevision,
     revisionHistory: [...(Array.isArray(repair.revisionHistory) ? repair.revisionHistory : []), previous]
       .slice(-MAX_REPAIR_REVISIONS),
     changeRequest: null,
@@ -780,6 +828,8 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     deploymentAttestedAt: null,
     approval: null,
     automation: null,
+    verificationImpact: nextImpact,
+    verificationRun: null,
     updatedAt: now,
   };
 }
@@ -1461,6 +1511,7 @@ export function compareVerification(report, verification, now = Date.now(), brow
     diagnosticMission: diagnosticMissionSnapshotForArtifact(verification.diagnosticMission),
     approval: verification.approval ?? null,
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
+    aggregateMatrix: verification.aggregateMatrix ?? null,
     browserReplay: browserReplay?.replay ?? null,
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
