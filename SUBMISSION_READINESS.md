@@ -1,6 +1,6 @@
 # Frontmend submission readiness
 
-Last audited: 29 August 2026 (Australia/Perth)
+Last audited: 30 August 2026 (Australia/Perth)
 
 This is an evidence ledger, not a launch claim. A checked item identifies the proof available now; unchecked items require external delivery or a fresh clean-environment test.
 
@@ -16,9 +16,11 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Active audits can be cancelled by a person or agent through the shared service; provider abort, persisted `cancelled` state, idempotent replay, retention, and same-ID retry are covered in both runtimes.
 - [x] Human UI and WebMCP use the same application service and Worker routes.
 - [x] Natural accessibility/SEO requests persist a bounded **Assess** mission with no raw prompt, survive retry/reload, and return at most three deduplicated priorities through both the visible workspace and structured WebMCP result.
-- [x] Audit completion and assessment completion are distinct: supported Lighthouse symptoms name an exact browser/repository diagnostic continuation, and separately attributed agent evidence can complete that obligation without being promoted to measured evidence.
+- [x] Agent-started accessibility/SEO audits require a persisted, ordered rendered-browser review after provider measurement. Each exact check accepts only direct observations, bounded issues, or an honest browser blocker and remains resumable without claiming complete manual or assistive-technology coverage.
+- [x] Browser-observed issues are separately attributed, ranked beside provider findings, and accepted by the same repository brief, diagnostic, repair, receipt, and fresh-verification contracts.
+- [x] Audit completion and assessment completion are distinct: browser review and any supported repository diagnosis must complete before a receipt or repair staging can become eligible.
 - [x] A capable agent that cannot access or reconcile the required browser/repository evidence can record one bounded diagnostic blocker instead of inventing ownership. The measured finding stays unresolved, visible, receipt-ineligible, repair-ineligible, and resumable by a later capable session with blocker history retained.
-- [x] A completed assessment exposes one contextual structured/Markdown receipt with the retained mission, ranked provider evidence, separately attributed diagnostic contributions, and an explicit no-repair/no-deployment authority boundary; incomplete assessments cannot export it.
+- [x] A completed assessment exposes one contextual structured/Markdown receipt with the retained mission, ranked provider evidence, a separate agent-contributed browser-review section, diagnostic contributions, and an explicit no-repair/no-deployment authority boundary; incomplete assessments cannot export it.
 - [x] Mobile and desktop Lighthouse requests run independently; successful viewport evidence survives a sibling failure, with a labelled hybrid document supplement or truthful partial-Lighthouse result.
 - [x] Live-document fallback emits a bounded schema-5 Document profile with element counts, inline-code counts, external-origin inventory, and observed response-header signals; it remains explicit about omitted runtime and viewport evidence.
 - [x] Completed document reports expose bounded unique same-site route paths, an omitted count, and an unvisited-route caveat; the retained parent job authoritatively validates every human or agent follow-up and persists bounded root/parent/depth lineage into the child.
@@ -53,12 +55,12 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 136 passing tests across mission, assessment receipt, diagnostic blocker, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun test`: 147 passing tests across browser review, mission, assessment receipt, diagnostic blocker, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: 4,577 Vite modules transformed; current client assets `index-lorGx7r8.css` and `index-DpWOhAjT.js`, bundled Worker, and Sites metadata emitted successfully.
 - [x] `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`: Wrangler 4.126.0 read five static assets, recognized `AUDIT_GATE`, `AUDIT_JOBS`, and `ASSETS`, and produced a 226.90 KiB raw / 49.47 KiB gzip bundle without upload.
 - [x] Command-safe release gate ran from tracked revision `49f77330dbf49a5d0d5d04a1bc4ea8e613c049c8`; worktree and whitespace checks were clean before and after.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
-- [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current nineteen-tool library, and completed reports still register only their applicable result, exploration, diagnosis/blocker, receipt, preparation, and repair capabilities.
+- [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current twenty-one-tool library and the ordered browser-review transition, so it is not current-candidate browser proof.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.
 - [x] Live cancellation proof `7c70fe45`: a real `removemyexif.com` run returned and restored persisted `cancelled` state; a repeated start returned HTTP 202 under the same ID as attempt 2 and completed with score 89 using fresh live-document evidence.
 - [x] Real site-exploration proof: homepage audit `ad95d84f` exposed eight observed paths plus 33 omitted; WebMCP started `/tools/remove-pdf-metadata` as audit `7bf9d065`, and the human route control started `/tools` as audit `3f3972ab`. The baseline ID, stable paths, visible state, exported caveat, and zero browser console errors were verified.
@@ -89,7 +91,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Public HTTP smoke on current assets `index-BR_ayGCH.css` and `index-CkJVqSRf.js`: both returned 200 with their expected content types; intended security/WebMCP headers and SPA restoration were present.
 - [ ] Fresh Chrome console smoke on the current deployed asset hashes; the zero-error browser receipt for `index-BJ5D1pIW.css` and `index-Ba57YJQT.js` belongs to the prior deployment.
 - [x] Current-session production Codex WebMCP receipt: landing exposed only `start_site_audit`; call `884d30d6` returned a stable workspace without navigation; the workspace exposed exactly progress/cancel while running and then the four applicable completed tools. `get_site_audit_results` returned live Lighthouse 13.4.1 evidence for two viewports, score 96, six findings, and zero viewport failures; `{ "unexpected": true }` returned structured `INVALID_INPUT` without changing state. This is deployed lifecycle proof, but it is not the still-required fresh-session ChatGPT or Chrome receipt.
-- [ ] Fresh browser proof for the current local mission candidate: visible Assess focus, measurement-versus-assessment state, diagnostic continuation, assessment-receipt appearance only after completion, explicit preparation, contextual re-registration, and 390 px priority/preparation layout. Static contracts and builds are not this proof.
+- [ ] Fresh browser proof for the current local candidate: visible Assess focus, required browser-review opening, exact sequential tasks, pass/issue/blocker recording, browser-finding provenance, diagnostic continuation, assessment-receipt appearance only after completion, explicit preparation, contextual re-registration, and 390 px browser-review/priority layout. Static contracts and builds are not this proof.
 
 ## Competition delivery
 
@@ -110,7 +112,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 ## Release blockers
 
 1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
-2. Current application source `49f7733` adds the persisted Assess/Prepare-fix mission, focused priorities, diagnostic evidence chain, honest blocker/recovery state, and contextual assessment receipt; it is newer than deployed application commit `a20e1ff` and has no live proof.
+2. Current application source `c39882d` adds the persisted agent browser review, browser-observed findings, contextual tools, and visible evidence card on top of the Assess/Prepare-fix mission; it is newer than deployed application commit `a20e1ff` and has no live proof.
 3. Temporary app-scoped Access bypass `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` currently makes the hostname public while preserving reusable **Only CK** for rollback. Keep the bypass active through testing and judging, or replace it only with another verified public-access arrangement.
 4. The current deployment needs a fresh Chrome console smoke on its asset hashes.
 5. The eventual current deployment must be exercised through WebMCP from fresh ChatGPT, Codex-repository, and Chrome sessions before any submission claim.

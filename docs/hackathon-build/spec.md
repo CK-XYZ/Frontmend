@@ -149,8 +149,8 @@ The implemented blocker contract can produce `diagnosis-blocked` only from an ex
   priorities: [...],
   nextActor: "agent" | "person" | null,
   nextAction: null | {
-    tool: "open_diagnostic_mission",
-    input: { findingId: "..." },
+    tool: "open_browser_review" | "record_browser_review_check" | "open_diagnostic_mission",
+    input: { ... },
     reason: "..."
   },
   authority: {
@@ -164,16 +164,16 @@ The implemented blocker contract can produce `diagnosis-blocked` only from an ex
 
 Derivation rules:
 
-1. Deduplicate by measured provider rule while retaining all strategies and occurrence count.
-2. Order by severity, occurrence count, then stable source order.
-3. Use the mission's persisted focus and maximum by default.
-4. A supported diagnostic priority with no mission makes assessment `action-available` and recommends `open_diagnostic_mission`.
-5. An awaiting diagnostic mission makes assessment `in-progress` and recommends `submit_runtime_diagnosis` with its mission ID.
-6. A contributed diagnosis satisfies the read-only assessment requirement for that priority.
-7. A non-diagnostic priority has sufficient measured evidence; its repository fix brief is optional evidence, not required to finish Assess.
-8. With zero matching findings, assessment completes honestly with scores and zero priorities.
-9. In Assess, repair preparation is unavailable as an allowed action. The projection may state that the person can request a fix after reviewing the assessment.
-10. In Prepare fix, the existing repair mission state determines the next actor and action after the selected finding is frozen.
+1. For an agent-started accessibility or SEO mission, require a browser review after provider completion and recommend `open_browser_review` until it exists.
+2. While the review has a current check, recommend `record_browser_review_check` with its exact review/check IDs and task; an honest blocker keeps that check current.
+3. Merge completed browser issues into the candidate queue without changing their `agent-reported-browser` provenance.
+4. Deduplicate provider rules while retaining all strategies and occurrence count; do not collapse provider and browser sources.
+5. Order by severity, occurrence count, then stable source order, and apply the persisted focus and maximum.
+6. A supported diagnostic priority with no mission recommends `open_diagnostic_mission` only after browser review is complete.
+7. An awaiting diagnostic mission recommends `submit_runtime_diagnosis`; a contributed diagnosis satisfies that read-only obligation.
+8. A non-diagnostic priority has sufficient evidence after browser review; its repository fix brief is optional.
+9. Zero combined priorities complete honestly only after the required browser review.
+10. In Assess, repair preparation is unavailable as an allowed action. In Prepare fix, the existing repair mission state determines the next actor and action after the selected finding is frozen.
 
 Implements: PRD Stories 2.2, 3.1, 3.2, 8.1.
 
@@ -288,7 +288,15 @@ Return the mission snapshot, workspace path, and a concise next action to poll.
 - Keep optional focus/max overrides only for backward-compatible read-only re-filtering; label them `resultProjection` and never rewrite persisted mission intent.
 - Return raw bounded report evidence plus `missionState` from the shared derivation.
 - Replace the loose `recommendedNextAction` with the typed mission state's exact tool and input while retaining a compatibility alias for one release if tests/documentation require it.
-- Explicitly state that job completion does not equal assessment completion when diagnosis remains.
+- Explicitly state that job completion does not equal assessment completion while required browser review or diagnosis remains.
+
+### Browser-review tools
+
+- `open_browser_review` opens the persisted review and returns the current exact non-destructive check. It accepts no findings and performs no target interaction itself.
+- `record_browser_review_check` accepts the exact current review/check IDs, `passed | issue | blocked`, a bounded summary, direct observations, up to three structured findings for `issue`, or one exact browser blocker reason.
+- Checks are ordered and focus-aware: rendered structure, primary journey, responsive reflow, and search discovery as applicable.
+- Browser findings use `browser-observation` diagnostic provenance and remain distinct from provider measurements.
+- A completed check advances context; a blocker is replaceable only by a later contribution for that same check.
 
 ### New `prepare_site_repair` tool
 
@@ -312,14 +320,16 @@ Rules:
 
 ### Contextual registration changes
 
-- Completed Assess mission: results, applicable read-only evidence/exploration tools, diagnostics, and `prepare_site_repair`; do not expose `stage_site_repair` until repair preparation is recorded.
+- Completed provider job with required unopened browser review: expose results plus `open_browser_review`.
+- Active browser review: expose results plus `record_browser_review_check` for the current exact task.
+- Completed Assess mission: results, receipt, applicable evidence/exploration tools, diagnostics, and `prepare_site_repair`; do not expose `stage_site_repair` until repair preparation is recorded.
 - Awaiting diagnosis: expose `submit_runtime_diagnosis` and keep results.
 - Awaiting diagnosis: also expose `record_diagnostic_blocker`; after a blocker is recorded, keep `submit_runtime_diagnosis` as a recovery capability but remove blocker creation until real access changes.
 - Prepare fix: expose existing staging/workspace actions according to diagnostic readiness and repair state.
 - Existing revisions, implementation receipts, verification receipts, and verification start continue to follow current repair state.
 - A verification audit's existing receipt tools remain available regardless of root mission intent.
 
-Tool count becomes seventeen. Tests and visible capability copy must use the contextual subset, not advertise all seventeen as always available.
+The implemented bounded library contains twenty-one tools. Tests and visible capability copy use the contextual subset rather than advertising all tools as simultaneously available.
 
 Implements: PRD Stories 1.1, 1.2, 3.1, 3.2, 5.1, 8.2.
 
@@ -518,10 +528,17 @@ Retry carries the original mission. A user who wants a different focus starts an
 - Same/different goal signatures.
 - Focused deduplication across viewports.
 - Severity/occurrence ordering.
-- Zero matching findings.
+- Zero provider findings still require the agent browser review; zero combined findings complete honestly after it.
 - Diagnosis recommended, in progress, and contributed.
 - Assess versus Prepare fix authority projection.
 - Idempotent and conflicting repair-intent transitions.
+
+### Browser review contract
+
+- Focus-aware ordered check selection and exact next-check projection.
+- Strict pass/issue/blocker validation, bounded observations/findings, and blocker replacement history.
+- Separate provider/browser provenance and browser-finding promotion.
+- Persistence, reload, same-check recovery, and assessment-receipt gating.
 
 ### Service and HTTP
 
@@ -568,16 +585,16 @@ Use a fresh session with the live app and an accessible target repository/deploy
 
 1. Discover and start Frontmend in Assess mode with accessibility + SEO focus.
 2. Poll the actual job and read persisted focus using an empty result call where possible.
-3. Return no more than three priorities.
-4. Continue into a supported read-only diagnostic mission when one exists.
-5. Attach bounded browser and repository evidence without staging a repair.
-6. Finish the assessment or name a real blocker.
+3. Open the required browser review and perform each exact task with real browser controls.
+4. Attach only direct pass/issue observations or one allowed blocker, then re-read combined priorities.
+5. Continue into a supported read-only repository diagnostic mission when one exists.
+6. Finish the assessment or persist a real blocker without staging a repair.
 
 ### Chrome
 
-With the supported WebMCP flag enabled in Chrome 149+, confirm the same contextual discovery and visible mission state. Record exact version, flag, tool subset, audit ID, mission/diagnostic IDs, UI state, and console output.
+With the supported WebMCP flag enabled in Chrome 149+—and Chrome 150.0.7861.0+ for the current Inspector extension—confirm the same contextual discovery, ordered browser-review transitions, and visible mission state. Record exact version, flag, tool subsets, audit ID, browser-review/diagnostic IDs, UI state, and console output.
 
-The eval fails if the agent stops after Lighthouse while `missionState.assessmentComplete` is false and a valid next diagnostic action exists.
+The eval fails if the agent stops after provider measurement, skips or fabricates the browser review, loses evidence provenance, or ignores a valid diagnostic continuation while `assessmentComplete` is false.
 
 ## Demo And Submission Flow
 
@@ -585,8 +602,8 @@ The eval fails if the agent stops after Lighthouse while `missionState.assessmen
 
 - **0:00–0:15:** Natural prompt and immediate WebMCP discovery/start.
 - **0:15–0:40:** Stable workspace, shared progress, and contextual tools.
-- **0:40–1:10:** Focused priorities; explicitly show measurement complete versus assessment incomplete.
-- **1:10–1:45:** Agent browser/repository diagnosis appears in the human workspace with source attribution.
+- **0:40–1:20:** Ordered rendered-browser review and one separately attributed browser observation.
+- **1:20–1:45:** Combined priority and repository diagnosis appear in the human workspace with source attribution.
 - **1:45–2:15:** Person requests repair preparation; show review or bounded auto policy without claiming deployment.
 - **2:15–2:45:** Implementation receipt, person-only deployment gate, and genuine fresh verification receipt from a recorded run.
 - **2:45–3:00:** One-sentence value: the person and agent share one durable protocol from public evidence to proof.

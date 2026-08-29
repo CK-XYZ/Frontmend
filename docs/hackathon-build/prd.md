@@ -115,7 +115,7 @@ Acceptance criteria:
 - Each retained priority has one clear evidence state: sufficient measured evidence, diagnosis recommended, diagnosis in progress, diagnosis contributed, blocked, or no supported continuation.
 - The response identifies the next actor and one valid next action when continuation exists.
 - Continuation guidance contains the stable identifiers required for that action and never asks the agent to guess from display text.
-- If all relevant priorities already have sufficient evidence, the assessment may complete without opening a diagnostic mission.
+- For an agent-started accessibility or SEO mission, provider evidence alone never completes the assessment; the ordered browser review must complete first. A repository diagnostic mission is still conditional on the resulting priorities.
 
 #### Story 3.2 — Supported diagnosis continues naturally
 
@@ -130,6 +130,19 @@ Acceptance criteria:
 - The agent can finish an Assess mission with diagnosis and repository ownership without creating a repair proposal.
 
 ### Epic 4: Contribute trustworthy diagnosis
+
+#### Story 4.0 — Ordered rendered-browser review
+
+As a developer, I want Frontmend to direct the coding agent through a small rendered-browser investigation so that a natural accessibility/SEO request produces evidence beyond automated provider output.
+
+Acceptance criteria:
+
+- Agent-started accessibility or SEO assessments require a persisted browser review after provider measurement, including zero-provider-finding runs.
+- Frontmend returns one exact, ordered, non-destructive check at a time rather than one large free-form instruction.
+- Each check records `passed`, `issue`, or `blocked` with concrete observations; issue outcomes include no more than three bounded structured findings.
+- Browser findings remain agent-observed, enter the ranked priority queue, and can use the existing diagnosis/repair/verification path.
+- An allowed blocker keeps the same check resumable and leaves assessment receipt and repair staging unavailable.
+- The product calls this a bounded rendered-browser review, not a complete manual, screen-reader, or expert SEO audit.
 
 #### Story 4.1 — Browser reproduction
 
@@ -247,11 +260,12 @@ As a judge, I want an ordinary prompt to exercise Frontmend correctly so that th
 
 Acceptance criteria:
 
-- In a fresh ChatGPT session, the natural accessibility/SEO prompt discovers Frontmend, starts a real assessment, waits for completion, and returns focused priorities.
-- When a supported diagnostic priority is present and repository/browser access is available, the agent continues into read-only diagnosis before declaring the assessment complete.
+- In a fresh ChatGPT session, the natural accessibility/SEO prompt discovers Frontmend, starts a real assessment, waits for provider completion, and opens the required rendered-browser review.
+- The agent performs each exact check with real browser controls, records direct observations or an honest blocker, and re-reads the combined priorities.
+- When a supported diagnostic priority is present and repository access is available, the agent continues into read-only diagnosis before declaring the assessment complete.
 - In supported Chrome WebMCP, the same contextual tools and visible mission state are discoverable.
 - The verification script records exact prompts, tool lifecycle, visible state, result identifiers, and any limitations.
-- A run that stops after Lighthouse is recorded as a failed mission-continuity eval, even if the audit itself succeeded.
+- A run that stops after provider measurement is recorded as a failed mission-continuity eval, even if the audit job itself succeeded.
 
 ## Edge Cases
 
@@ -264,7 +278,7 @@ Acceptance criteria:
 
 ### Evidence and diagnosis
 
-- No findings match the requested focus: finish honestly with scores and explicit zero matching priorities.
+- No provider findings match the requested focus: finish provider reporting honestly with zero provider priorities, then run the required browser review before deciding whether the assessment has zero combined priorities.
 - A diagnostic rule is present but browser access is unavailable: retain the measured priority and mark diagnosis blocked, not complete.
 - Browser observation conflicts with Lighthouse: show both sources and require fresh verification for resolution claims.
 - Repository access points at a different project: do not accept guessed ownership as fact.
@@ -289,6 +303,7 @@ Acceptance criteria:
 - Explicit assessment versus prepare-fix intent.
 - Durable focus/goal visibility shared by human UI and WebMCP.
 - Structured mission-completion and per-priority continuation states.
+- Ordered agent-contributed rendered-browser review with separately attributed browser findings.
 - Read-only diagnostic continuation for the natural accessibility/SEO prompt.
 - Clear transition from assessment into person-requested remediation.
 - Judge-legible mission/actor presentation using the existing state machine and activity ledger.
@@ -317,7 +332,7 @@ Acceptance criteria:
 
 1. One natural prompt starts an intent-aware assessment and creates a visible shared mission.
 2. Contextual WebMCP tools change with real durable state rather than exposing a static tool catalogue.
-3. A diagnostic finding moves beyond Lighthouse through separately attributed browser and repository evidence.
+3. Frontmend orchestrates the agent through exact rendered-browser checks; browser-only issues remain separately attributed and actionable.
 4. Assess remains read-only; repair intent and human authority are visible and testable.
 5. Bounded auto mode accelerates eligible work without authorising deployment or broadening intent.
 6. Implementation, deployment, and verification each retain their real owner and evidence boundary.
@@ -326,4 +341,4 @@ Acceptance criteria:
 
 ## Product Acceptance Gate
 
-The product slice is accepted only when automated contracts pass and at least one fresh supported-browser run proves the natural prompt does not stop at Lighthouse when a supported read-only diagnosis is available. If that fresh-session behaviour fails, Frontmend may still be a functioning audit tool, but this submission's central product claim is not ready.
+The product slice is accepted only when automated contracts pass and at least one fresh supported-browser run proves the natural prompt continues from provider measurement through the ordered browser review and any required repository diagnosis. If that fresh-session behaviour fails, Frontmend may still be a functioning audit tool, but this submission's central product claim is not ready.

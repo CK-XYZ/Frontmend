@@ -92,6 +92,17 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
 - Item 8 proves existing authority boundaries survived.
 - Items 9–11 turn the working product into reproducible release and submission evidence without conflating external actions with local completion.
 
+## Post-checklist product-strengthening slice
+
+- [x] **12. Add ordered agent browser review beyond provider evidence**
+  What was built: A pure browser-review contract, durable Worker/local persistence, two contextual WebMCP tools, focus-aware sequential checks, honest blockers, browser-finding promotion, combined assessment receipts, repository/diagnosis compatibility, and a visible provenance-labelled review card.
+  Acceptance: The natural accessibility/SEO prompt cannot finish from provider output alone; the agent receives one exact safe browser task at a time; direct observations and browser issues remain separately attributed; zero-provider-finding runs still receive rendered review; blockers remain resumable; no review contribution grants repair or deployment authority.
+  Verify: `bun test tests/browser-review-contract.test.mjs tests/audit-mission-contract.test.mjs tests/assessment-receipt.test.mjs tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs`; `bun run build`; full release gate before deployment.
+
+- [ ] **13. Prove the browser-review candidate in fresh supported sessions**
+  What remains: Deploy the combined Worker/UI candidate only with explicit authority, then run the exact fresh ChatGPT/Codex and Chrome procedures in `RELEASE_CANDIDATE.md` and capture tool subsets, IDs, visible state, console output, narrow layout, and provenance.
+  Acceptance: The agent follows the short natural prompt through real rendered checks without coaching; the page and structured state agree; a browser-only issue or honest blocker is visible; no provider-only or build-only evidence is presented as this proof.
+
 ## Scope Gut-Check
 
 Eleven items is the upper end of the guided target but appropriate because Frontmend is an existing production-shaped system with mirrored Worker/local paths and a high evidence standard. The implementation itself remains five product slices; the remaining items are regression hardening, truthful release proof, and mandatory Devpost handoff.

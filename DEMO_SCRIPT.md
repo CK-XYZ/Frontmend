@@ -12,7 +12,7 @@ That is the complete opening prompt. Codex should resolve the repository's publi
 
 Show the target repository, its public URL, and Frontmend's one-tool landing state.
 
-Narration: “Lighthouse can measure symptoms, but it cannot carry a coding agent from public evidence to repository diagnosis, human authority, and fresh proof. Frontmend makes that whole mission visible and durable.”
+Narration: “Lighthouse measures a page. Frontmend turns that measurement into a shared investigation: the page directs a coding agent through rendered-browser checks, keeps every source separate, and carries the evidence into reviewable fixes and fresh proof.”
 
 Send the one-line prompt.
 
@@ -20,21 +20,29 @@ Send the one-line prompt.
 
 Show `start_site_audit` receiving `intent: assess`, `focusAreas: [accessibility, seo]`, and at most three priorities. Let Codex follow the returned workspace path after the call finishes. Briefly show that queued/running state exposes only progress and cancellation to both the page and the agent.
 
-When measurement finishes, call `get_site_audit_results` with `{}`. Point to the visible **Assessment**, retained focus, ranked priorities, cross-viewport occurrences, and the same structured `missionState`. Do not spend the demo reading Lighthouse scores.
+When measurement finishes, call `get_site_audit_results` with `{}`. Point to the visible **Assessment**, retained focus, ranked provider priorities, and the same structured `missionState`. Do not spend the demo reading Lighthouse scores. The result must say the next action is `open_browser_review`; even a zero-finding provider result is not the end of this agent-started accessibility/SEO assessment.
 
-## 0:40–1:25 — The value beyond Lighthouse
+## 0:40–1:20 — The browser-agent collaboration
 
-Choose a priority whose evidence says diagnosis is recommended. Show the crucial distinction: the audit job is complete, but `assessmentComplete` is false and Frontmend names `open_diagnostic_mission` as the exact next action.
+Call `open_browser_review` with `{}`. Show the visible **Agent browser review · not Lighthouse** card and the exact first task. Frontmend should reveal only the current non-destructive check, not dump a giant audit prompt on the agent.
 
-Codex opens the mission, reproduces the symptom in the browser, and inspects the repository with its normal repository tools. It then calls `submit_runtime_diagnosis` with a short reproduction, bounded observations, repository-relative ownership locations, and planned checks.
+Have Codex perform each task on the rendered target with its normal browser tools, then call `record_browser_review_check` with the returned `reviewId`, exact `checkId`, outcome, and short direct observations. Use `passed` only for what was actually checked; use `issue` with up to three bounded findings when the rendered page exposes a problem. If the browser cannot safely perform the check, record one allowed blocker reason rather than improvising.
 
-If the controlled take deliberately demonstrates missing capability instead, have the agent call `record_diagnostic_blocker` with the exact bounded reason and a short non-sensitive summary. Show **Assessment blocked · evidence retained**, the blocker card, still-required evidence stages, and the absence of both assessment receipt and repair staging. Then switch to the repository-capable Codex session and submit the real diagnosis; the blocker moves into history. Do not use this branch as an excuse to omit the successful repository-aware path from the final demo.
+Show the queue advance one check at a time. Point to direct observations appearing in the human workspace and any browser-only issue becoming a ranked priority labelled **Agent-observed browser finding**. Provider and browser evidence must remain visibly separate. Narration: “The webpage is orchestrating capabilities the coding agent already has. It owns the mission and validation; the agent owns the browser.”
 
-Show the four-stage evidence chain changing in place: provider measurement remains **Measured**, while browser reproduction, repository ownership, and planned checks move from **Required** to **Contributed**. Open the contribution detail long enough to show one real browser observation, one repository-relative owner, and the planned checks; this is the visual proof that the workflow continued beyond Lighthouse.
+This is a bounded rendered-browser review, not a complete manual accessibility, screen-reader, or expert SEO audit. Say that once on screen rather than weakening the value with a generic “Lighthouse only” disclaimer.
+
+## 1:20–1:45 — From observed issue to repository diagnosis
+
+Choose the strongest provider or browser-observed priority that requires diagnosis. Frontmend should name `open_diagnostic_mission` as the exact next action while `assessmentComplete` remains false.
+
+Codex opens the mission, reproduces the symptom where required, and inspects the repository with its normal repository tools. It then calls `submit_runtime_diagnosis` with a short reproduction, bounded observations, repository-relative ownership locations, and planned checks. Show the four-stage evidence chain: provider or browser evidence remains attributed to its source, while reproduction, repository ownership, and planned checks become **Contributed**.
+
+If the controlled take deliberately demonstrates missing capability, persist the exact browser-review or diagnostic blocker and show that receipt/repair actions stay locked. Do not use a blocker-only take as the final successful demo.
 
 Compare the visible and structured state:
 
-- Lighthouse evidence remains labelled measured.
+- Lighthouse evidence remains labelled measured; browser-review evidence remains labelled agent-observed.
 - The causal diagnosis remains labelled agent-reported.
 - Frontmend received no source contents, absolute paths, prompts, credentials, or command output.
 - The visible evidence chain and the `evidenceChain` returned through WebMCP agree stage for stage.
@@ -44,7 +52,7 @@ Refresh the contextual tool view. `get_assessment_receipt` should appear only no
 
 Narration: “The agent keeps source access. Frontmend keeps the public evidence, shared mission, and authority boundary.”
 
-## 1:25–1:55 — Explicitly cross into repair
+## 1:45–2:05 — Explicitly cross into repair
 
 Send a second natural request:
 
@@ -54,7 +62,7 @@ Show `prepare_site_repair` freezing the exact finding. Point out that **Prepare 
 
 Have Codex read `get_repository_fix_brief`, inspect the repository, and stage a bounded proposal with the exact repository-relative files and planned checks. Show the same plan appear in the human workspace awaiting review.
 
-## 1:55–2:25 — Shared authority, not agent theatre
+## 2:05–2:25 — Shared authority, not agent theatre
 
 Keep **Review each plan** selected. Approve the proposal yourself in the visible UI, then let Codex implement only the reviewed repository scope and run the named checks. Have it attach `record_repository_implementation` with a short summary, relative files, truthful check statuses, and an optional commit ID.
 
@@ -76,7 +84,7 @@ Never rehearse a fake resolution. A truthful still-present or inconclusive resul
 
 ## 2:45–2:50 — Closing line
 
-“Frontmend is not a start-and-poll Lighthouse wrapper. It is a browser-native protocol where a coding agent, a person, and fresh public evidence share one mission without sharing unsafe authority.”
+“Frontmend makes the webpage, coding agent, and person collaborators: one visible mission, different capabilities, and no shared unsafe authority.”
 
 End on the reloadable `/audits/:id` workspace and its contextual WebMCP status.
 
@@ -86,4 +94,4 @@ If time permits, use a separate controlled audit. The person visibly enables **D
 
 ## Demo failure conditions
 
-Do not use the take if Codex stops after Lighthouse while `assessmentComplete` is false; a missing capability is narrated but not persisted with `record_diagnostic_blocker`; a blocker unlocks receipt or repair staging; repair staging appears without explicit preparation; agent-reported diagnosis is presented as measured; the agent approves, enables auto mode, deploys, or attests deployment; Frontmend receives source or absolute paths; repository work starts before authority exists; visible and structured mission state disagree; or any local build is described as live proof.
+Do not use the take if Codex stops after provider measurement; skips `open_browser_review`; repeats Lighthouse scores instead of performing the exact rendered checks; reports unobserved passes; loses browser-review provenance; narrates a missing capability without persisting its blocker; lets a blocker unlock receipt or repair staging; stages without explicit preparation; presents agent diagnosis as measured; approves, enables auto mode, deploys, or attests deployment; sends source or absolute paths to Frontmend; starts repository work before authority exists; disagrees with visible mission state; or describes a local build as live proof.
