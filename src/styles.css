@@ -874,6 +874,54 @@ input:focus-visible,
   color: #d2e8aa;
 }
 
+.browser-replay-baseline {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 5px 18px;
+  margin: 16px 18px 0;
+  padding: 14px 15px;
+  border: 1px solid #52634f;
+  border-radius: 14px;
+  background: #2a342c;
+}
+
+.browser-replay-baseline > span,
+.browser-replay-baseline > strong,
+.browser-replay-baseline > p {
+  grid-column: 1;
+}
+
+.browser-replay-baseline > span {
+  color: #b8d582;
+  font-size: 7px;
+  font-weight: 760;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.browser-replay-baseline > strong {
+  color: #f1f4ed;
+  font-size: 11px;
+}
+
+.browser-replay-baseline > p {
+  margin: 0;
+  color: #b5beb6;
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.browser-replay-baseline > code {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+  align-self: center;
+  max-width: 220px;
+  overflow-wrap: anywhere;
+  color: #d5e7b3;
+  font-size: 8px;
+  text-align: right;
+}
+
 .browser-review-checks {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
@@ -4332,6 +4380,40 @@ input:focus-visible,
   white-space: nowrap;
 }
 
+.verification-replay-evidence {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(260px, 0.55fr);
+  gap: 12px 28px;
+  padding: 15px;
+  border: 1px solid #d8c99f;
+  border-radius: 13px;
+  background: rgb(255 253 247 / 78%);
+}
+
+.verification-replay-evidence.replay-complete {
+  border-color: #bfd899;
+  background: rgb(248 252 239 / 82%);
+}
+
+.verification-replay-evidence > div > strong {
+  display: block;
+  margin: 4px 0;
+  color: #3d4736;
+  font-size: 12px;
+}
+
+.verification-replay-evidence > dl {
+  align-content: start;
+}
+
+.verification-replay-evidence > p {
+  grid-column: 1 / -1;
+  padding-top: 10px;
+  border-top: 1px dashed #d8ddcf;
+  font-weight: 620;
+}
+
 .proof-receipt {
   grid-column: 1 / -1;
   overflow: hidden;
@@ -5386,6 +5468,17 @@ input:focus-visible,
     text-align: left;
   }
 
+  .browser-replay-baseline {
+    grid-template-columns: 1fr;
+  }
+
+  .browser-replay-baseline > code {
+    grid-column: 1;
+    grid-row: auto;
+    max-width: none;
+    text-align: left;
+  }
+
   .route-journey,
   .observed-routes {
     grid-template-columns: 1fr;
@@ -5850,6 +5943,10 @@ input:focus-visible,
 
   .verification-banner dl {
     grid-column: auto;
+  }
+
+  .verification-replay-evidence {
+    grid-template-columns: 1fr;
   }
 
   .proof-receipt-heading {

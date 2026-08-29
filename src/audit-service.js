@@ -600,10 +600,18 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId and reviewId must be non-empty strings.");
       }
       const expectedGeneration = generation;
-      return rememberBrowserReview(
+      const review = rememberBrowserReview(
         await transport.recordBrowserReviewCheck(auditId, reviewId, input, source),
         expectedGeneration,
       );
+      if (review?.purpose === "verification" && expectedGeneration === generation) {
+        const report = await transport.results(auditId);
+        const existing = jobs.get(auditId);
+        if (existing) {
+          remember({ ...existing, status: "complete", progress: 100, report }, expectedGeneration);
+        }
+      }
+      return review;
     },
 
     async submitDiagnosticEvidence(auditId, missionId, input, source = "agent") {

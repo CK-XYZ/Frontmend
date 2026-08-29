@@ -486,8 +486,67 @@ function retainedAuditMission(audit) {
   );
 }
 
-function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], missionState = null }) {
+function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], browserReview = null, missionState = null }) {
   const titleId = useId();
+  const verification = audit?.report?.verification;
+  const replay = verification?.browserReplay;
+  if (verification && replay?.required) {
+    const replayState = browserReview?.purpose === "verification"
+      ? browserReview.state
+      : replay;
+    const replayComplete = replayState?.status === "complete";
+    const replayBlocked = replayState?.status === "blocked";
+    const statusLabel = replayComplete
+      ? verification.status === "inconclusive"
+        ? "Fresh comparison recorded · updating proof"
+        : verification.status === "resolved"
+        ? "Exact rendered issue passed"
+        : "Exact rendered issue still present"
+      : replayBlocked
+        ? "Fresh browser replay blocked"
+        : replayState?.status === "in-progress"
+          ? "Fresh browser replay active"
+          : "Provider measurement complete · replay waiting";
+    return (
+      <section className={`audit-mission-summary ${replayComplete ? "complete" : "attention"}`} aria-labelledby={titleId}>
+        <div className="audit-mission-identity">
+          <p className="kicker">
+            <Robot size={14} weight="fill" aria-hidden="true" />
+            Verification
+            <span>Agent browser replay</span>
+          </p>
+          <h2 id={titleId}>{verification.findingTitle}</h2>
+          <div className="audit-mission-focus" aria-label="Verification evidence">
+            <span>{replay.baseline?.focusArea ?? "rendered issue"}</span>
+            <span>{replay.baseline?.source?.strategy ?? "retained viewport"}</span>
+          </div>
+        </div>
+        <div className="audit-mission-status">
+          <span className="audit-mission-status-icon" aria-hidden="true">
+            {replayComplete
+              ? verification.status === "resolved"
+                ? <CheckCircle size={18} weight="fill" />
+                : <Warning size={18} weight="fill" />
+              : replayBlocked
+                ? <Warning size={18} weight="fill" />
+                : <Browser size={18} weight="duotone" />}
+          </span>
+          <div>
+            <strong>{statusLabel}</strong>
+            <small>{replayComplete ? "Verification receipt unlocked" : "Agent owns the exact fresh comparison"}</small>
+          </div>
+        </div>
+        <p className="audit-mission-authority">
+          <ShieldCheck size={17} weight="duotone" aria-hidden="true" />
+          <span>
+            <strong>Claim lock</strong>
+            Provider measurement and the retained browser observation stay separate. Frontmend issues
+            a resolution claim only after the exact rendered comparison is recorded.
+          </span>
+        </p>
+      </section>
+    );
+  }
   const retainedMission = retainedAuditMission(audit);
   const state = missionState ?? deriveAuditMissionState({
     report: audit?.report ?? null,
@@ -549,15 +608,25 @@ function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [], mis
   );
 }
 
-function BrowserReviewMission({ state, review }) {
+function BrowserReviewMission({ state, review, verification = null }) {
   const titleId = useId();
-  const reviewState = state?.browserReview;
+  const replay = verification?.browserReplay;
+  const verificationReplay = replay?.required === true;
+  const reviewState = verificationReplay
+    ? review?.purpose === "verification"
+      ? { required: true, ...review.state }
+      : { required: true, ...replay }
+    : state?.browserReview;
   if (!reviewState?.required) return null;
   const resultByCheck = new Map((review?.results ?? []).map((result) => [result.checkId, result]));
   const complete = reviewState.status === "complete";
   const blocked = reviewState.status === "blocked";
   const statusLabel = complete
-    ? "Browser contribution complete"
+    ? verificationReplay
+      ? review?.results?.[0]?.outcome === "passed"
+        ? "Exact comparison passed"
+        : "Exact issue observed again"
+      : "Browser contribution complete"
     : blocked
       ? "Browser check blocked honestly"
       : reviewState.status === "not-opened"
@@ -569,16 +638,17 @@ function BrowserReviewMission({ state, review }) {
       <header>
         <span aria-hidden="true"><Browser size={20} weight="duotone" /></span>
         <div>
-          <p className="kicker">Agent browser review · not Lighthouse</p>
-          <h2 id={titleId}>Rendered evidence, one check at a time</h2>
+          <p className="kicker">{verificationReplay ? "Fresh browser replay · WebMCP" : "Agent browser review · not Lighthouse"}</p>
+          <h2 id={titleId}>{verificationReplay ? "Recheck the exact rendered issue" : "Rendered evidence, one check at a time"}</h2>
           <p>
-            Frontmend asks the agent to inspect the actual page in a browser, then keeps those
-            observations separate from provider measurement.
+            {verificationReplay
+              ? "Frontmend preserved the original observation and now asks the agent for one fresh, like-for-like rendered comparison after deployment."
+              : "Frontmend asks the agent to inspect the actual page in a browser, then keeps those observations separate from provider measurement."}
           </p>
         </div>
         <div className="browser-review-state">
           <strong>{statusLabel}</strong>
-          <span>{reviewState.completedCheckCount} / {reviewState.requestedCheckCount || "—"} checks</span>
+          <span>{reviewState.completedCheckCount ?? 0} / {reviewState.requestedCheckCount || (verificationReplay ? 1 : "—")} checks</span>
         </div>
       </header>
 
@@ -586,9 +656,18 @@ function BrowserReviewMission({ state, review }) {
         <div className="browser-review-next" role="status">
           <Robot size={18} weight="fill" aria-hidden="true" />
           <div>
-            <strong>Provider evidence is ready. Rendered review is next.</strong>
-            <p>The agent can now call <code>open_browser_review</code>; the completed assessment stays locked until its requested browser checks are recorded.</p>
+            <strong>{verificationReplay ? "Fresh provider evidence is ready. One rendered comparison remains." : "Provider evidence is ready. Rendered review is next."}</strong>
+            <p>The agent can now call <code>open_browser_review</code>; the {verificationReplay ? "verification receipt" : "completed assessment"} stays locked until the exact browser check is recorded.</p>
           </div>
+        </div>
+      ) : null}
+
+      {verificationReplay && replay?.baseline ? (
+        <div className="browser-replay-baseline">
+          <span>Original observation</span>
+          <strong>{replay.baseline.title}</strong>
+          <p>{replay.baseline.evidence}</p>
+          <code>{replay.baseline.selector} · {replay.baseline.source?.strategy}</code>
         </div>
       ) : null}
 
@@ -629,8 +708,10 @@ function BrowserReviewMission({ state, review }) {
       <footer>
         <ShieldCheck size={16} weight="duotone" aria-hidden="true" />
         <span>
-          <strong>{reviewState.issueCount} browser-observed {reviewState.issueCount === 1 ? "issue" : "issues"}</strong>
-          Agent-reported browser facts can become ranked priorities, but still require repository mapping before repair and never prove deployment or resolution.
+          <strong>{verificationReplay ? "Exact comparison · separate provenance" : `${reviewState.issueCount} browser-observed ${reviewState.issueCount === 1 ? "issue" : "issues"}`}</strong>
+          {verificationReplay
+            ? "Passed means this exact issue was no longer observed; issue means it remained; blocked keeps the receipt locked and the same task resumable."
+            : "Agent-reported browser facts can become ranked priorities, but still require repository mapping before repair and never prove deployment or resolution."}
         </span>
       </footer>
     </section>
@@ -1131,10 +1212,24 @@ function VerificationBanner({ verification }) {
       ? [verification.findingSource]
       : [];
   const scoped = scopeSources.length > 1;
+  const replayPending = verification.browserReplay?.required && verification.browserReplay.status !== "complete";
+  const browserReplay = verification.browserReplay?.required === true;
   const labels = {
-    resolved: scoped ? "Every captured rule occurrence passed" : "Original rule explicitly passed",
-    "still-present": scoped ? "A captured rule occurrence still fails" : "Original finding still present",
-    inconclusive: scoped ? "Rule-scope comparison is inconclusive" : "Comparison is inconclusive",
+    resolved: browserReplay
+      ? "Exact rendered issue passed"
+      : scoped
+        ? "Every captured rule occurrence passed"
+        : "Original rule explicitly passed",
+    "still-present": browserReplay
+      ? "Exact rendered issue still present"
+      : scoped
+        ? "A captured rule occurrence still fails"
+        : "Original finding still present",
+    inconclusive: replayPending
+      ? "Fresh browser comparison required"
+      : scoped
+        ? "Rule-scope comparison is inconclusive"
+        : "Comparison is inconclusive",
   };
   const outcomeLabels = {
     passed: "Passed",
@@ -1163,7 +1258,7 @@ function VerificationBanner({ verification }) {
           )}
         </span>
         <div>
-          <p className="kicker">Before / after proof</p>
+          <p className="kicker">{browserReplay ? "Provider + browser proof" : "Before / after proof"}</p>
           <h2 id="verification-title">{labels[verification.status]}</h2>
           <p>{verification.message}</p>
         </div>
@@ -1210,6 +1305,30 @@ function VerificationBanner({ verification }) {
           outcomeLabels={outcomeLabels}
           mode="verification"
         />
+      ) : null}
+      {verification.browserReplay?.required ? (
+        <section className={`verification-replay-evidence replay-${verification.browserReplay.status}`} aria-labelledby="verification-replay-title">
+          <div>
+            <p className="kicker">Exact rendered comparison</p>
+            <strong id="verification-replay-title">{verification.browserReplay.baseline?.title}</strong>
+            <p>{verification.browserReplay.baseline?.evidence}</p>
+          </div>
+          <dl>
+            <div>
+              <dt>State</dt>
+              <dd>{verification.browserReplay.status?.replaceAll("-", " ")}</dd>
+            </div>
+            <div>
+              <dt>Viewport</dt>
+              <dd>{verification.browserReplay.baseline?.source?.strategy}</dd>
+            </div>
+            <div>
+              <dt>Agent outcome</dt>
+              <dd>{verification.browserReplay.outcome ?? "Waiting"}</dd>
+            </div>
+          </dl>
+          {verification.browserReplay.summary ? <p>{verification.browserReplay.summary}</p> : null}
+        </section>
       ) : null}
       <RepositoryPlanCard plan={verification.repositoryPlan} />
       {implementation ? (
@@ -1290,7 +1409,7 @@ function VerificationBanner({ verification }) {
         </div>
       ) : null}
       <EvidenceTrail lineage={verification.lineage} />
-      {proof?.current?.auditId ? (
+      {proof?.current?.auditId && !replayPending ? (
         <div className="proof-actions">
           <a href={auditService.getVerificationReceiptUrl(proof.current.auditId)} download>
             <DownloadSimple size={15} weight="bold" aria-hidden="true" />
@@ -1310,6 +1429,7 @@ function RuleScopeReceipt({ scope, fallbackSource, outcomes = [], outcomeLabels 
       ? [fallbackSource]
       : [];
   if (!sources.length) return null;
+  const browserScope = sources.every((source) => source.provider === "Frontmend browser review");
   const occurrenceCount = Number.isFinite(scope?.occurrenceCount)
     ? Math.max(sources.length, scope.occurrenceCount)
     : sources.length;
@@ -1326,7 +1446,7 @@ function RuleScopeReceipt({ scope, fallbackSource, outcomes = [], outcomeLabels 
       <header>
         <div>
           <p className="kicker">Frozen rule scope</p>
-          <strong>{occurrenceCount} measured occurrence{occurrenceCount === 1 ? "" : "s"}</strong>
+          <strong>{occurrenceCount} {browserScope ? "retained" : "measured"} occurrence{occurrenceCount === 1 ? "" : "s"}</strong>
         </div>
         <span>{mode === "verification" ? "Fresh outcomes" : "All must pass"}</span>
       </header>
@@ -1349,7 +1469,9 @@ function RuleScopeReceipt({ scope, fallbackSource, outcomes = [], outcomeLabels 
       </ol>
       <p>
         {mode === "verification"
-          ? "Resolution requires an explicit pass for every listed strategy."
+          ? browserScope
+            ? "Resolution requires an explicit fresh browser pass for the retained rendered issue."
+            : "Resolution requires an explicit pass for every listed strategy."
           : "This scope is carried into verification; one passing strategy cannot hide another failure."}
         {omitted ? ` ${omitted} additional occurrence${omitted === 1 ? " was" : "s were"} omitted by the evidence bound.` : ""}
       </p>
@@ -2570,7 +2692,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
               <DownloadSimple size={16} weight="bold" aria-hidden="true" />
               Export report
             </a>
-            {missionState.assessmentComplete ? (
+            {!report.verification && missionState.assessmentComplete ? (
               <a
                 className="share-audit assessment-receipt-action"
                 href={auditService.getAssessmentReceiptUrl(report.auditId)}
@@ -2582,7 +2704,7 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
             ) : null}
           </div>
           <p className="kicker">
-            Audit complete · {evidenceLabel}
+            {report.verification ? "Verification measurement complete" : "Audit complete"} · {evidenceLabel}
           </p>
           <h1 id="report-title">{report.hostname}</h1>
         </div>
@@ -2599,10 +2721,11 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
         audit={audit}
         diagnosticMissions={diagnosticMissions}
         repairs={repairs}
+        browserReview={browserReview}
         missionState={missionState}
       />
 
-      <BrowserReviewMission state={missionState} review={browserReview} />
+      <BrowserReviewMission state={missionState} review={browserReview} verification={report.verification} />
 
       {shareState === "manual" ? (
         <div className="manual-share" role="status">

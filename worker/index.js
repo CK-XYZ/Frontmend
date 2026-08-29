@@ -44,6 +44,7 @@ import {
 import {
   browserReviewSnapshot,
   createBrowserReviewMission,
+  createBrowserVerificationReview,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
 
@@ -86,6 +87,7 @@ function publicError(error) {
             "REVISION_NOT_REQUESTED",
             "DIAGNOSTIC_MISSION_REQUIRED",
             "ASSESSMENT_INCOMPLETE",
+            "VERIFICATION_RECEIPT_UNAVAILABLE",
             "BROWSER_REVIEW_SEQUENCE",
             "BROWSER_REVIEW_COMPLETE",
             "BROWSER_REVIEW_CHECK_COMPLETE",
@@ -1350,8 +1352,9 @@ export class FrontmendAuditJob {
   }
 
   async handleBrowserReview(request, url, state) {
-    if (state.status !== "complete" || !state.report || !state.mission) {
-      return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the assessment measurement before opening its browser review."));
+    const verificationReplay = state.verification?.browserReplay?.required === true;
+    if (state.status !== "complete" || !state.report || (!state.mission && !verificationReplay)) {
+      return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the measurement before opening its browser review."));
     }
     const match = url.pathname.match(/^\/browser-review(?:\/([^/]+)\/(checks))?$/);
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That browser review route does not exist."));
@@ -1369,11 +1372,17 @@ export class FrontmendAuditJob {
       if (extra) return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
       if (stored) return json({ ok: true, data: browserReviewSnapshot(stored) });
       try {
-        const review = createBrowserReviewMission({
-          auditId: state.id,
-          mission: state.mission,
-          target: state.report.finalUrl ?? state.report.url ?? state.url,
-        });
+        const review = verificationReplay
+          ? createBrowserVerificationReview({
+              auditId: state.id,
+              verification: state.verification,
+              target: state.report.finalUrl ?? state.report.url ?? state.url,
+            })
+          : createBrowserReviewMission({
+              auditId: state.id,
+              mission: state.mission,
+              target: state.report.finalUrl ?? state.report.url ?? state.url,
+            });
         await this.ctx.storage.put("browserReview", review);
         return json({ ok: true, data: review }, { status: 201 });
       } catch (error) {
@@ -1392,6 +1401,21 @@ export class FrontmendAuditJob {
       try {
         const review = recordBrowserReviewCheck(stored, check, source);
         await this.ctx.storage.put("browserReview", review);
+        if (verificationReplay) {
+          const updated = {
+            ...state,
+            report: {
+              ...state.report,
+              verification: compareVerification(
+                state.report,
+                state.verification,
+                Date.now(),
+                review,
+              ),
+            },
+          };
+          await this.ctx.storage.put("state", updated);
+        }
         return json({ ok: true, data: review });
       } catch (error) {
         return errorResponse(error);

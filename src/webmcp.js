@@ -133,9 +133,12 @@ export function contextualFrontmendToolNames(service) {
         browserReview,
       })
     : null;
+  const verificationReplay = audit.report?.verification?.browserReplay ?? null;
+  const verificationReplayRequired = verificationReplay?.required === true;
+  const verificationReplayComplete = !verificationReplayRequired || verificationReplay.status === "complete";
   const browserReviewComplete = !missionState?.browserReview?.required || missionState.browserReview.status === "complete";
 
-  if (audit.report?.verification) available.add("get_verification_receipt");
+  if (audit.report?.verification && verificationReplayComplete) available.add("get_verification_receipt");
   if (
     !audit.report?.verification &&
     audit.report?.engine?.provider &&
@@ -156,10 +159,20 @@ export function contextualFrontmendToolNames(service) {
   if (missionState?.browserReview?.required && !browserReview) {
     available.add("open_browser_review");
   }
+  if (verificationReplayRequired && !browserReview) {
+    available.add("open_browser_review");
+  }
   if (
     missionState?.browserReview?.required &&
     browserReview &&
     missionState.browserReview.status !== "complete"
+  ) {
+    available.add("record_browser_review_check");
+  }
+  if (
+    verificationReplayRequired &&
+    browserReview &&
+    browserReview.state?.status !== "complete"
   ) {
     available.add("record_browser_review_check");
   }
@@ -413,7 +426,7 @@ export function createFrontmendTools(service) {
       name: "open_browser_review",
       title: "Open agent browser review",
       description:
-        "Open the persisted rendered-browser contribution required by an agent-started accessibility or SEO assessment. Frontmend returns one exact, non-destructive browser check at a time so the agent can inspect the target with browser controls instead of repeating Lighthouse output. This creates no site interaction by itself, accepts no findings, and does not inspect source or claim the page passed.",
+        "Open the exact rendered-browser contribution required by an agent-started accessibility or SEO assessment, or the fresh replay required to verify a retained browser finding after deployment. Frontmend returns one non-destructive browser check at a time so the agent inspects the rendered target instead of repeating provider output. This creates no site interaction by itself, accepts no findings, and does not inspect source or claim the page passed.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -446,7 +459,7 @@ export function createFrontmendTools(service) {
       name: "record_browser_review_check",
       title: "Record browser review check",
       description:
-        "Record the current exact browser-review check after using real browser controls on the retained target. Supply bounded observed facts, and structured findings only when the browser check actually exposed an issue. Use blocked with an exact reason when the browser, safe interaction, authentication, capability, or retained target prevents honest inspection. Frontmend keeps provider and browser provenance separate, advances to the next check, and never treats this contribution as repository, deployment, or resolution proof.",
+        "Record the current exact browser-review check after using real browser controls on the retained target. Supply bounded observed facts; assessment issues require structured findings, while verification replay compares the retained finding and must not create a new one. Use blocked with an exact reason when the browser, safe interaction, authentication, capability, or retained target prevents honest inspection. Frontmend keeps provider and browser provenance separate and never treats this contribution as repository or deployment proof.",
       inputSchema: {
         type: "object",
         properties: {
@@ -479,7 +492,7 @@ export function createFrontmendTools(service) {
               required: ["title", "severity", "focusArea", "evidence", "suggestedRepair"],
               additionalProperties: false,
             },
-            description: "One to three browser-observed issues, required only when outcome is issue.",
+            description: "One to three browser-observed issues, required for an assessment issue and omitted for a verification replay of the retained finding.",
           },
           blockerReason: {
             type: "string",
@@ -514,12 +527,19 @@ export function createFrontmendTools(service) {
           browserReview: review,
           acceptedCheck: review.results.find((result) => result.checkId === value.checkId) ?? null,
           assessmentComplete: Boolean(service?.getAuditMissionState?.(auditId)?.assessmentComplete),
+          verificationComplete: review.purpose === "verification" && review.state.complete,
           nextAction: review.state.complete
-            ? {
-                tool: "get_site_audit_results",
-                input: { auditId },
-                reason: "Re-read the combined provider and browser evidence to continue the persisted mission.",
-              }
+            ? review.purpose === "verification"
+              ? {
+                  tool: "get_verification_receipt",
+                  input: { auditId },
+                  reason: "The exact fresh browser comparison is complete, so Frontmend can now return the bounded verification receipt.",
+                }
+              : {
+                  tool: "get_site_audit_results",
+                  input: { auditId },
+                  reason: "Re-read the combined provider and browser evidence to continue the persisted mission.",
+                }
             : {
                 tool: "record_browser_review_check",
                 input: { reviewId: review.id, checkId: nextCheck?.id },

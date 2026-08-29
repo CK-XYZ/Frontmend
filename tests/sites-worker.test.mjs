@@ -7,6 +7,7 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import worker, { FrontmendAuditGate, FrontmendAuditJob } from "../worker/index.js";
 import { createLocalAuditRuntime } from "../worker/local-runtime.js";
+import { compareVerification } from "../src/repair-contract.js";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -1502,6 +1503,150 @@ test("audit jobs export portable receipts only for completed verification proof"
   assert.match(response.headers.get("content-type"), /text\/markdown/);
   assert.match(response.headers.get("content-disposition"), new RegExp(auditId));
   assert.match(await response.text(), /Evidence artifact only/);
+});
+
+test("browser-finding verification withholds its receipt until the Durable Object records an exact replay", async () => {
+  const auditId = "c1de4f26-c222-4e44-a7e5-884ba6d9fe9a";
+  const source = {
+    provider: "Frontmend browser review",
+    auditId: "responsive-reflow:01",
+    strategy: "mobile",
+  };
+  const browserBaseline = {
+    findingId: "browser:responsive-reflow:01",
+    title: "Primary action clips at narrow widths",
+    category: "Accessibility",
+    focusArea: "accessibility",
+    selector: "button.primary-action",
+    evidence: "The right edge of the primary action is clipped at the mobile viewport.",
+    repair: "Allow the action row to wrap within the viewport.",
+    source,
+    browserReviewEvidence: {
+      reviewId: "baseline-review",
+      checkId: "responsive-reflow",
+      checkLabel: "Responsive reflow",
+      provenance: "agent-reported-browser",
+      reportedAt: 90,
+    },
+  };
+  const verification = {
+    url: "https://example.com/",
+    baselineAuditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    repairId: "3e8fe191-1f46-4f1b-92ac-492a5d73bb24",
+    repairRevision: 1,
+    findingId: browserBaseline.findingId,
+    findingTitle: browserBaseline.title,
+    findingSource: source,
+    findingScope: { occurrenceCount: 1, occurrencesOmitted: 0, sources: [source] },
+    baselineEngine: {
+      mode: "live-lighthouse",
+      provider: "PageSpeed Insights",
+      ruleSetVersion: 1,
+      lighthouseVersion: "13.4.1",
+    },
+    baselineEvidence: {
+      mode: "live-lighthouse",
+      provider: "PageSpeed Insights",
+      ruleSetVersion: 1,
+      lighthouseVersion: "13.4.1",
+      measuredStrategies: ["mobile"],
+      scoreBasis: "measured-lighthouse-viewports",
+      documentSupplement: null,
+    },
+    baseline: {
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      completedAt: 100,
+      score: 90,
+      findingCount: 1,
+      checks: { passed: 9, warnings: 0, failed: 1 },
+      exactRuleOutcome: "failed",
+      scopeRuleOutcomes: [{ source, status: "failed" }],
+    },
+    lineage: {
+      rootAuditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      findingSource: source,
+      findingScope: { occurrenceCount: 1, occurrencesOmitted: 0, sources: [source] },
+      attemptCount: 0,
+      omitted: 0,
+      entries: [{
+        auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+        completedAt: 100,
+        score: 90,
+        findingCount: 1,
+        checksPassed: 9,
+        exactRuleOutcome: "failed",
+        attempt: 0,
+        status: "baseline",
+      }],
+    },
+    browserReplay: { required: true, status: "not-opened", baseline: browserBaseline },
+    deploymentAttestedAt: 110,
+  };
+  const freshReport = {
+    auditId,
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 120,
+    score: 94,
+    scoreBasis: "measured-lighthouse-viewports",
+    findingCount: 0,
+    checks: { passed: 10, warnings: 0, failed: 0 },
+    viewports: [{ id: "mobile" }],
+    engine: verification.baselineEngine,
+    findings: [],
+    ruleOutcomes: [],
+  };
+  freshReport.verification = compareVerification(freshReport, verification, 125);
+  const values = new Map([["state", {
+    id: auditId,
+    url: freshReport.url,
+    source: "verification",
+    mission: null,
+    verification,
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: freshReport,
+  }]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const early = await job.fetch(new Request("https://frontmend.internal/receipt"));
+  assert.equal(early.status, 409);
+  assert.equal((await early.json()).error.code, "VERIFICATION_RECEIPT_UNAVAILABLE");
+
+  const openedResponse = await job.fetch(new Request("https://frontmend.internal/browser-review", {
+    method: "POST",
+    body: "{}",
+  }));
+  assert.equal(openedResponse.status, 201);
+  const opened = (await openedResponse.json()).data;
+  assert.equal(opened.purpose, "verification");
+  assert.equal(opened.state.nextCheck.id, "fresh-browser-replay");
+
+  const recorded = await job.fetch(new Request(
+    `https://frontmend.internal/browser-review/${opened.id}/checks`,
+    {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        checkId: "fresh-browser-replay",
+        outcome: "passed",
+        summary: "The entire primary action is now visible at the retained mobile viewport.",
+        observations: ["No horizontal clipping is visible around the primary action."],
+      }),
+    },
+  ));
+  assert.equal(recorded.status, 200);
+  assert.equal(values.get("state").report.verification.status, "resolved");
+  assert.equal(values.get("state").report.verification.browserReplay.outcome, "passed");
+
+  const receipt = await job.fetch(new Request("https://frontmend.internal/receipt"));
+  assert.equal(receipt.status, 200);
+  assert.match(await receipt.text(), /Fresh browser replay[\s\S]*No horizontal clipping/i);
 });
 
 test("audit jobs export completed audit evidence and reject incomplete jobs", async () => {

@@ -43,6 +43,7 @@ import {
 import {
   browserReviewSnapshot,
   createBrowserReviewMission,
+  createBrowserVerificationReview,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
 
@@ -676,8 +677,9 @@ export function createLocalAuditRuntime(options = {}) {
         const [, auditId, rawReviewId, action] = browserReviewMatch;
         const baseline = jobs.get(auditId);
         if (!baseline) return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
-        if (baseline.status !== "complete" || !baseline.report || !baseline.mission) {
-          return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the assessment measurement before opening its browser review."), 409);
+        const verificationReplay = baseline.verification?.browserReplay?.required === true;
+        if (baseline.status !== "complete" || !baseline.report || (!baseline.mission && !verificationReplay)) {
+          return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the measurement before opening its browser review."), 409);
         }
         if (!rawReviewId && request.method === "GET") {
           return sendJson(response, 200, {
@@ -695,11 +697,17 @@ export function createLocalAuditRuntime(options = {}) {
           if (extra) return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
           if (baseline.browserReview) return sendJson(response, 200, { ok: true, data: browserReviewSnapshot(baseline.browserReview) });
           try {
-            baseline.browserReview = createBrowserReviewMission({
-              auditId,
-              mission: baseline.mission,
-              target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
-            });
+            baseline.browserReview = verificationReplay
+              ? createBrowserVerificationReview({
+                  auditId,
+                  verification: baseline.verification,
+                  target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
+                })
+              : createBrowserReviewMission({
+                  auditId,
+                  mission: baseline.mission,
+                  target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
+                });
             return sendJson(response, 201, { ok: true, data: baseline.browserReview });
           } catch (error) {
             return sendError(response, error);
@@ -717,6 +725,14 @@ export function createLocalAuditRuntime(options = {}) {
           }
           try {
             baseline.browserReview = recordBrowserReviewCheck(baseline.browserReview, check, source);
+            if (verificationReplay) {
+              baseline.report.verification = compareVerification(
+                baseline.report,
+                baseline.verification,
+                Date.now(),
+                baseline.browserReview,
+              );
+            }
             return sendJson(response, 200, { ok: true, data: baseline.browserReview });
           } catch (error) {
             return sendError(response, error);
@@ -963,16 +979,24 @@ export function createLocalAuditRuntime(options = {}) {
         if (job.status !== "complete" || !job.report) {
           return sendError(response, new AuditError("AUDIT_NOT_READY", "The audit is still running."), 409);
         }
-        const markdown = verificationReceiptMarkdown(job.report);
-        response.statusCode = 200;
-        response.setHeader("content-type", "text/markdown; charset=utf-8");
-        response.setHeader(
-          "content-disposition",
-          `attachment; filename="frontmend-verification-${job.id}.md"`,
-        );
-        response.setHeader("cache-control", "no-store");
-        response.setHeader("x-content-type-options", "nosniff");
-        return response.end(markdown);
+        try {
+          const markdown = verificationReceiptMarkdown(job.report);
+          response.statusCode = 200;
+          response.setHeader("content-type", "text/markdown; charset=utf-8");
+          response.setHeader(
+            "content-disposition",
+            `attachment; filename="frontmend-verification-${job.id}.md"`,
+          );
+          response.setHeader("cache-control", "no-store");
+          response.setHeader("x-content-type-options", "nosniff");
+          return response.end(markdown);
+        } catch (error) {
+          return sendError(
+            response,
+            error,
+            error?.code === "VERIFICATION_RECEIPT_UNAVAILABLE" ? 409 : 400,
+          );
+        }
       }
       if (resource === "report") {
         if (job.status !== "complete" || !job.report) {

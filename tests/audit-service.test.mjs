@@ -236,6 +236,59 @@ test("synchronizes a browser review and records only bounded agent evidence", as
   });
 });
 
+test("refreshes the active verification report after a browser replay contribution", async () => {
+  const waitingReport = {
+    auditId: AUDIT_ID,
+    verification: {
+      status: "inconclusive",
+      browserReplay: { required: true, status: "not-opened" },
+    },
+  };
+  const completedReport = {
+    ...waitingReport,
+    verification: {
+      status: "resolved",
+      browserReplay: { required: true, status: "complete", outcome: "passed" },
+    },
+  };
+  const review = {
+    schemaVersion: 1,
+    id: "verification-review-1",
+    auditId: AUDIT_ID,
+    purpose: "verification",
+    state: { status: "complete", complete: true, nextCheck: null },
+  };
+  let resultReads = 0;
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        status: "complete",
+        progress: 100,
+        report: waitingReport,
+      }),
+      recordBrowserReviewCheck: async () => review,
+      results: async () => {
+        resultReads += 1;
+        return completedReport;
+      },
+    },
+  });
+  await service.startAudit({ url: "example.com" });
+  await service.recordBrowserReviewCheck(AUDIT_ID, review.id, {
+    checkId: "fresh-browser-replay",
+    outcome: "passed",
+    summary: "The exact issue is no longer visible.",
+    observations: ["The retained control is fully visible."],
+  });
+  assert.equal(resultReads, 1);
+  assert.equal(service.getActiveAudit().report.verification.status, "resolved");
+  assert.equal(service.getBrowserReview(AUDIT_ID).purpose, "verification");
+});
+
 test("HTTP transport uses the browser-review singleton and sequenced check routes", async () => {
   const calls = [];
   const transport = createHttpAuditTransport({

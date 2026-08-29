@@ -8,6 +8,7 @@ import {
 } from "../src/webmcp.js";
 import {
   createBrowserReviewMission,
+  createBrowserVerificationReview,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
 
@@ -680,6 +681,105 @@ test("browser review tools turn one exact browser task at a time into attributed
   assert.equal(final.data.browserReview.findings[0].browserReviewEvidence.provenance, "agent-reported-browser");
   assert.equal(final.data.nextAction.tool, "get_site_audit_results");
   assert.deepEqual(calls.map((call) => call[0]), ["open", "record", "record"]);
+});
+
+test("contextual WebMCP withholds a browser-finding receipt until one exact fresh replay completes", async () => {
+  const auditId = "c1de4f26-c222-4e44-a7e5-884ba6d9fe9a";
+  const verificationContext = {
+    browserReplay: {
+      required: true,
+      status: "not-opened",
+      baseline: {
+        findingId: "browser:responsive-reflow:01",
+        title: "Primary action clips at narrow widths",
+        category: "Accessibility",
+        focusArea: "accessibility",
+        selector: "button.primary-action",
+        evidence: "The right edge of the primary action is clipped at the mobile viewport.",
+        repair: "Allow the action row to wrap within the viewport.",
+        source: {
+          provider: "Frontmend browser review",
+          auditId: "responsive-reflow:01",
+          strategy: "mobile",
+        },
+        browserReviewEvidence: {
+          reviewId: "baseline-review",
+          checkId: "responsive-reflow",
+          checkLabel: "Responsive reflow",
+          reportedAt: 10,
+        },
+      },
+    },
+  };
+  let review = null;
+  const audit = {
+    id: auditId,
+    status: "complete",
+    report: {
+      auditId,
+      findings: [],
+      verification: {
+        status: "inconclusive",
+        browserReplay: verificationContext.browserReplay,
+      },
+    },
+  };
+  const service = {
+    getActiveAudit: () => audit,
+    getBrowserReview: () => review,
+    getRepairs: () => [],
+    getDiagnosticMissions: () => [],
+    getSiteExplorations: () => [],
+    openBrowserReview: async () => {
+      review = createBrowserVerificationReview({
+        auditId,
+        verification: verificationContext,
+        target: "https://example.com/",
+        now: 20,
+      });
+      return review;
+    },
+    recordBrowserReviewCheck: async (_auditId, _reviewId, input, source) => {
+      review = recordBrowserReviewCheck(review, input, source, 30);
+      audit.report.verification = {
+        ...audit.report.verification,
+        status: input.outcome === "passed" ? "resolved" : "still-present",
+        browserReplay: {
+          ...verificationContext.browserReplay,
+          status: "complete",
+          outcome: input.outcome,
+        },
+      };
+      return review;
+    },
+  };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "open_browser_review",
+  ]);
+
+  const tools = createFrontmendTools(service);
+  const opened = await findTool(tools, "open_browser_review").execute({});
+  assert.equal(opened.data.nextAction.browserTask.id, "fresh-browser-replay");
+  assert.match(opened.data.nextAction.browserTask.boundary, /Report passed only/i);
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "record_browser_review_check",
+  ]);
+
+  const completed = await findTool(tools, "record_browser_review_check").execute({
+    reviewId: review.id,
+    checkId: "fresh-browser-replay",
+    outcome: "passed",
+    summary: "The entire primary action is visible at the retained mobile viewport.",
+    observations: ["No horizontal clipping is visible around the primary action."],
+  });
+  assert.equal(completed.data.verificationComplete, true);
+  assert.equal(completed.data.nextAction.tool, "get_verification_receipt");
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_verification_receipt",
+  ]);
 });
 
 test("prepare repair tool records only explicit finding intent", async () => {
