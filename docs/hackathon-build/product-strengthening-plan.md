@@ -425,7 +425,7 @@ bun run build
 - [x] **3. WebMCP mission inspector** — implemented and statically verified on 30 August 2026; fresh visual/keyboard proof remains separate
 - [x] **4. Fresh-session mission checkpoints** — completed and verified locally on 30 August 2026
 - [x] **5. Reviewed repair impact and verification matrix** — completed and verified locally on 30 August 2026
-- [ ] **6. Full command-safe regression and release gate**
+- [x] **6. Full command-safe regression and release gate** — 193/193 tests, production build, and strict no-upload Wrangler dry run passed from application commit `3022965` on 30 August 2026
 - [ ] **7. Fresh current-candidate browser proof after explicit deployment/server authority**
 
 Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler.

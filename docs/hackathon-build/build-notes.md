@@ -277,3 +277,13 @@
 - The targeted contract, repair, exploration, route, service, WebMCP, Durable Object, local-runtime, and Sites packaging gate passed 128/128 tests across seven files.
 - The production build transformed 4,583 modules and emitted `index-D0dRpatv.css` at 89.80 kB raw / 17.98 kB gzip and `index-Peqf3JrG.js` at 507.40 kB raw / 137.80 kB gzip. Vite retained the chunk-size advisory for the main JavaScript bundle.
 - No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — Evidence-driven product release gate
+
+- Froze application commit `30229659813248cd379567cf627c4bfe9caceede` before the final documentation update; `git status --short` was empty at the start of the gate.
+- `bun test` passed 193/193 tests across 16 files with Bun 1.4.0, including the packaging build exercised by the Sites Worker suite.
+- `bun run build` passed with Vite 6.4.2, transformed 4,583 modules, and emitted `index.html` at 0.71 kB raw / 0.42 kB gzip, `index-D0dRpatv.css` at 89.80 kB raw / 17.98 kB gzip, and `index-Peqf3JrG.js` at 507.40 kB raw / 137.80 kB gzip, plus the Worker artifact and Sites metadata.
+- Vite retained the advisory that the main JavaScript chunk is larger than 500 kB after minification. This is recorded as a warning rather than hidden or treated as a deployment failure.
+- `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` passed with Wrangler 4.126.0, read five assets, reported 361.03 KiB raw / 76.10 KiB gzip, recognised `FrontmendAuditGate`, `FrontmendAuditJob`, and `ASSETS`, and exited with `--dry-run: exiting now`; nothing was uploaded.
+- `git diff --check` produced no errors and `git status --short` was empty after the clean application gate.
+- This is local test, build, and packaging evidence only. No server, deployment, push, Access change, supported-browser proof, live WebMCP proof, public-repository publication, or Devpost write occurred. Fresh-session and post-deployment browser proof remain unchecked.
