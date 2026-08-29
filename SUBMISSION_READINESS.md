@@ -48,11 +48,11 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 ## Current proof receipt
 
-- [x] `bun test`: 94 passing tests across service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
+- [x] `bun test`: 124 passing tests across mission, service, provider, route-lineage, cross-page exploration, repair, Worker, local-runtime, and WebMCP contracts; the packaging contract rebuilds current source before artifact assertions.
 - [x] `bun run build`: Vite client and bundled Worker artifact emitted successfully.
 - [x] `bunx wrangler deploy --dry-run --strict`: five static assets plus both Durable Object bindings recognized; local Worker bundle 156.46 KiB raw / 35.36 KiB gzip.
 - [x] Clean-copy receipt: Socket-scanned `bun install --frozen-lockfile`, `bun test` (47 passes including a fresh Vite/Sites build), and Wrangler dry-run all passed without an existing `node_modules` or `dist`.
-- [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current fourteen-tool library, and completed reports still register only their applicable result, exploration, and repair capabilities.
+- [x] In-app-browser contextual WebMCP discovery on port 3434: landing exposed only `start_site_audit`; that historical receipt predates the current seventeen-tool library, and completed reports still register only their applicable result, exploration, diagnosis, preparation, and repair capabilities.
 - [x] Dynamic lifecycle proof on genuine audit `3d5fa898`: the running page advertised exactly `check_site_audit_progress` plus `cancel_site_audit`, rendered the human **Cancel audit** control, then removed both and exposed the three applicable completed-report capabilities.
 - [x] Live cancellation proof `7c70fe45`: a real `removemyexif.com` run returned and restored persisted `cancelled` state; a repeated start returned HTTP 202 under the same ID as attempt 2 and completed with score 89 using fresh live-document evidence.
 - [x] Real site-exploration proof: homepage audit `ad95d84f` exposed eight observed paths plus 33 omitted; WebMCP started `/tools/remove-pdf-metadata` as audit `7bf9d065`, and the human route control started `/tools` as audit `3f3972ab`. The baseline ID, stable paths, visible state, exported caveat, and zero browser console errors were verified.

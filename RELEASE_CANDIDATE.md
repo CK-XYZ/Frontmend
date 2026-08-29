@@ -24,7 +24,7 @@ Run from `Ideas/Frontmend`:
 
 | Gate | Command | Result on 29 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — 106 passed, 0 failed on the local application candidate |
+| Tests | `bun test` | PASS — 124 passed, 0 failed on the local application candidate |
 | Production build | `bun run build` | PASS — 4,575 modules transformed; client and Worker artifacts emitted |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | PASS after regeneration, before generated trailing-whitespace normalisation; bindings match `ASSETS`, `AUDIT_GATE`, and `AUDIT_JOBS` |
 | Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — five assets; 194.80 KiB raw / 43.44 KiB gzip Worker upload; no upload performed |

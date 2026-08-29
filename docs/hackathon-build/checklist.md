@@ -59,7 +59,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Selecting a mission priority selects its existing finding; cross-viewport occurrences remain visible; the action explains it records intent but is not approval/deployment; successful transition updates mission state and re-registers contextual tools; 390 px semantics and interaction remain safe by static/build evidence pending authorised browser proof.
   Verify: `bun test tests/webmcp.test.mjs tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/repair-contract.test.mjs` plus `bun run build`
 
-- [ ] **8. Harden the full contract and regression suite**
+- [x] **8. Harden the full contract and regression suite**
   Spec ref: `spec.md > Tests And Verification`; `spec.md > Security And Privacy`
   What to build: Fill cross-layer coverage for unknown fields, privacy boundaries, admission signatures, retry, reload, stale/conflicting intent, diagnostic completion, contextual tool changes, delegated-auto non-consumption, person-only deployment, and raw prompt/source/absolute-path exclusion. Update expected tool inventories and package test counts truthfully.
   Acceptance: All new PRD acceptance boundaries have direct deterministic coverage; existing cancellation, exploration, repair revision, implementation history, deployment gate, verification comparability, and human fallback contracts remain green.

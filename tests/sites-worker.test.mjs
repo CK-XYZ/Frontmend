@@ -931,12 +931,33 @@ test("local development shares the bounded repair-intent transition without cons
     headers: writeHeaders,
     body: JSON.stringify({ findingId, source: "human" }),
   });
+  const stage = () => callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/repairs`,
+    headers: writeHeaders,
+    body: JSON.stringify({ findingId, source: "human" }),
+  });
+  const blocked = await stage();
+  assert.equal(blocked.status, 409);
+  assert.equal(JSON.parse(blocked.body).error.code, "REPAIR_INTENT_REQUIRED");
+  const rejectedPrompt = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/mission/prepare-repair`,
+    headers: writeHeaders,
+    body: JSON.stringify({ findingId, source: "human", prompt: "private repository context" }),
+  });
+  assert.equal(rejectedPrompt.status, 400);
+  assert.equal(JSON.parse(rejectedPrompt.body).error.code, "INVALID_INPUT");
   const first = await prepare();
   const firstPayload = JSON.parse(first.body).data;
   assert.equal(first.status, 200);
   assert.equal(firstPayload.mission.repairPreparation.findingId, findingId);
   assert.equal(firstPayload.audit.mission.intent, "prepare-fix");
   assert.equal((await prepare()).status, 200);
+
+  const staged = await stage();
+  assert.equal(staged.status, 201);
+  assert.equal(JSON.parse(staged.body).data.findingId, findingId);
 
   const repairs = JSON.parse((await callLocalRuntime(
     middleware,
@@ -946,7 +967,7 @@ test("local development shares the bounded repair-intent transition without cons
     middleware,
     { url: `/api/audits/${auditId}/repair-policy` },
   )).body).data;
-  assert.deepEqual(repairs.repairs, []);
+  assert.equal(repairs.repairs.length, 1);
   assert.deepEqual(policyAfter, policyBefore);
 });
 

@@ -126,6 +126,61 @@ test("validates mission goals before transport and sends only bounded semantic f
   assert.equal(calls[0].init.body.includes("prompt"), false);
 });
 
+test("retains mission goals through partial polling and fresh restoration", async () => {
+  const report = { auditId: AUDIT_ID, schemaVersion: 2, findings: [], viewports: [] };
+  const service = createAuditService({
+    now: () => 10,
+    transport: {
+      start: async ({ url, source }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        status: "queued",
+        phase: "queued",
+        progress: 4,
+      }),
+      get: async () => ({
+        id: AUDIT_ID,
+        url: "https://example.com/",
+        source: "agent",
+        status: "running",
+        phase: "capture",
+        progress: 48,
+      }),
+      results: async () => report,
+    },
+  });
+
+  const started = await service.startAudit({
+    url: "example.com",
+    source: "agent",
+    mission: { focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+  });
+  const polled = await service.getAudit(AUDIT_ID);
+  assert.deepEqual(polled.mission, started.mission);
+  await service.getResults(AUDIT_ID);
+  assert.deepEqual(service.getActiveAudit().mission, started.mission);
+  assert.equal(service.getActiveAuditMissionState().assessmentComplete, true);
+
+  const restored = createAuditService({
+    transport: {
+      get: async () => ({
+        id: AUDIT_ID,
+        url: "https://example.com/",
+        source: "agent",
+        status: "complete",
+        phase: "complete",
+        progress: 100,
+        report,
+        mission: started.mission,
+      }),
+    },
+  });
+  await restored.getAudit(AUDIT_ID);
+  assert.deepEqual(restored.getActiveAudit().mission.focusAreas, ["accessibility", "seo"]);
+  assert.equal(restored.getActiveAuditMissionState().assessmentComplete, true);
+});
+
 test("prepares one retained finding through the service and derives the remembered mission", async () => {
   const calls = [];
   let audit;

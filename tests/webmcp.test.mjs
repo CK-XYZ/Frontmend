@@ -567,6 +567,81 @@ test("prepare repair tool records only explicit finding intent", async () => {
   assert.equal(calls.length, 1);
 });
 
+test("repair preparation updates contextual tools without exposing person-only authority", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const finding = {
+    id: "document-description",
+    title: "The document has no description",
+    severity: "medium",
+    focusAreas: ["seo"],
+    source: { provider: "Frontmend document audit", auditId: "description", strategy: "document" },
+  };
+  let audit;
+  let notifications = 0;
+  const service = createAuditService({
+    now: () => 10,
+    transport: {
+      start: async ({ url, source, mission }) => {
+        audit = {
+          id: auditId,
+          url,
+          source,
+          mission,
+          status: "complete",
+          phase: "complete",
+          progress: 100,
+          report: { auditId, findings: [finding] },
+        };
+        return audit;
+      },
+      prepareRepair: async (_auditId, findingId, source) => {
+        audit = {
+          ...audit,
+          mission: {
+            ...audit.mission,
+            intent: "prepare-fix",
+            repairPreparation: { findingId, requestedBy: source, requestedAt: 20 },
+          },
+        };
+        return {
+          audit,
+          mission: audit.mission,
+          missionState: {
+            status: "action-available",
+            nextAction: { tool: "stage_site_repair", input: { findingId } },
+          },
+        };
+      },
+    },
+  });
+  service.subscribe(() => {
+    notifications += 1;
+  });
+  await service.startAudit({ url: "example.com", source: "agent", mission: { focusAreas: ["seo"] } });
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "prepare_site_repair",
+  ]);
+
+  const prepared = await findTool(
+    createFrontmendTools(service),
+    "prepare_site_repair",
+  ).execute({ findingId: finding.id });
+  assert.equal(prepared.ok, true);
+  assert.equal(prepared.data.authority.recordedIntentOnly, true);
+  assert.equal(prepared.data.authority.approved, false);
+  assert.equal(prepared.data.authority.deployed, false);
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "prepare_site_repair",
+    "stage_site_repair",
+  ]);
+  assert.ok(notifications >= 2);
+  assert.equal(TOOL_NAMES.some((name) => /(approve|attest|deploy|repair_policy)/.test(name)), false);
+});
+
 test("staged repair tools disclose delegated auto authority and the next agent action", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";

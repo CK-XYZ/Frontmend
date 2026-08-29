@@ -109,3 +109,13 @@
 - Production and local authoritative runtimes now reject direct repair staging without the retained mission transition, while existing idempotent repair replays remain valid.
 - Responsive rules collapse priorities, evidence metadata, and the preparation action to a single column at narrow widths; interactive 390 px browser proof remains pending an authorised server session.
 - Verification: `bun test tests/webmcp.test.mjs tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/repair-contract.test.mjs` — 90 passed, 0 failed; `bun run build` succeeded with the Sites package prepared.
+
+## 2026-08-29 — Build item 8
+
+- Added direct service coverage proving retained mission focus survives partial transport snapshots and restores into a fresh service session with the same assessment state.
+- Added a real shared-service WebMCP transition test: completed Assess context exposes preparation but not staging, `prepare_site_repair` records intent, subscribers are notified, and the contextual set then exposes staging.
+- The complete seventeen-tool inventory is now asserted to contain no agent approval, repair-policy mutation, deployment, or deployment-attestation capability.
+- Local-runtime parity now rejects repair staging before preparation, rejects a raw `prompt` field at the transition boundary, permits the same bounded human draft after preparation, and leaves repair policy allowance unchanged.
+- Existing pure and integration coverage continues to prove semantic admission signatures, same-ID retry attribution, stale/conflicting intent rejection, diagnostic completion, raw prompt exclusion, source-content rejection, repository-relative paths, human deployment attestation, and honest verification.
+- Updated the documented tool inventory and full-suite count from fresh output rather than historical estimates.
+- Verification: `bun run test` — 124 passed, 0 failed; the packaging contract rebuilt the current Vite/Sites artifact during the run.
