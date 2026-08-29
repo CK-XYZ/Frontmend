@@ -41,7 +41,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: The natural accessibility/SEO call needs no repeated focus on the result call; audit-job completion is distinct from assessment completion; zero matches finish honestly; diagnostic priorities point to exact existing tools; no result claims manual completeness or repair permission.
   Verify: `bun test tests/webmcp.test.mjs tests/audit-mission-contract.test.mjs tests/audit-service.test.mjs`
 
-- [ ] **5. Gate repair tools behind the semantic transition**
+- [x] **5. Gate repair tools behind the semantic transition**
   Spec ref: `spec.md > WebMCP Tools > New prepare_site_repair tool`; `spec.md > WebMCP Tools > Contextual registration changes`
   What to build: Add `prepare_site_repair` as the seventeenth narrow WebMCP tool and update contextual registration so Assess exposes evidence/diagnosis plus the intent transition, while `stage_site_repair` appears only after Prepare fix and existing diagnostic readiness. Preserve all later repair/verification registrations.
   Acceptance: The transition tool accepts only audit/finding IDs; it cannot accept plan/code/policy/deployment data; `stage_site_repair` is absent before and present after a valid transition; verification audits retain receipt access; unsupported WebMCP still leaves the human UI complete.

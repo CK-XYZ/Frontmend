@@ -25,6 +25,7 @@ const TOOL_NAMES = [
   "start_site_exploration",
   "get_site_exploration",
   "get_verification_receipt",
+  "prepare_site_repair",
   "stage_site_repair",
   "revise_site_repair",
   "get_repair_workspace",
@@ -519,6 +520,53 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.deepEqual(mission.focusAreas, ["accessibility", "seo"]);
 });
 
+test("prepare repair tool records only explicit finding intent", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const calls = [];
+  const preparedMission = {
+    schemaVersion: 1,
+    intent: "prepare-fix",
+    focusAreas: ["accessibility"],
+    maxPriorities: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: {
+      findingId: "mobile-color-contrast",
+      requestedBy: "agent",
+      requestedAt: 20,
+    },
+  };
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    prepareRepair: async (...args) => {
+      calls.push(args);
+      return {
+        mission: preparedMission,
+        missionState: {
+          status: "action-available",
+          nextAction: { tool: "stage_site_repair", input: { findingId: "mobile-color-contrast" } },
+        },
+      };
+    },
+  };
+  const tool = findTool(createFrontmendTools(service), "prepare_site_repair");
+  const prepared = await tool.execute({ findingId: "mobile-color-contrast" });
+  assert.equal(prepared.ok, true);
+  assert.deepEqual(calls, [[auditId, "mobile-color-contrast", "agent"]]);
+  assert.equal(prepared.data.authority.recordedIntentOnly, true);
+  assert.equal(prepared.data.authority.approved, false);
+  assert.equal(prepared.data.authority.deployed, false);
+  assert.equal(prepared.data.nextAction.tool, "stage_site_repair");
+
+  const rejected = await tool.execute({
+    findingId: "mobile-color-contrast",
+    patch: "body { color: black; }",
+  });
+  assert.equal(rejected.ok, false);
+  assert.equal(rejected.error.code, "INVALID_INPUT");
+  assert.equal(calls.length, 1);
+});
+
 test("staged repair tools disclose delegated auto authority and the next agent action", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
@@ -851,14 +899,24 @@ test("contextual tool availability follows the visible audit and human review st
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
+    "prepare_site_repair",
+  ]);
+
+  audit.mission = {
+    repairPreparation: { findingId: "csp" },
+  };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "prepare_site_repair",
     "stage_site_repair",
-    "get_repair_workspace",
   ]);
 
   repairs = [{ status: "changes-requested", deploymentAttestedAt: null }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
+    "prepare_site_repair",
     "stage_site_repair",
     "revise_site_repair",
     "get_repair_workspace",
@@ -868,6 +926,7 @@ test("contextual tool availability follows the visible audit and human review st
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
+    "prepare_site_repair",
     "stage_site_repair",
     "get_repair_workspace",
     "record_repository_implementation",
@@ -879,6 +938,7 @@ test("contextual tool availability follows the visible audit and human review st
     "get_site_audit_results",
     "get_repository_fix_brief",
     "get_verification_receipt",
+    "prepare_site_repair",
     "stage_site_repair",
     "get_repair_workspace",
     "start_repair_verification",
@@ -894,23 +954,30 @@ test("contextual tool availability follows the visible audit and human review st
     "get_site_audit_results",
     "get_repository_fix_brief",
     "open_diagnostic_mission",
-    "get_repair_workspace",
+    "prepare_site_repair",
   ]);
-  diagnosticMissions = [{ state: { state: "awaiting-diagnosis" } }];
+  diagnosticMissions = [{ findingId: "console", state: { state: "awaiting-diagnosis" } }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
     "open_diagnostic_mission",
     "submit_runtime_diagnosis",
-    "get_repair_workspace",
+    "prepare_site_repair",
   ]);
-  diagnosticMissions = [{ state: { state: "ready-for-repair" } }];
+  diagnosticMissions = [{ findingId: "console", state: { state: "ready-for-repair" } }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
     "open_diagnostic_mission",
+    "prepare_site_repair",
+  ]);
+  audit.mission = { repairPreparation: { findingId: "console" } };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "get_repository_fix_brief",
+    "open_diagnostic_mission",
+    "prepare_site_repair",
     "stage_site_repair",
-    "get_repair_workspace",
   ]);
 });
 
@@ -936,7 +1003,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 16);
+  assert.equal(snapshots.at(-1).totalTools, 17);
   dispose();
 });
 
@@ -1004,7 +1071,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 16);
+  assert.equal(snapshots.at(-1).totalTools, 17);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

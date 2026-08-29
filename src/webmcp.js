@@ -122,16 +122,25 @@ export function contextualFrontmendToolNames(service) {
   if (explorations.length) available.add("get_site_exploration");
   if (findings.length) {
     available.add("get_repository_fix_brief");
-    available.add("get_repair_workspace");
+    available.add("prepare_site_repair");
   }
+  if (repairs.length) available.add("get_repair_workspace");
   const diagnosticFindings = findings.filter(findingRequiresDiagnosticMission);
   if (diagnosticFindings.length) available.add("open_diagnostic_mission");
   if (diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
     available.add("submit_runtime_diagnosis");
   }
+  const preparedFindingId = audit.mission?.repairPreparation?.findingId ?? null;
+  const preparedFinding = findings.find((finding) => finding.id === preparedFindingId);
+  const preparedDiagnostic = diagnosticMissions.find(
+    (mission) => mission.findingId === preparedFindingId,
+  );
   if (
-    findings.some((finding) => !findingRequiresDiagnosticMission(finding)) ||
-    diagnosticMissions.some((mission) => mission.state?.state === "ready-for-repair")
+    preparedFinding &&
+    (
+      !findingRequiresDiagnosticMission(preparedFinding) ||
+      preparedDiagnostic?.state?.state === "ready-for-repair"
+    )
   ) {
     available.add("stage_site_repair");
   }
@@ -619,6 +628,43 @@ export function createFrontmendTools(service) {
           format: "text/markdown",
           downloadPath: `/api/audits/${encodeURIComponent(auditId)}/receipt`,
           receipt: verificationReceiptMarkdown(report),
+        };
+      },
+    }),
+    tool({
+      name: "prepare_site_repair",
+      title: "Prepare site repair",
+      description:
+        "Record that the person explicitly asked to prepare or fix one assessed finding. Call this only after that explicit request. It freezes the finding and enables a separate bounded repair proposal when diagnosis is ready; it is not approval, does not consume auto-mode allowance, accepts no plan or code, and cannot implement, deploy, or attest anything.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact retained finding the person asked to prepare for repair." },
+        },
+        required: ["findingId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "findingId"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const findingId = requiredString(value.findingId, "findingId", 160);
+        const prepared = await service.prepareRepair(auditId, findingId, "agent");
+        return {
+          auditId,
+          findingId,
+          mission: prepared.mission,
+          missionState: prepared.missionState,
+          workspacePath: `/audits/${encodeURIComponent(auditId)}`,
+          nextAction: prepared.missionState?.nextAction ?? null,
+          authority: {
+            recordedIntentOnly: true,
+            approved: false,
+            implemented: false,
+            deployed: false,
+          },
         };
       },
     }),

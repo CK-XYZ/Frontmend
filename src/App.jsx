@@ -41,7 +41,7 @@ const LANDING_SIGNALS = [
   { label: "Accessibility", detail: "Evidence attached", state: "neutral", icon: ShieldCheck },
   { label: "Verification", detail: "Before and after", state: "good", icon: CheckCircle },
 ];
-const WEBMCP_TOOL_COUNT = 16;
+const WEBMCP_TOOL_COUNT = 17;
 const WEBMCP_TOOL_COPY = {
   start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
   check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
@@ -55,6 +55,7 @@ const WEBMCP_TOOL_COPY = {
   start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
   get_site_exploration: ["Read site exploration", "Inspect mission progress and recurring evidence across selected pages."],
   get_verification_receipt: ["Read verification proof", "Retrieve the portable before-and-after receipt."],
+  prepare_site_repair: ["Prepare one finding for repair", "Record explicit intent without approving, implementing, or deploying anything."],
   stage_site_repair: ["Submit a repository mission", "Share a bounded plan with the person or use their scoped auto grant."],
   revise_site_repair: ["Revise a repair", "Respond to the specific change request left by a person."],
   get_repair_workspace: ["Inspect repair state", "Read proposal versions, ownership, and allowed next actions."],

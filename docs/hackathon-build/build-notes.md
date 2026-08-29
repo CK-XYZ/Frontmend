@@ -81,3 +81,12 @@
 - Optional focus/maximum overrides are labelled `read-only-override` and leave the persisted mission unchanged.
 - Service state preserves the original mission when a legacy or partial transport snapshot omits it.
 - Verification: `bun test tests/webmcp.test.mjs tests/audit-mission-contract.test.mjs tests/audit-service.test.mjs` — 42 passed, 0 failed.
+
+## 2026-08-29 — Build item 5
+
+- Added `prepare_site_repair` as the seventeenth bounded tool. Its only payload is audit/finding identity, and its result states that intent was recorded without approval, implementation, or deployment.
+- Completed Assess context exposes results, evidence, applicable diagnosis/exploration, and repair preparation; it no longer registers repair staging by default.
+- `stage_site_repair` appears only when the exact retained finding has explicit repair preparation and any required diagnostic mission is ready.
+- Existing repair revision, implementation, verification, and verification-receipt tools continue to follow their authoritative retained states.
+- Visible capability copy reports a contextual subset from a seventeen-tool library, including the new intent boundary.
+- Verification: `bun test tests/webmcp.test.mjs tests/diagnostic-contract.test.mjs tests/repair-contract.test.mjs` — 44 passed, 0 failed.
