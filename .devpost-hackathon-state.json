@@ -14,8 +14,8 @@
   },
   "project": {
     "name": "Frontmend",
-    "summary": "A repository-aware accessibility and SEO audit workspace that lets people and agents measure a site, investigate the highest-impact issues, and turn evidence into reviewable fixes.",
-    "ai_usage": "Eighteen contextual WebMCP tools let a compatible coding agent carry a bounded mission from public evidence through repository-aware diagnosis, a portable completion receipt, and an authorised repair handoff.",
+    "summary": "Frontmend turns live site evidence into an agent-guided browser and repository repair loop with human authority and exact fresh verification.",
+    "ai_usage": "Twenty-one contextual WebMCP tools let a compatible coding agent carry a bounded mission through public measurement, exact rendered-browser checks, repository-aware diagnosis, authorised repair, and post-deployment replay while the page preserves evidence and human authority.",
     "codex_usage": "Codex helped scope, implement, test, release-harden, and document the product, and is the repository-aware agent used in the primary workflow."
   },
   "current_stage": "prepare-submission",

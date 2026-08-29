@@ -293,10 +293,12 @@ Return the mission snapshot, workspace path, and a concise next action to poll.
 ### Browser-review tools
 
 - `open_browser_review` opens the persisted review and returns the current exact non-destructive check. It accepts no findings and performs no target interaction itself.
-- `record_browser_review_check` accepts the exact current review/check IDs, `passed | issue | blocked`, a bounded summary, direct observations, up to three structured findings for `issue`, or one exact browser blocker reason.
+- `record_browser_review_check` accepts the exact current review/check IDs, `passed | issue | blocked`, a bounded summary, direct observations, up to three structured findings for an assessment `issue`, or one exact browser blocker reason.
 - Checks are ordered and focus-aware: rendered structure, primary journey, responsive reflow, and search discovery as applicable.
 - Browser findings use `browser-observation` diagnostic provenance and remain distinct from provider measurements.
 - A completed check advances context; a blocker is replaceable only by a later contribution for that same check.
+- When verification originates from a browser finding, `open_browser_review` reuses the same semantic surface for one `fresh-browser-replay` containing the frozen baseline observation, element, check, and viewport. A replay `issue` compares the retained finding and must not create a new finding.
+- The verification receipt is unavailable while that replay is unopened, active, or blocked. A completed pass maps to resolved, a completed issue to still present, and a blocker keeps the same task current.
 
 ### New `prepare_site_repair` tool
 
@@ -322,12 +324,14 @@ Rules:
 
 - Completed provider job with required unopened browser review: expose results plus `open_browser_review`.
 - Active browser review: expose results plus `record_browser_review_check` for the current exact task.
+- Completed verification measurement with a required unopened browser replay: expose results plus `open_browser_review`, but not `get_verification_receipt`.
+- Active or blocked verification replay: expose results plus `record_browser_review_check`; expose the receipt only after the exact replay completes with pass or issue.
 - Completed Assess mission: results, receipt, applicable evidence/exploration tools, diagnostics, and `prepare_site_repair`; do not expose `stage_site_repair` until repair preparation is recorded.
 - Awaiting diagnosis: expose `submit_runtime_diagnosis` and keep results.
 - Awaiting diagnosis: also expose `record_diagnostic_blocker`; after a blocker is recorded, keep `submit_runtime_diagnosis` as a recovery capability but remove blocker creation until real access changes.
 - Prepare fix: expose existing staging/workspace actions according to diagnostic readiness and repair state.
 - Existing revisions, implementation receipts, verification receipts, and verification start continue to follow current repair state.
-- A verification audit's existing receipt tools remain available regardless of root mission intent.
+- A verification audit's receipt remains independent of root mission intent, but a required browser replay must complete before that receipt is available.
 
 The implemented bounded library contains twenty-one tools. Tests and visible capability copy use the contextual subset rather than advertising all tools as simultaneously available.
 

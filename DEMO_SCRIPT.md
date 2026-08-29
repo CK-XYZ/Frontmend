@@ -78,7 +78,11 @@ Ask Codex to verify too early and show the structured `DEPLOYMENT_NOT_ATTESTED` 
 
 ## 2:25–2:45 — Fresh proof
 
-On a genuine controlled receipt, show the person-only deployment handoff followed by a fresh verification audit. Point to the frozen baseline and fresh audit IDs, every captured mobile/desktop/document rule occurrence, repository receipt provenance, and comparable-coverage decision. If one viewport still fails, the result must remain **still present**. If coverage changed, show that summary deltas are withheld.
+On a genuine controlled receipt, show the person-only deployment handoff followed by a fresh verification audit. If the repaired priority came from Lighthouse or document evidence, point to the frozen baseline and fresh audit IDs, every captured mobile/desktop/document occurrence, repository receipt provenance, and comparable-coverage decision.
+
+For the strongest take, repair a browser-observed priority. When fresh provider measurement finishes, show that `get_verification_receipt` is still absent and `open_browser_review` has reappeared. Frontmend should render **Fresh browser replay · WebMCP**, preserve the exact original observation, element and viewport, and return one `fresh-browser-replay` task. Codex revisits the deployed page, performs that exact comparison, and calls `record_browser_review_check` with `passed`, `issue`, or a real blocker. Only a completed pass/issue unlocks the receipt; a blocker keeps the same task resumable. Show the final receipt keeping provider measurement and agent-reported browser proof separate.
+
+If one provider viewport still fails or the browser issue remains, the result must stay **still present**. If provider coverage changed, show that summary deltas are withheld. If the browser replay is blocked, show the claim lock rather than a receipt.
 
 Never rehearse a fake resolution. A truthful still-present or inconclusive result is stronger evidence than an invented win.
 
@@ -94,4 +98,4 @@ If time permits, use a separate controlled audit. The person visibly enables **D
 
 ## Demo failure conditions
 
-Do not use the take if Codex stops after provider measurement; skips `open_browser_review`; repeats Lighthouse scores instead of performing the exact rendered checks; reports unobserved passes; loses browser-review provenance; narrates a missing capability without persisting its blocker; lets a blocker unlock receipt or repair staging; stages without explicit preparation; presents agent diagnosis as measured; approves, enables auto mode, deploys, or attests deployment; sends source or absolute paths to Frontmend; starts repository work before authority exists; disagrees with visible mission state; or describes a local build as live proof.
+Do not use the take if Codex stops after provider measurement; skips an assessment review or required verification replay; repeats Lighthouse scores instead of performing the exact rendered checks; reports unobserved passes; loses browser-review provenance; narrates a missing capability without persisting its blocker; lets a blocker unlock receipt or repair staging; stages without explicit preparation; presents agent diagnosis as measured; approves, enables auto mode, deploys, or attests deployment; sends source or absolute paths to Frontmend; starts repository work before authority exists; disagrees with visible mission state; or describes a local build as live proof.

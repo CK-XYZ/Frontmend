@@ -99,9 +99,14 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: The natural accessibility/SEO prompt cannot finish from provider output alone; the agent receives one exact safe browser task at a time; direct observations and browser issues remain separately attributed; zero-provider-finding runs still receive rendered review; blockers remain resumable; no review contribution grants repair or deployment authority.
   Verify: `bun test tests/browser-review-contract.test.mjs tests/audit-mission-contract.test.mjs tests/assessment-receipt.test.mjs tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs`; `bun run build`; full release gate before deployment.
 
-- [ ] **13. Prove the browser-review candidate in fresh supported sessions**
+- [x] **13. Add exact post-deployment replay for browser findings**
+  What was built: Bounded browser evidence retention through repair, one contextual `fresh-browser-replay` after deployment attestation, Durable Object/local parity, claim and receipt gating, pass/issue/blocker comparison semantics, visible baseline/replay state, and portable provenance.
+  Acceptance: Fresh provider measurement cannot resolve a browser finding; the exact original observation and viewport drive one agent browser task; pass resolves, issue remains, blocker is resumable; the receipt stays unavailable until a non-blocked comparison completes; no new tool or hidden browser authority is introduced.
+  Verify: `bun test tests/browser-review-contract.test.mjs tests/repair-contract.test.mjs tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs`; `bun run build`; strict no-upload Wrangler release gate.
+
+- [ ] **14. Prove the browser-review and replay candidate in fresh supported sessions**
   What remains: Deploy the combined Worker/UI candidate only with explicit authority, then run the exact fresh ChatGPT/Codex and Chrome procedures in `RELEASE_CANDIDATE.md` and capture tool subsets, IDs, visible state, console output, narrow layout, and provenance.
-  Acceptance: The agent follows the short natural prompt through real rendered checks without coaching; the page and structured state agree; a browser-only issue or honest blocker is visible; no provider-only or build-only evidence is presented as this proof.
+  Acceptance: The agent follows the short natural prompt through real rendered checks without coaching; the page and structured state agree; a browser-only issue or honest blocker is visible; one genuine repaired browser finding reappears as the exact post-deployment replay with receipt gating; no provider-only or build-only evidence is presented as this proof.
 
 ## Scope Gut-Check
 

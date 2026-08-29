@@ -214,3 +214,15 @@
 - Reran the allowed release gate from that exact clean commit: `bun test` passed 136/136, `bun run build` transformed 4,577 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
 - Current assets are `index-lorGx7r8.css` at 77.53 kB raw / 15.83 kB gzip and `index-DpWOhAjT.js` at 430.71 kB raw / 119.74 kB gzip. The dry bundle is 226.90 KiB raw / 49.47 KiB gzip.
 - `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — Exact browser-finding verification replay
+
+- Audited the full repair loop and found a concrete honesty gap: browser-observed findings could enter diagnosis and repair, but fresh verification only reran provider rules, leaving the rendered issue permanently inconclusive.
+- Added a bounded browser evidence snapshot to repair and verification state: original finding, evidence, selector, check, viewport, repair guidance and agent/browser provenance survive without source contents or absolute paths.
+- Reused the existing contextual `open_browser_review` and `record_browser_review_check` tools for one `fresh-browser-replay` after site-owner deployment attestation. No tool-count inflation or hidden browser automation was added.
+- Fresh provider measurement no longer resolves a browser finding. The verification receipt stays unavailable while replay is unopened, active or blocked; a completed pass becomes resolved, a completed issue remains still present, and a blocker keeps the same exact task resumable.
+- Durable Object, local parity runtime, shared service, WebMCP lifecycle, visible claim lock, replay card, and Markdown receipt all use the same retained comparison state and keep provider measurement separate from agent-reported browser evidence.
+- Committed the evidence/replay contract as `9b14926` and the cross-runtime/UI/WebMCP slice as `d3221c6`, both with the CK-XYZ Git identity.
+- Clean release gate from `d3221c6`: 153/153 tests passed across 11 files; Vite transformed 4,578 modules; assets were `index-DI7L0EII.css` at 84.41 kB raw / 17.03 kB gzip and `index-CYmkSJ03.js` at 458.99 kB raw / 126.75 kB gzip.
+- Strict Wrangler 4.126.0 dry run read five assets, recognised both Durable Objects plus `ASSETS`, emitted 262.47 KiB raw / 56.51 KiB gzip, and exited without upload.
+- No server was started, no deployment or push occurred, and the public hostname still serves the older candidate. Fresh current-candidate visual, ChatGPT/Codex, Chrome and post-deployment replay receipts remain required.

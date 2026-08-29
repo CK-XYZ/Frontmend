@@ -24,7 +24,7 @@ For agent-started accessibility or SEO work, measurement is never mistaken for a
 
 When an issue still needs a cause and owner, Frontmend opens a durable diagnostic mission; the coding agent inspects the repository it already has access to and contributes bounded reproduction, repository-relative ownership locations, and planned checks. Lighthouse evidence remains measured evidence. Browser review and causal diagnosis remain separately attributed agent contributions.
 
-An audit request is not repair permission. Only a later explicit request—such as “Please prepare the first priority for a fix”—records **Prepare a fix** intent for one retained finding. That transition creates no approval, edit, delegated-policy consumption, deployment, or deployment attestation. When the evidence and intent gates are satisfied, the agent can submit a bounded repository plan into the same visible workspace. A person reviews it or relies on a previously granted, narrow low-risk auto policy. The site owner still deploys externally, and Frontmend only claims resolution after a fresh comparable audit proves every captured rule occurrence.
+An audit request is not repair permission. Only a later explicit request—such as “Please prepare the first priority for a fix”—records **Prepare a fix** intent for one retained finding. That transition creates no approval, edit, delegated-policy consumption, deployment, or deployment attestation. When the evidence and intent gates are satisfied, the agent can submit a bounded repository plan into the same visible workspace. A person reviews it or relies on a previously granted, narrow low-risk auto policy. The site owner still deploys externally. Provider findings need fresh comparable rule evidence; browser findings trigger one exact replay of the preserved observation, element, check and viewport before Frontmend will issue the verification receipt.
 
 ## Why This Matters
 
@@ -57,7 +57,7 @@ Codex was both the primary development collaborator and the intended repository-
 
 During the build, Codex inspected the existing React, service, Worker, Durable Object, and test architecture; helped turn the product risk into a scope, PRD, technical specification, and sequenced build checklist; implemented isolated slices; and committed each completed slice with the existing project identity. It added the mission and browser-review contracts, cross-runtime persistence, explicit repair-preparation route, mission-aware WebMCP outputs, contextual tool gating, visible browser-evidence and priority UI, responsive styling, and cross-layer regression coverage.
 
-Codex also challenged weak claims. The build explicitly treated “stops after Lighthouse” as a failed evaluation, made an agent-started browser review mandatory for the natural accessibility/SEO prompt, kept historical browser receipts separate from current proof, preserved unrelated work, rejected raw prompt/source/absolute-path retention, and distinguished tests/build/dry-run from deployment. The current implementation has 147 passing deterministic tests, a successful production build, and a successful strict Wrangler dry run that exited without upload.
+Codex also challenged weak claims. The build explicitly treated “stops after Lighthouse” as a failed evaluation, made an agent-started browser review mandatory for the natural accessibility/SEO prompt, and found that browser findings could not honestly close through a provider-only rerun. Frontmend now calls the agent back for one exact post-deployment browser replay and withholds the receipt until it completes. The build also keeps historical browser receipts separate from current proof, preserves unrelated work, rejects raw prompt/source/absolute-path retention, and distinguishes tests/build/dry-run from deployment. The current implementation has 153 passing deterministic tests, a successful production build, and a successful strict Wrangler dry run that exited without upload.
 
 The intended live demonstration uses Codex inside a controlled target repository: Codex can receive independent public evidence from Frontmend, use its own repository access to investigate and implement an authorised plan, and return a bounded receipt without uploading the source tree to Frontmend.
 
@@ -69,6 +69,7 @@ The intended live demonstration uses Codex inside a controlled target repository
 - Distinct `auditComplete` and `assessmentComplete` states with an exact next tool/input when supported diagnosis remains.
 - Ordered agent-contributed browser review with exact check instructions, pass/issue/blocker outcomes, and separately attributed observations.
 - Browser-only issues promoted into the same ranked evidence and repair workflow without being mislabelled as Lighthouse findings.
+- Exact post-deployment browser replay for browser-observed repairs, with the original evidence and viewport preserved and the verification receipt locked until the comparison passes, remains, or is honestly blocked.
 - Durable diagnostic missions with a shared four-stage evidence chain that keeps provider measurement separate from agent-reported browser reproduction, repository ownership, and planned checks.
 - A structured diagnostic blocker that preserves unavailable or conflicting browser/repository evidence instead of inviting an agent to invent a cause; the mission remains visibly incomplete and resumable.
 - A portable completion receipt that becomes available only when the retained assessment is complete and carries provider evidence beside separately attributed agent contributions without claiming repair, deployment, or resolution.
@@ -113,7 +114,8 @@ Built with: React, Vite, Bun, Cloudflare Workers, Cloudflare Durable Objects, We
 7. Confirm any browser-observed issue enters the ranked queue with agent provenance. If a priority needs repository diagnosis, Codex follows that exact action and contributes only bounded relative-path evidence; a genuine capability gap must be persisted as a blocker rather than narrated or fabricated.
 8. When `assessmentComplete` becomes true, confirm `get_assessment_receipt` appears, invoke it with `{}`, and compare its provider/browser/repository provenance and authority boundary with the visible **Export assessment** Markdown action.
 9. Send: “Please prepare the first priority for a fix, but don't approve, change, or deploy anything.” Confirm the intent transition occurs before staging becomes eligible and consumes no auto allowance.
-10. Confirm any staged plan remains visibly reviewable, deployment is person-only, and verification fails with `DEPLOYMENT_NOT_ATTESTED` until a genuine external handoff is recorded.
+10. Confirm any staged plan remains visibly reviewable and deployment is person-only. Verification must fail with `DEPLOYMENT_NOT_ATTESTED` until a genuine external handoff is recorded; for a browser-observed repair, fresh provider completion must then expose one exact browser replay while the receipt remains absent.
+11. Perform that exact replay on the rendered target. Confirm `passed` resolves only the retained issue, `issue` keeps it present, and a real blocker leaves the receipt locked and the same task resumable.
 
 Exact fresh-session ChatGPT, Codex, delegated-auto, and Chrome Inspector procedures are in `RELEASE_CANDIDATE.md`.
 
@@ -126,7 +128,7 @@ bun run build
 bunx wrangler deploy --dry-run --strict --config wrangler.jsonc
 ```
 
-Fresh local release evidence for the browser-review candidate is recorded in `RELEASE_CANDIDATE.md`. Build, tests, and Wrangler dry-run evidence are local packaging proof only; they do not prove deployment or browser compatibility.
+Fresh local release evidence for the browser-review and verification-replay candidate is recorded in `RELEASE_CANDIDATE.md`. Build, tests, and Wrangler dry-run evidence are local packaging proof only; they do not prove deployment or browser compatibility.
 
 ## Public Demo Link
 
@@ -171,7 +173,7 @@ Official live Devpost data was fetched on 29 August 2026. Submissions close at `
 Judging fit:
 
 - **WebMCP Leverage:** twenty-one contextual semantic tools share the human application's service, validation, persistence, and state transitions; ordered browser-review tasks make the webpage an orchestrator of external agent capabilities rather than a static command catalogue.
-- **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 147 passing tests, production build, and a no-upload Wrangler release gate.
+- **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 153 passing tests, production build, and a no-upload Wrangler release gate.
 - **Potential Impact:** replaces a fragmented developer workflow with a durable, inspectable path from live evidence to repository work and fresh proof.
 - **Creativity & Ambition:** applies WebMCP to a multi-actor engineering protocol with changing authority rather than a single stateless agent action.
 

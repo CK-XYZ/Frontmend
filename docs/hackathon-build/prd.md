@@ -227,6 +227,8 @@ Acceptance criteria:
 - Verification creates a fresh audit tied to the authorised repair and deployment attestation.
 - Resolution requires every captured occurrence of the exact original rule to pass explicitly.
 - A sibling viewport failure or missing comparison prevents a resolved result.
+- A browser-observed repair freezes the original observation, rendered element, browser check, viewport, and provenance; fresh provider measurement alone cannot resolve it.
+- Browser-observed verification exposes one exact post-deployment replay through contextual WebMCP. Passed means the retained issue was not observed, issue means it remained, and blocked keeps the same comparison resumable and the receipt unavailable.
 - The result is one of resolved, still present, or inconclusive.
 - Rule comparability remains separate from summary metric comparability.
 
@@ -237,6 +239,7 @@ As a person or agent, I want the result in the visible workspace, structured Web
 Acceptance criteria:
 
 - The receipt identifies baseline and fresh audit attempts, evidence strategies, exact-rule outcomes, and lineage.
+- For a browser-observed repair, the receipt is withheld until replay completes and then retains the original observation beside the fresh agent-reported comparison without merging it into provider evidence.
 - Metric deltas appear only when coverage and evidence basis are comparable.
 - The frozen implementation receipt and its agent-reported boundary are retained.
 - Exports escape provider text and expose no secret, source, prompt, or absolute-path content.
@@ -281,6 +284,8 @@ Acceptance criteria:
 - No provider findings match the requested focus: finish provider reporting honestly with zero provider priorities, then run the required browser review before deciding whether the assessment has zero combined priorities.
 - A diagnostic rule is present but browser access is unavailable: retain the measured priority and mark diagnosis blocked, not complete.
 - Browser observation conflicts with Lighthouse: show both sources and require fresh verification for resolution claims.
+- Fresh provider evidence improves but a retained browser issue has not been replayed: keep verification inconclusive and the receipt locked.
+- The exact post-deployment browser replay is blocked: preserve the blocker and current task so a later capable session can resume it.
 - Repository access points at a different project: do not accept guessed ownership as fact.
 - Multiple viewports share a rule: one priority retains every occurrence and acceptance criterion.
 
