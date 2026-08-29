@@ -1,0 +1,1776 @@
+import {
+  ArrowLeft,
+  ArrowRight,
+  ArrowsOutSimple,
+  Browser,
+  Check,
+  CheckCircle,
+  ClipboardText,
+  Desktop,
+  DeviceMobile,
+  DownloadSimple,
+  Info,
+  LinkSimple,
+  MagnifyingGlass,
+  Monitor,
+  Pulse,
+  Robot,
+  ShieldCheck,
+  Sparkle,
+  Warning,
+  Wrench,
+  X,
+} from "@phosphor-icons/react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { AuditError, auditService } from "../audit-service.js";
+import { assessmentFindings, deriveAuditMissionState } from "../audit-mission-contract.js";
+import { findingRequiresDiagnosticMission } from "../diagnostic-contract.js";
+import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSummary.jsx";
+import { humanMissionMutationFailure } from "../ui/human-mission-recovery.js";
+import { LazyWorkspace } from "../ui/LazyWorkspace.jsx";
+
+const loadDiagnosisWorkspace = () => import("./DiagnosisWorkspace.jsx");
+const loadRepairPolicyWorkspace = () => import("./RepairPolicyWorkspace.jsx");
+const loadRepairWorkspace = () => import("./RepairWorkspace.jsx");
+const loadVerificationWorkspace = () => import("./VerificationWorkspace.jsx");
+
+function auditWorkspacePath(auditId) {
+  return `/audits/${encodeURIComponent(auditId)}`;
+}
+
+const VIEWPORTS = [
+  { id: "desktop", label: "Desktop", detail: "1440 px", icon: Desktop },
+  { id: "tablet", label: "Tablet", detail: "768 px", icon: Monitor },
+  { id: "mobile", label: "Mobile", detail: "390 px", icon: DeviceMobile },
+];
+
+function emptyBrowserFinding(focusArea = "accessibility") {
+  return {
+    title: "",
+    severity: "medium",
+    focusArea,
+    evidence: "",
+    suggestedRepair: "",
+    element: "",
+  };
+}
+
+function HumanBrowserReviewForm({ auditId, review, reviewState, webMcpReady, onChanged }) {
+  const check = reviewState?.nextCheck;
+  const [outcome, setOutcome] = useState("passed");
+  const [summary, setSummary] = useState("");
+  const [observations, setObservations] = useState([""]);
+  const [blockerReason, setBlockerReason] = useState("browser-unavailable");
+  const [findings, setFindings] = useState(() => [emptyBrowserFinding(check?.focusAreas?.[0])]);
+  const [expanded, setExpanded] = useState(!webMcpReady);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    setOutcome("passed");
+    setSummary("");
+    setObservations([""]);
+    setBlockerReason("browser-unavailable");
+    setFindings([emptyBrowserFinding(check?.focusAreas?.[0])]);
+    setNotice("");
+  }, [check?.id]);
+
+  if (!check) return null;
+  const findingsAllowed = check.responseContract?.findingsAllowed !== false;
+  const refreshAfterStale = async () => {
+    await auditService.refreshMissionWorkspace(auditId);
+    const currentReview = auditService.getBrowserReview(auditId);
+    if (currentReview) onChanged(currentReview);
+  };
+  const updateObservation = (index, value) => {
+    setObservations((current) => current.map((item, itemIndex) => itemIndex === index ? value : item));
+  };
+  const updateFinding = (index, field, value) => {
+    setFindings((current) => current.map((item, itemIndex) => itemIndex === index
+      ? { ...item, [field]: value }
+      : item));
+  };
+  const submit = async (event) => {
+    event.preventDefault();
+    setBusy(true);
+    setNotice("");
+    try {
+      const retainedObservations = observations.map((item) => item.trim()).filter(Boolean);
+      const input = {
+        checkId: check.id,
+        outcome,
+        summary: summary.trim(),
+        ...(retainedObservations.length || outcome !== "blocked"
+          ? { observations: retainedObservations }
+          : {}),
+        ...(outcome === "blocked" ? { blockerReason } : {}),
+        ...(outcome === "issue" && findingsAllowed
+          ? {
+              findings: findings.map((finding) => ({
+                title: finding.title.trim(),
+                severity: finding.severity,
+                focusArea: finding.focusArea,
+                evidence: finding.evidence.trim(),
+                suggestedRepair: finding.suggestedRepair.trim(),
+                ...(finding.element.trim() ? { element: finding.element.trim() } : {}),
+              })),
+            }
+          : {}),
+      };
+      const updated = await auditService.recordBrowserReviewCheck(
+        auditId,
+        review.id,
+        input,
+        "person",
+      );
+      onChanged(updated);
+      setNotice(updated.state?.complete
+        ? "Rendered review complete. The assessment now reflects your separately attributed evidence."
+        : "Check recorded. The next exact rendered task is ready.");
+    } catch (cause) {
+      if (cause?.code === "MISSION_REVISION_STALE") {
+        try {
+          await refreshAfterStale();
+          setNotice("Mission changed in another session. The current task was refreshed; review it before resubmitting.");
+        } catch {
+          setNotice("Mission changed in another session. Refresh this audit before resubmitting.");
+        }
+      } else {
+        setNotice(cause instanceof AuditError ? cause.message : "This rendered check could not be recorded.");
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <details
+      className="human-browser-review"
+      open={expanded}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>
+        <span>
+          <Browser size={17} weight="duotone" aria-hidden="true" />
+          <strong>{webMcpReady ? "Complete this check yourself" : "Complete rendered review yourself"}</strong>
+        </span>
+        <small>Same validation · person provenance · no deployment authority</small>
+      </summary>
+      <form onSubmit={submit}>
+        <fieldset className="human-review-outcomes">
+          <legend>What did this exact check show?</legend>
+          {["passed", "issue", "blocked"].map((value) => (
+            <label key={value} className={outcome === value ? "selected" : ""}>
+              <input
+                type="radio"
+                name={`browser-outcome-${review.id}`}
+                value={value}
+                checked={outcome === value}
+                onChange={() => setOutcome(value)}
+              />
+              <span>{value === "passed" ? "Passed" : value === "issue" ? "Issue found" : "Blocked"}</span>
+            </label>
+          ))}
+        </fieldset>
+
+        <label className="human-review-field">
+          <span>Result summary <small>{summary.length}/300</small></span>
+          <textarea
+            value={summary}
+            onChange={(event) => setSummary(event.target.value)}
+            maxLength={300}
+            rows={3}
+            required
+            placeholder="State only what you observed for this exact task."
+          />
+        </label>
+
+        <fieldset className="human-review-list">
+          <legend>
+            Observations
+            <small>{outcome === "blocked" ? "optional when blocked" : "1–4 required"}</small>
+          </legend>
+          {observations.map((observation, index) => (
+            <div key={`${check.id}-observation-${index}`}>
+              <textarea
+                value={observation}
+                onChange={(event) => updateObservation(index, event.target.value)}
+                maxLength={400}
+                rows={2}
+                required={outcome !== "blocked" && index === 0}
+                aria-label={`Observation ${index + 1}`}
+                placeholder="Describe one rendered fact."
+              />
+              {observations.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => setObservations((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                  aria-label={`Remove observation ${index + 1}`}
+                >
+                  <X size={14} weight="bold" aria-hidden="true" />
+                </button>
+              ) : null}
+            </div>
+          ))}
+          {observations.length < 4 ? (
+            <button type="button" onClick={() => setObservations((current) => [...current, ""])}>
+              Add observation
+            </button>
+          ) : null}
+        </fieldset>
+
+        {outcome === "blocked" ? (
+          <label className="human-review-field">
+            <span>Exact blocker</span>
+            <select value={blockerReason} onChange={(event) => setBlockerReason(event.target.value)}>
+              <option value="browser-unavailable">Browser unavailable</option>
+              <option value="interaction-unsafe">Interaction would be unsafe</option>
+              <option value="authentication-required">Authentication required</option>
+              <option value="unsupported-capability">Capability unsupported</option>
+              <option value="target-changed">Target changed</option>
+            </select>
+          </label>
+        ) : null}
+
+        {outcome === "issue" && findingsAllowed ? (
+          <fieldset className="human-review-findings">
+            <legend>
+              Structured issue details
+              <small>1–3 findings</small>
+            </legend>
+            {findings.map((finding, index) => (
+              <section key={`${check.id}-finding-${index}`}>
+                <header>
+                  <strong>Finding {index + 1}</strong>
+                  {findings.length > 1 ? (
+                    <button
+                      type="button"
+                      onClick={() => setFindings((current) => current.filter((_, itemIndex) => itemIndex !== index))}
+                    >
+                      Remove
+                    </button>
+                  ) : null}
+                </header>
+                <label>
+                  <span>Title</span>
+                  <input
+                    value={finding.title}
+                    onChange={(event) => updateFinding(index, "title", event.target.value)}
+                    maxLength={240}
+                    required
+                  />
+                </label>
+                <div className="human-review-finding-pair">
+                  <label>
+                    <span>Severity</span>
+                    <select value={finding.severity} onChange={(event) => updateFinding(index, "severity", event.target.value)}>
+                      <option value="high">High</option>
+                      <option value="medium">Medium</option>
+                      <option value="low">Low</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Focus</span>
+                    <select value={finding.focusArea} onChange={(event) => updateFinding(index, "focusArea", event.target.value)}>
+                      {check.focusAreas.map((area) => <option key={area} value={area}>{area === "seo" ? "SEO" : area}</option>)}
+                    </select>
+                  </label>
+                </div>
+                <label>
+                  <span>Observed evidence</span>
+                  <textarea
+                    value={finding.evidence}
+                    onChange={(event) => updateFinding(index, "evidence", event.target.value)}
+                    maxLength={600}
+                    rows={2}
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Suggested repair</span>
+                  <textarea
+                    value={finding.suggestedRepair}
+                    onChange={(event) => updateFinding(index, "suggestedRepair", event.target.value)}
+                    maxLength={600}
+                    rows={2}
+                    required
+                  />
+                </label>
+                <label>
+                  <span>Element or selector <small>optional</small></span>
+                  <input
+                    value={finding.element}
+                    onChange={(event) => updateFinding(index, "element", event.target.value)}
+                    maxLength={200}
+                    placeholder="e.g. header nav or button.primary"
+                  />
+                </label>
+              </section>
+            ))}
+            {findings.length < 3 ? (
+              <button
+                type="button"
+                onClick={() => setFindings((current) => [
+                  ...current,
+                  emptyBrowserFinding(check.focusAreas[0]),
+                ])}
+              >
+                Add another finding
+              </button>
+            ) : null}
+          </fieldset>
+        ) : null}
+
+        {outcome === "issue" && !findingsAllowed ? (
+          <p className="human-review-contract-note">
+            This is an exact verification replay. “Issue found” means the retained symptom is still present; it does not create a new finding.
+          </p>
+        ) : null}
+
+        <div className="human-review-submit">
+          <p>
+            <ShieldCheck size={15} weight="duotone" aria-hidden="true" />
+            Your evidence is marked person-reported and stays separate from provider measurement.
+          </p>
+          <button type="submit" disabled={busy}>
+            {busy ? "Recording…" : "Record this exact check"}
+          </button>
+        </div>
+        {notice ? <p className="human-review-notice" role="status">{notice}</p> : null}
+      </form>
+    </details>
+  );
+}
+
+function BrowserReviewMission({ auditId, state, review, verification = null, webMcp, onChanged }) {
+  const titleId = useId();
+  const [opening, setOpening] = useState(false);
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [confirmWithdrawal, setConfirmWithdrawal] = useState(false);
+  const [actionNotice, setActionNotice] = useState("");
+  const replay = verification?.browserReplay;
+  const verificationReplay = replay?.required === true;
+  const webMcpReady = webMcp?.supported === true && webMcp?.status === "ready";
+  const reviewState = verificationReplay
+    ? review?.purpose === "verification"
+      ? { required: true, ...review.state }
+      : { required: true, ...replay }
+    : state?.browserReview;
+  if (!reviewState?.required && reviewState?.status !== "withdrawn") return null;
+  const adoptedFromHumanMission = !verificationReplay && (
+    reviewState.adoptedFromHumanMission || review?.adoption?.mode === "human-to-agent"
+  );
+  const resultByCheck = new Map((review?.results ?? []).map((result) => [result.checkId, result]));
+  const complete = reviewState.status === "complete";
+  const blocked = reviewState.status === "blocked";
+  const withdrawn = reviewState.status === "withdrawn";
+  const statusLabel = complete
+    ? verificationReplay
+      ? review?.results?.[0]?.outcome === "passed"
+        ? "Exact comparison passed"
+        : "Exact issue observed again"
+      : "Browser contribution complete"
+    : withdrawn
+      ? "Handoff withdrawn · no evidence"
+    : blocked
+      ? "Browser check blocked honestly"
+      : reviewState.status === "not-opened"
+        ? "Waiting for the agent"
+        : "Rendered review in progress";
+  const refreshAfterStale = async () => {
+    await auditService.refreshMissionWorkspace(auditId);
+    const currentReview = auditService.getBrowserReview(auditId);
+    if (currentReview) onChanged(currentReview);
+  };
+  const openHumanReview = async () => {
+    setOpening(true);
+    setActionNotice("");
+    try {
+      const opened = await auditService.openBrowserReview(auditId, {
+        source: "person",
+        focusAreas: state.requestedFocusAreas,
+      });
+      onChanged(opened);
+    } catch (cause) {
+      if (cause?.code === "MISSION_REVISION_STALE") {
+        try {
+          await refreshAfterStale();
+          setActionNotice("Mission changed in another session. The current review was refreshed.");
+        } catch {
+          setActionNotice("Mission changed in another session. Refresh this audit before continuing.");
+        }
+      } else {
+        setActionNotice(cause instanceof AuditError ? cause.message : "The rendered review could not be opened.");
+      }
+    } finally {
+      setOpening(false);
+    }
+  };
+  const withdrawHandoff = async () => {
+    setWithdrawing(true);
+    setActionNotice("");
+    try {
+      const updated = await auditService.withdrawBrowserReview(auditId, review.id);
+      onChanged(updated);
+      setConfirmWithdrawal(false);
+    } catch (cause) {
+      if (cause?.code === "MISSION_REVISION_STALE") {
+        try {
+          await refreshAfterStale();
+          setActionNotice("Mission changed in another session. The current review was refreshed; check it before withdrawing.");
+        } catch {
+          setActionNotice("Mission changed in another session. Refresh this audit before continuing.");
+        }
+      } else {
+        setActionNotice(cause instanceof AuditError ? cause.message : "This handoff could not be withdrawn.");
+      }
+    } finally {
+      setWithdrawing(false);
+    }
+  };
+
+  return (
+    <section className={`browser-review-mission ${withdrawn ? "withdrawn" : complete ? "complete" : blocked ? "blocked" : "active"}`} aria-labelledby={titleId}>
+      <header>
+        <span aria-hidden="true"><Browser size={20} weight="duotone" /></span>
+        <div>
+          <p className="kicker">
+            {verificationReplay
+              ? "Fresh browser replay · shared evidence contract"
+              : adoptedFromHumanMission
+                ? "Optional rendered review · same audit"
+                : "Rendered review · not Lighthouse"}
+          </p>
+          <h2 id={titleId}>
+            {verificationReplay
+              ? "Recheck the exact rendered issue"
+              : adoptedFromHumanMission
+                ? withdrawn
+                  ? "Person-started evidence remains provider-only"
+                  : "Person-started evidence, extended in the browser"
+                : "Rendered evidence, one check at a time"}
+          </h2>
+          <p>
+            {verificationReplay
+              ? "Frontmend preserved the original observation and now asks the agent for one fresh, like-for-like rendered comparison after deployment."
+              : adoptedFromHumanMission
+                ? withdrawn
+                  ? "The person ended this untouched handoff before any rendered evidence was recorded. Frontmend retained the record and restored the original completed assessment."
+                  : "The original person attribution, audit ID, and provider evidence remain unchanged while a person or agent contributes a bounded rendered-browser layer."
+                : "Frontmend asks for the actual page to be inspected in a browser, then keeps those observations separate from provider measurement."}
+          </p>
+        </div>
+        <div className="browser-review-state">
+          <strong>{statusLabel}</strong>
+          <span>{reviewState.completedCheckCount ?? 0} / {reviewState.requestedCheckCount || (verificationReplay ? 1 : "—")} checks</span>
+        </div>
+      </header>
+
+      {withdrawn ? (
+        <div className="browser-review-withdrawn" role="status">
+          <CheckCircle size={20} weight="duotone" aria-hidden="true" />
+          <div>
+            <strong>Optional handoff ended before evidence</strong>
+            <p>No browser result was deleted or treated as proof. The visible record remains attached to this audit at revision {auditService.getMissionCheckpoint(auditId)?.missionRevision ?? "—"}.</p>
+          </div>
+        </div>
+      ) : reviewState.status === "not-opened" ? (
+        <div className="browser-review-next" role="status">
+          {webMcpReady ? <Robot size={18} weight="fill" aria-hidden="true" /> : <Browser size={18} weight="duotone" aria-hidden="true" />}
+          <div>
+            <strong>{verificationReplay ? "Fresh provider evidence is ready. One rendered comparison remains." : "Provider evidence is ready. Rendered review is next."}</strong>
+            <p>{webMcpReady ? <>An agent can call <code>open_browser_review</code>, or you can complete the same task yourself.</> : <>WebMCP is not ready in this browser. Open the bounded task here and complete it yourself.</>} The {verificationReplay ? "verification receipt" : "completed assessment"} stays locked until the exact check is recorded.</p>
+            {!review ? (
+              <button type="button" onClick={openHumanReview} disabled={opening}>
+                <Browser size={15} weight="duotone" aria-hidden="true" />
+                {opening ? "Opening…" : "Open rendered review"}
+              </button>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {!withdrawn && reviewState.withdrawalAvailable ? (
+        <div className="browser-review-withdrawal">
+          <div>
+            <strong>No browser evidence has been recorded</strong>
+            <p>You can end this optional handoff and restore the provider-only assessment. The withdrawn record stays visible.</p>
+          </div>
+          {confirmWithdrawal ? (
+            <div>
+              <button type="button" onClick={() => setConfirmWithdrawal(false)} disabled={withdrawing}>Keep review</button>
+              <button type="button" className="confirm" onClick={withdrawHandoff} disabled={withdrawing}>
+                {withdrawing ? "Withdrawing…" : "Confirm withdrawal"}
+              </button>
+            </div>
+          ) : (
+            <button type="button" onClick={() => setConfirmWithdrawal(true)}>Withdraw untouched handoff</button>
+          )}
+        </div>
+      ) : null}
+
+      {verificationReplay && replay?.baseline ? (
+        <div className="browser-replay-baseline">
+          <span>Original observation</span>
+          <strong>{replay.baseline.title}</strong>
+          <p>{replay.baseline.evidence}</p>
+          <code>{replay.baseline.selector} · {replay.baseline.source?.strategy}</code>
+        </div>
+      ) : null}
+
+      {!withdrawn && review?.requestedChecks?.length ? (
+        <ol className="browser-review-checks">
+          {review.requestedChecks.map((check, index) => {
+            const result = resultByCheck.get(check.id);
+            const isCurrent = reviewState.nextCheck?.id === check.id;
+            const outcome = result?.outcome ?? (isCurrent ? "current" : "pending");
+            return (
+              <li key={check.id} className={outcome}>
+                <span className="browser-review-number" aria-hidden="true">
+                  {result?.outcome === "passed"
+                    ? <Check size={14} weight="bold" />
+                    : result?.outcome === "issue" || result?.outcome === "blocked"
+                      ? <Warning size={14} weight="fill" />
+                      : index + 1}
+                </span>
+                <div>
+                  <div className="browser-review-check-heading">
+                    <strong>{check.label}</strong>
+                    <span>{result ? result.outcome : isCurrent ? "Current browser task" : "Queued"}</span>
+                  </div>
+                  <p>{result?.summary ?? (isCurrent ? check.instruction : "This check unlocks after the prior browser task is recorded.")}</p>
+                  {result?.observations?.length ? (
+                    <ul>
+                      {result.observations.map((observation) => <li key={observation}>{observation}</li>)}
+                    </ul>
+                  ) : null}
+                  {result?.blockerReason ? <small>Blocker: {result.blockerReason.replaceAll("-", " ")}</small> : null}
+                </div>
+              </li>
+            );
+          })}
+        </ol>
+      ) : null}
+
+      {!withdrawn && reviewState.nextCheck && review ? (
+        <section className="browser-review-assignment" aria-label="Current exact browser task">
+          <header>
+            <div>
+              <span>Current exact task</span>
+              <strong>{reviewState.nextCheck.label}</strong>
+            </div>
+            <div>
+              <code>{reviewState.nextCheck.target.path}</code>
+              <span>{reviewState.nextCheck.target.viewport} viewport</span>
+            </div>
+          </header>
+          <div>
+            <article>
+              <span>Why now</span>
+              <p>{reviewState.nextCheck.trigger.retainedEvidence}</p>
+            </article>
+            <article>
+              <span>What to do</span>
+              <strong>{reviewState.nextCheck.assignment.goal}</strong>
+              <p>{reviewState.nextCheck.assignment.instructions}</p>
+            </article>
+            <article>
+              <span>What must return</span>
+              <p>{reviewState.nextCheck.assignment.completionCriteria}</p>
+            </article>
+          </div>
+          <footer>
+            <ShieldCheck size={15} weight="duotone" aria-hidden="true" />
+            <span>{reviewState.nextCheck.assignment.boundary}</span>
+          </footer>
+        </section>
+      ) : null}
+
+      {!withdrawn && reviewState.nextCheck && review ? (
+        <HumanBrowserReviewForm
+          auditId={auditId}
+          review={review}
+          reviewState={reviewState}
+          webMcpReady={webMcpReady}
+          onChanged={onChanged}
+        />
+      ) : null}
+
+      {actionNotice ? <p className="browser-review-action-notice" role="status">{actionNotice}</p> : null}
+
+      <footer>
+        <ShieldCheck size={16} weight="duotone" aria-hidden="true" />
+        <span>
+          <strong>{withdrawn ? "No browser evidence recorded" : verificationReplay ? "Exact comparison · separate provenance" : `${reviewState.issueCount} browser-observed ${reviewState.issueCount === 1 ? "issue" : "issues"}`}</strong>
+          {withdrawn
+            ? "The optional handoff is retained for history but contributes no evidence and grants no authority."
+            : verificationReplay
+            ? "Passed means this exact issue was no longer observed; issue means it remained; blocked keeps the receipt locked and the same task resumable."
+            : "Person- or agent-reported browser facts can become ranked priorities, but still require repository mapping before repair and never prove deployment or resolution."}
+        </span>
+      </footer>
+    </section>
+  );
+}
+
+function AgentTakeover({ auditId, state, webMcp, onOpened }) {
+  const titleId = useId();
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!state?.browserReview?.adoptionAvailable) return null;
+  const retainedAreas = (state.requestedFocusAreas ?? []).filter(
+    (area) => area === "accessibility" || area === "seo",
+  );
+  const reviewAreas = retainedAreas.length ? retainedAreas : ["accessibility", "seo"];
+  const webMcpReady = webMcp?.supported === true && webMcp?.status === "ready";
+
+  const openHandoff = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      const review = await auditService.openBrowserReview(auditId, {
+        source: "person",
+        focusAreas: reviewAreas,
+      });
+      onOpened(review);
+    } catch (cause) {
+      const failure = await humanMissionMutationFailure(
+        cause,
+        auditId,
+        "The shared browser handoff could not be opened.",
+      );
+      setError(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="agent-takeover" aria-labelledby={titleId}>
+      <span className="agent-takeover-icon" aria-hidden="true">
+        <ArrowsOutSimple size={20} weight="duotone" />
+      </span>
+      <div>
+        <p className="kicker">Same audit · optional rendered review</p>
+        <h2 id={titleId}>{webMcpReady ? "Hand off without starting over" : "Complete rendered review yourself"}</h2>
+        <p>
+          {webMcpReady
+            ? "Hand this completed person-started assessment to a browser-capable agent, or complete the same bounded tasks yourself."
+            : "WebMCP is not ready in this browser, so Human mode can open and complete the same bounded rendered tasks directly."}
+          {" "}Frontmend keeps the current audit ID, provider evidence, focus, and person attribution.
+        </p>
+        <div className="agent-takeover-scope" aria-label="Agent takeover scope">
+          {reviewAreas.map((area) => <span key={area}>{area === "seo" ? "SEO" : area}</span>)}
+          <small>No repair, approval, source, or deployment authority is added.</small>
+        </div>
+      </div>
+      <button type="button" onClick={openHandoff} disabled={busy}>
+        {webMcpReady ? <Robot size={17} weight="bold" aria-hidden="true" /> : <Browser size={17} weight="duotone" aria-hidden="true" />}
+        {busy ? "Opening review…" : webMcpReady ? "Hand off to agent" : "Open rendered review"}
+      </button>
+      <small className="agent-takeover-boundary">
+        Once opened, the receipt stays locked until the rendered checks complete. Before any evidence, you may visibly withdraw the optional handoff; after evidence, complete it or retain an honest blocker.
+      </small>
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
+function BrowserFindingProvenance({ finding }) {
+  const evidence = finding?.browserReviewEvidence;
+  if (!evidence) return null;
+  return (
+    <section className="browser-finding-provenance" aria-label="Browser review provenance">
+      <Browser size={18} weight="duotone" aria-hidden="true" />
+      <div>
+        <strong>{evidence.provenance === "person-reported-browser" ? "Person-observed browser finding" : "Agent-observed browser finding"}</strong>
+        <p>
+          Contributed through {evidence.checkLabel ?? evidence.checkId}. This is rendered-browser
+          evidence, not a Lighthouse finding or repository diagnosis.
+        </p>
+      </div>
+      <span>{evidence.provenance === "person-reported-browser" ? "Person-reported" : "Agent-reported"}</span>
+    </section>
+  );
+}
+
+function missionEvidenceLabel(value) {
+  const labels = {
+    "measured-evidence-sufficient": "Measured evidence ready",
+    "diagnosis-recommended": "Diagnosis needed",
+    "diagnosis-in-progress": "Diagnosis in progress",
+    "diagnosis-contributed": "Diagnosis contributed",
+    "diagnosis-blocked": "Diagnosis blocked",
+    "unsupported-continuation": "No supported continuation",
+  };
+  return labels[value] ?? "Evidence retained";
+}
+
+function evidenceRelationshipLabel(value) {
+  const labels = {
+    "verified-resolved": "Verified resolved",
+    "verified-still-present": "Verified still present",
+    "verification-inconclusive": "Verification inconclusive",
+    "verification-required": "Verification required",
+    "provider-browser-conflict": "Provider/browser conflict",
+    "diagnosis-contributed": "Diagnosis contributed",
+    "diagnosis-required": "Diagnosis required",
+    "browser-confirmed": "Browser confirmed",
+    "browser-only": "Browser only",
+    "provider-only": "Provider only",
+  };
+  return labels[value] ?? "Evidence retained";
+}
+
+function MissionPriorities({ state, selectedFindingId, onSelect, detailId }) {
+  const titleId = useId();
+  return (
+    <section className="mission-priorities" aria-labelledby={titleId}>
+      <header>
+        <div>
+          <p className="kicker">Mission priorities</p>
+          <h3 id={titleId}>
+            {state.priorityCount
+              ? `${state.priorityCount} ranked ${state.priorityCount === 1 ? "priority" : "priorities"}`
+              : "No matching failed rules"}
+          </h3>
+        </div>
+        <span>{state.assessmentComplete ? "Complete" : state.status === "blocked" ? "Blocked" : "Active"}</span>
+      </header>
+      {state.priorities.length ? (
+        <ol>
+          {state.priorities.map((priority) => (
+            <li key={priority.findingId}>
+              <button
+                type="button"
+                className={priority.findingId === selectedFindingId ? "selected" : ""}
+                aria-pressed={priority.findingId === selectedFindingId}
+                aria-controls={detailId}
+                onClick={() => onSelect(priority.findingId)}
+              >
+                <span className="mission-priority-rank">{priority.rank}</span>
+                <span className="mission-priority-copy">
+                  <strong>{priority.title}</strong>
+                  <small>
+                    {priority.evidenceProvenance === "agent-reported-browser"
+                      ? "agent browser"
+                      : priority.evidenceProvenance === "person-reported-browser"
+                        ? "person browser"
+                      : priority.affectedStrategies.length
+                      ? priority.affectedStrategies.join(" + ")
+                      : "document"}
+                    {priority.occurrenceCount > 1 ? ` · ${priority.occurrenceCount} occurrences` : ""}
+                  </small>
+                  <span className="evidence-relationship-copy">
+                    <b>{evidenceRelationshipLabel(priority.relationship)}</b>
+                    {priority.relationshipReason}
+                  </span>
+                </span>
+                <em className={`evidence-state ${priority.evidenceState}`}>
+                  {missionEvidenceLabel(priority.evidenceState)}
+                </em>
+              </button>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p>
+          The requested focus has no supported failed rule in this run. Scores remain automated
+          evidence, not a complete manual audit.
+        </p>
+      )}
+      <small className="mission-priorities-boundary">
+        Ranked by the retained mission. The complete bounded evidence queue remains below.
+      </small>
+    </section>
+  );
+}
+
+function PrepareRepairIntent({ auditId, priority, mission, preparedFindingTitle }) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  if (!priority) return null;
+  const preparedFindingId = mission.repairPreparation?.findingId ?? null;
+  const selectedIsPrepared = preparedFindingId === priority.findingId;
+  const prepare = async () => {
+    setBusy(true);
+    setError("");
+    try {
+      await auditService.prepareRepair(auditId, priority.findingId, "human");
+    } catch (cause) {
+      const failure = await humanMissionMutationFailure(
+        cause,
+        auditId,
+        "Repair intent could not be recorded.",
+      );
+      setError(failure.message);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className={`prepare-repair-intent ${selectedIsPrepared ? "prepared" : ""}`} aria-label="Prepare repair intent">
+      <span aria-hidden="true"><Wrench size={20} weight="duotone" /></span>
+      <div>
+        <p className="kicker">Human intent gate</p>
+        <strong>
+          {selectedIsPrepared
+            ? "This finding is being prepared"
+            : preparedFindingId
+              ? `Already preparing ${preparedFindingTitle ?? "another finding"}`
+              : "Want an implementation-ready fix?"}
+        </strong>
+        <p>
+          {selectedIsPrepared
+            ? "The agent may prepare a bounded draft when its evidence is ready. Approval and deployment remain separate."
+            : preparedFindingId
+              ? "One audit mission freezes one repair target. Start a new assessment to choose a different finding."
+              : "Prepare a fix records this selected priority as your target. It does not approve code, change auto mode, or deploy anything."}
+        </p>
+      </div>
+      {!preparedFindingId ? (
+        <button type="button" onClick={prepare} disabled={busy}>
+          <ClipboardText size={17} weight="bold" />
+          {busy ? "Recording…" : "Prepare a fix"}
+        </button>
+      ) : null}
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
+function formatProfileBytes(value) {
+  if (!Number.isFinite(value)) return "—";
+  return value < 1_024 ? `${value} B` : `${Math.max(1, Math.round(value / 1_024))} KB`;
+}
+
+function DocumentProfile({ url, profile }) {
+  if (!profile) {
+    return (
+      <section className="document-evidence document-evidence-legacy" aria-label={`Live document evidence for ${url}`}>
+        <Browser size={42} weight="duotone" aria-hidden="true" />
+        <strong>Live HTML inspected</strong>
+        <span>Document structure and response headers were read from this public URL.</span>
+      </section>
+    );
+  }
+  const metrics = [
+    ["HTML read", formatProfileBytes(profile?.htmlBytes)],
+    ["Scripts", profile?.elements?.scripts ?? "—"],
+    ["Stylesheets", profile?.elements?.stylesheets ?? "—"],
+    ["Images", profile?.elements?.images ?? "—"],
+    ["Links", profile?.elements?.links ?? "—"],
+    ["External origins", profile?.externalOrigins?.length ?? "—"],
+  ];
+  return (
+    <section className="document-evidence" aria-label={`Live document profile for ${url}`}>
+      <div className="document-profile-heading">
+        <Browser size={36} weight="duotone" aria-hidden="true" />
+        <div>
+          <strong>Live document profile</strong>
+          <span>Bounded HTML structure and response headers from this public URL.</span>
+        </div>
+      </div>
+      <dl className="document-profile-metrics">
+        {metrics.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      <div className="document-profile-signals" aria-label="Observed response headers">
+        <span className={profile?.headers?.contentSecurityPolicy ? "observed" : "missing"}>
+          CSP {profile?.headers?.contentSecurityPolicy ? "observed" : "missing"}
+        </span>
+        <span className={profile?.headers?.nosniff ? "observed" : "missing"}>
+          nosniff {profile?.headers?.nosniff ? "observed" : "missing"}
+        </span>
+        {Number.isFinite(profile?.inline?.scripts) ? (
+          <span>{profile.inline.scripts} inline script{profile.inline.scripts === 1 ? "" : "s"}</span>
+        ) : null}
+      </div>
+      <p>{profile?.caveat ?? "No screenshot or viewport measurement is claimed for this fallback."}</p>
+    </section>
+  );
+}
+
+function BrowserPreview({ url, viewport, selectedFinding, documentProfile, panelId, labelledBy }) {
+  const isDocumentEvidence = viewport.id === "document";
+  return (
+    <div
+      className={`browser-preview viewport-${viewport.id}`}
+      id={panelId}
+      role="tabpanel"
+      aria-labelledby={labelledBy}
+      tabIndex="0"
+    >
+      <div className="browser-toolbar">
+        <span className="traffic-lights" aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </span>
+        <span className="browser-address">{url}</span>
+        <ArrowsOutSimple size={16} aria-hidden="true" />
+      </div>
+      <div className="frame-stage">
+        {viewport.evidenceUrl ? (
+          <img
+            className="captured-evidence"
+            src={viewport.evidenceUrl}
+            alt={`${viewport.label} Lighthouse capture of ${url}`}
+          />
+        ) : isDocumentEvidence ? (
+          <DocumentProfile url={url} profile={documentProfile} />
+        ) : (
+          <iframe title={`Live ${viewport.label} preview of ${url}`} src={url} sandbox="" />
+        )}
+        <div className="frame-notice">
+          {viewport.evidenceUrl ? "Measured capture" : isDocumentEvidence ? "Document evidence" : "Live embed"}
+          <span>
+            {viewport.evidenceUrl
+              ? "Captured during this Lighthouse run."
+              : isDocumentEvidence
+                ? "No screenshot or viewport measurement is claimed for this fallback."
+              : "Target framing policies may block this preview."}
+          </span>
+        </div>
+        {selectedFinding ? (
+          <div className={`issue-marker marker-${selectedFinding.severity}`} aria-hidden="true">
+            <span>1</span>
+            {selectedFinding.category}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
+}
+
+function SeverityIcon({ severity }) {
+  return severity === "high" ? (
+    <Warning size={17} weight="fill" aria-hidden="true" />
+  ) : (
+    <Info size={17} weight="fill" aria-hidden="true" />
+  );
+}
+
+function CspResourceInventory({ context }) {
+  if (context?.type !== "csp-resource-inventory") return null;
+  const directives = Array.isArray(context.directives) ? context.directives : [];
+  const inlineScripts = Number.isFinite(context.inline?.scripts) ? context.inline.scripts : 0;
+  const inlineStyles = Number.isFinite(context.inline?.styles) ? context.inline.styles : 0;
+  return (
+    <section className="csp-inventory" aria-labelledby="csp-inventory-title">
+      <div className="csp-inventory-heading">
+        <span aria-hidden="true"><ShieldCheck size={18} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Observed policy inputs</p>
+          <strong id="csp-inventory-title">Resource-origin inventory</strong>
+        </div>
+        <em>Static HTML</em>
+      </div>
+      {directives.length ? (
+        <dl>
+          {directives.map((record) => (
+            <div key={record.directive}>
+              <dt>{record.directive}</dt>
+              <dd>
+                {record.origins.map((origin) => <code key={origin}>{origin}</code>)}
+                {record.omitted ? <small>+{record.omitted} more</small> : null}
+              </dd>
+            </div>
+          ))}
+        </dl>
+      ) : (
+        <p className="csp-inventory-empty">No external HTTP origins were present in the fetched markup.</p>
+      )}
+      <div className="csp-inline-summary">
+        <span>{inlineScripts} inline script{inlineScripts === 1 ? "" : "s"}</span>
+        <span>{inlineStyles} inline style block/attribute{inlineStyles === 1 ? "" : "s"}</span>
+      </div>
+      <p className="csp-caveat">{context.caveat}</p>
+    </section>
+  );
+}
+
+function ObservedRoutes({ auditId, profile, onAuditRoute }) {
+  const routes = Array.isArray(profile?.routes) ? profile.routes : [];
+  const [busyPath, setBusyPath] = useState("");
+  const [error, setError] = useState("");
+  if (!routes.length) return null;
+
+  const startRoute = async (path) => {
+    setBusyPath(path);
+    setError("");
+    try {
+      await onAuditRoute(path);
+    } catch (cause) {
+      const failure = await humanMissionMutationFailure(
+        cause,
+        auditId,
+        "Frontmend could not start an audit for that observed route.",
+      );
+      setError(failure.message);
+      setBusyPath("");
+    }
+  };
+
+  return (
+    <section className="observed-routes" aria-labelledby="observed-routes-title">
+      <div className="observed-routes-heading">
+        <span aria-hidden="true"><LinkSimple size={19} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Site exploration</p>
+          <h2 id="observed-routes-title">Routes observed on this page</h2>
+          <p>Continue from public, same-site links in the measured document.</p>
+        </div>
+      </div>
+      <div className="observed-route-list">
+        {routes.map((path) => (
+          <button
+            type="button"
+            key={path}
+            onClick={() => startRoute(path)}
+            disabled={Boolean(busyPath)}
+            aria-label={`Audit observed route ${path}`}
+          >
+            <code>{path}</code>
+            <span>{busyPath === path ? "Starting…" : "Audit route"}</span>
+            <ArrowRight size={15} weight="bold" aria-hidden="true" />
+          </button>
+        ))}
+      </div>
+      <p className="observed-routes-note">
+        {profile.routesCaveat}
+        {profile.routesOmitted > 0
+          ? ` ${profile.routesOmitted} additional route${profile.routesOmitted === 1 ? " was" : "s were"} omitted.`
+          : ""}
+      </p>
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
+    </section>
+  );
+}
+
+function RouteJourney({ exploration, currentPath }) {
+  if (!exploration?.parentAuditId || !Number.isFinite(exploration.depth)) return null;
+  const trail = Array.isArray(exploration.trail) ? exploration.trail.slice(0, 5) : [];
+
+  return (
+    <section className="route-journey" aria-labelledby="route-journey-title">
+      <div className="route-journey-copy">
+        <span aria-hidden="true"><Browser size={20} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Route journey · depth {exploration.depth}</p>
+          <h2 id="route-journey-title">How this page was reached</h2>
+          <p>Each hop was started from a same-site path observed by the completed parent audit.</p>
+        </div>
+      </div>
+      <ol className="route-journey-trail" aria-label="Audit route lineage">
+        {trail.map((entry, index) => (
+          <li key={`${entry.auditId}-${index}`}>
+            <a href={auditWorkspacePath(entry.auditId)} title={`Open parent audit ${entry.auditId}`}>
+              <span>{index === 0 ? "Root" : `Hop ${index}`}</span>
+              <code>{entry.path}</code>
+            </a>
+            <ArrowRight size={14} weight="bold" aria-hidden="true" />
+          </li>
+        ))}
+        <li className="current" aria-current="page">
+          <span>Current</span>
+          <code>{exploration.observedPath ?? currentPath}</code>
+        </li>
+      </ol>
+      <p className="route-journey-boundary">
+        Provenance only: the trail records linked public audits, not navigation coverage beyond each fetched document.
+      </p>
+    </section>
+  );
+}
+
+function SiteExploration({ report }) {
+  const routes = Array.isArray(report.documentProfile?.routes) ? report.documentProfile.routes : [];
+  const [selected, setSelected] = useState([]);
+  const [explorations, setExplorations] = useState(() =>
+    auditService.getSiteExplorations(report.auditId),
+  );
+  const [isStarting, setIsStarting] = useState(false);
+  const [error, setError] = useState("");
+  const current = explorations[0] ?? null;
+
+  useEffect(() => {
+    let active = true;
+    let timer;
+    const sync = () => {
+      if (active) setExplorations([...auditService.getSiteExplorations(report.auditId)]);
+    };
+    const unsubscribe = auditService.subscribe(sync);
+    const poll = async () => {
+      const mission = auditService.getSiteExplorations(report.auditId)[0];
+      if (mission && ["queued", "running"].includes(mission.status)) {
+        await auditService.getSiteExploration(report.auditId, mission.id).catch(() => {});
+      }
+      if (active) timer = window.setTimeout(poll, 900);
+    };
+    void auditService.listSiteExplorations(report.auditId).then(sync).catch(() => {});
+    timer = window.setTimeout(poll, 900);
+    return () => {
+      active = false;
+      unsubscribe();
+      window.clearTimeout(timer);
+    };
+  }, [report.auditId]);
+
+  if (!routes.length) return null;
+
+  const togglePath = (path) => {
+    setError("");
+    setSelected((items) => {
+      if (items.includes(path)) return items.filter((item) => item !== path);
+      return items.length < 3 ? [...items, path] : items;
+    });
+  };
+
+  const start = async () => {
+    if (!selected.length) return;
+    setIsStarting(true);
+    setError("");
+    try {
+      await auditService.startSiteExploration(report.auditId, selected, "human");
+      setSelected([]);
+    } catch (cause) {
+      const failure = await humanMissionMutationFailure(
+        cause,
+        report.auditId,
+        "Frontmend could not start this site exploration.",
+      );
+      if (failure.stale) setSelected([]);
+      setError(failure.message);
+    } finally {
+      setIsStarting(false);
+    }
+  };
+
+  const terminal = current && ["complete", "partial", "failed"].includes(current.status);
+
+  return (
+    <section className="site-exploration" aria-labelledby="site-exploration-title">
+      <div className="site-exploration-intro">
+        <div className="site-exploration-heading">
+          <span aria-hidden="true"><MagnifyingGlass size={20} weight="duotone" /></span>
+          <div>
+            <p className="kicker">Cross-page evidence</p>
+            <h2 id="site-exploration-title">Explore a small part of this site</h2>
+            <p>Select up to three observed routes. Frontmend audits each page separately and groups recurring issues.</p>
+          </div>
+        </div>
+        <div className="site-exploration-guardrails" aria-label="Exploration guardrails">
+          <span>1–3 routes</span>
+          <span>Server validated</span>
+          <span>Not a full crawl</span>
+        </div>
+      </div>
+
+      <div className="site-route-picker" aria-label="Select routes for site exploration">
+        {routes.map((path) => {
+          const active = selected.includes(path);
+          const unavailable = !active && selected.length >= 3;
+          return (
+            <button
+              type="button"
+              key={path}
+              aria-pressed={active}
+              disabled={unavailable || isStarting}
+              onClick={() => togglePath(path)}
+            >
+              <span aria-hidden="true">{active ? <Check size={13} weight="bold" /> : null}</span>
+              <code>{path}</code>
+            </button>
+          );
+        })}
+      </div>
+      <div className="site-exploration-actions">
+        <button type="button" onClick={start} disabled={!selected.length || isStarting}>
+          <Pulse size={16} weight="duotone" aria-hidden="true" />
+          {isStarting
+            ? "Starting mission…"
+            : selected.length
+              ? `Explore ${selected.length} selected route${selected.length === 1 ? "" : "s"}`
+              : "Select routes to explore"}
+        </button>
+        <p>Every page keeps its own audit ID and evidence boundary.</p>
+      </div>
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
+
+      {current ? (
+        <article className={`site-mission site-mission-${current.status}`} aria-live="polite">
+          <header>
+            <div>
+              <p className="kicker">Latest mission · {current.status}</p>
+              <h3>{current.status === "complete" ? "Cross-page evidence ready" : "Selected pages are being audited"}</h3>
+            </div>
+            <strong>{current.progress}%</strong>
+          </header>
+          <progress
+            className="site-mission-progress"
+            max="100"
+            value={current.progress}
+            aria-label={`Exploration ${current.progress}% complete`}
+          />
+          <div className="site-mission-metrics">
+            <span><strong>{current.summary.pagesComplete}</strong>/{current.summary.pagesRequested}<small>Pages complete</small></span>
+            <span><strong>{current.summary.totalFindings}</strong><small>Findings observed</small></span>
+            <span><strong>{current.summary.recurringIssues}</strong><small>Recurring issues</small></span>
+          </div>
+          <div className="site-mission-pages">
+            {current.pages.map((page) => (
+              <a key={page.position} href={page.workspacePath ?? undefined} aria-disabled={!page.workspacePath}>
+                <span>{page.status}</span>
+                <code>{page.path}</code>
+                <small>{page.score === null ? `${page.progress}%` : `Score ${page.score}`}</small>
+              </a>
+            ))}
+          </div>
+          {current.issues.length ? (
+            <div className="cross-page-issues">
+              <p className="kicker">Cross-page patterns</p>
+              {current.issues.slice(0, 5).map((issue) => (
+                <div key={`${issue.provider}-${issue.ruleId}-${issue.title}`}>
+                  <span>{issue.occurrenceCount} page{issue.occurrenceCount === 1 ? "" : "s"}</span>
+                  <strong>{issue.title}</strong>
+                  <small>{issue.provider} · {issue.ruleId}</small>
+                </div>
+              ))}
+            </div>
+          ) : null}
+          <footer>
+            <p>{current.caveat}</p>
+            {terminal ? (
+              <a href={auditService.getSiteExplorationReportUrl(report.auditId, current.id)} download>
+                <DownloadSimple size={15} weight="bold" aria-hidden="true" />
+                Export exploration
+              </a>
+            ) : null}
+          </footer>
+        </article>
+      ) : null}
+    </section>
+  );
+}
+
+export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAuditRoute }) {
+  const report = audit.report;
+  const isDocumentAudit = report.engine.mode === "live-document";
+  const isHybridAudit = report.engine.mode === "hybrid-lighthouse-document";
+  const isPartialLighthouse = report.engine.mode === "live-lighthouse-partial";
+  const evidenceLabel = isDocumentAudit
+    ? "live document evidence"
+    : isHybridAudit
+      ? "partial Lighthouse + document evidence"
+      : isPartialLighthouse
+        ? "partial Lighthouse evidence"
+        : "live Lighthouse evidence";
+  const viewportFailures = Array.isArray(report.viewportFailures) ? report.viewportFailures : [];
+  const viewports = report.viewports?.length ? report.viewports : VIEWPORTS;
+  const [viewportId, setViewportId] = useState(
+    viewports.find((item) => item.id === "mobile")?.id ?? viewports[0]?.id,
+  );
+  const viewportPanelId = useId();
+  const viewportTabIdPrefix = useId();
+  const findingDetailId = useId();
+  const findingDetailTitleId = useId();
+  const [repairs, setRepairs] = useState(() => auditService.getRepairs(report.auditId));
+  const [diagnosticMissions, setDiagnosticMissions] = useState(() => auditService.getDiagnosticMissions(report.auditId));
+  const [browserReview, setBrowserReview] = useState(() => auditService.getBrowserReview(report.auditId));
+  const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
+  const mission = retainedAuditMission(audit);
+  const missionState = deriveAuditMissionState({ report, mission, diagnosticMissions, repairs, browserReview });
+  const findings = useMemo(() => assessmentFindings(report, browserReview), [report, browserReview]);
+  const [selectedFindingId, setSelectedFindingId] = useState(
+    () => missionState.priorities[0]?.findingId ?? findings[0]?.id ?? null,
+  );
+  const [shareState, setShareState] = useState("idle");
+  const shareInputRef = useRef(null);
+  const shareUrl = new URL(auditWorkspacePath(report.auditId), window.location.origin).href;
+  const viewport = viewports.find((item) => item.id === viewportId) ?? viewports[0];
+  const selectedFinding =
+    findings.find((finding) => finding.id === selectedFindingId) ?? findings[0];
+  const selectedFindingScope = selectedFinding
+    ? findings.filter(
+        (finding) =>
+          finding.source?.provider === selectedFinding.source?.provider &&
+          finding.source?.auditId === selectedFinding.source?.auditId,
+      )
+    : [];
+  const selectedRepair = repairs.find((repair) => repair.findingId === selectedFinding?.id) ?? null;
+  const selectedDiagnosticMission = diagnosticMissions.find((mission) => mission.findingId === selectedFinding?.id) ?? null;
+  const selectedPriority = missionState.priorities.find(
+    (priority) => priority.findingId === selectedFinding?.id,
+  ) ?? null;
+  const preparedFindingId = mission.repairPreparation?.findingId ?? null;
+  const preparedFinding = findings.find((finding) => finding.id === preparedFindingId) ?? null;
+  const selectedRepairPrepared = preparedFindingId === selectedFinding?.id;
+  const selectedDiagnosticReady = selectedFinding
+    ? !findingRequiresDiagnosticMission(selectedFinding) ||
+      selectedDiagnosticMission?.state?.state === "ready-for-repair"
+    : false;
+  const omittedFindingCount = Math.max(
+    0,
+    Number.isFinite(report.findingsOmitted)
+      ? report.findingsOmitted
+      : (report.findingCount ?? report.findings.length) - report.findings.length,
+  );
+
+  useEffect(() => {
+    let active = true;
+    const refresh = () => {
+      if (active) {
+        setRepairs([...auditService.getRepairs(report.auditId)]);
+        setDiagnosticMissions([...auditService.getDiagnosticMissions(report.auditId)]);
+        setBrowserReview(auditService.getBrowserReview(report.auditId));
+        setRepairPolicy(auditService.getRepairPolicy(report.auditId));
+      }
+    };
+    const unsubscribe = auditService.subscribe(refresh);
+    void auditService.listRepairs(report.auditId).then(refresh).catch(() => {});
+    void auditService.listDiagnosticMissions(report.auditId).then(refresh).catch(() => {});
+    void auditService.loadBrowserReview(report.auditId).then(refresh).catch(() => {});
+    return () => {
+      active = false;
+      unsubscribe();
+    };
+  }, [report.auditId]);
+
+  useEffect(() => {
+    if (findings.length && !findings.some((finding) => finding.id === selectedFindingId)) {
+      setSelectedFindingId(missionState.priorities[0]?.findingId ?? findings[0].id);
+    }
+  }, [findings, missionState.priorities, selectedFindingId]);
+
+  const rememberRepair = (repair) => {
+    setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
+    setRepairPolicy(auditService.getRepairPolicy(report.auditId));
+  };
+
+  const selectFinding = (findingId) => {
+    const finding = findings.find((item) => item.id === findingId);
+    if (!finding) return;
+    setSelectedFindingId(finding.id);
+    if (finding.source?.strategy) setViewportId(finding.source.strategy);
+  };
+  const selectViewportFromKeyboard = (event, index) => {
+    const lastIndex = viewports.length - 1;
+    const nextIndex = event.key === "Home"
+      ? 0
+      : event.key === "End"
+        ? lastIndex
+        : event.key === "ArrowRight" || event.key === "ArrowDown"
+          ? (index + 1) % viewports.length
+          : event.key === "ArrowLeft" || event.key === "ArrowUp"
+            ? (index - 1 + viewports.length) % viewports.length
+            : null;
+    if (nextIndex === null) return;
+    event.preventDefault();
+    setViewportId(viewports[nextIndex].id);
+    const tabs = event.currentTarget.parentElement?.querySelectorAll('[role="tab"]');
+    window.requestAnimationFrame(() => tabs?.[nextIndex]?.focus());
+  };
+
+  const copyShareLink = async () => {
+    try {
+      if (typeof navigator.clipboard?.writeText !== "function") throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(shareUrl);
+      setShareState("copied");
+      window.setTimeout(() => setShareState("idle"), 1_600);
+    } catch {
+      setShareState("manual");
+      window.requestAnimationFrame(() => {
+        shareInputRef.current?.focus();
+        shareInputRef.current?.select();
+      });
+    }
+  };
+
+  return (
+    <section className="report-view" aria-labelledby="report-title">
+      <div className="report-heading">
+        <div>
+          <div className="report-nav-actions">
+            <button className="back-button" type="button" onClick={onReset}>
+              <ArrowLeft size={17} weight="bold" />
+              New audit
+            </button>
+            {report.exploration?.parentAuditId ? (
+              <a
+                className="share-audit"
+                href={auditWorkspacePath(report.exploration.parentAuditId)}
+              >
+                <ArrowLeft size={16} weight="bold" aria-hidden="true" />
+                Parent audit
+              </a>
+            ) : null}
+            <button className="share-audit" type="button" onClick={copyShareLink}>
+              {shareState === "copied" ? (
+                <Check size={16} weight="bold" />
+              ) : (
+                <LinkSimple size={16} weight="bold" />
+              )}
+              {shareState === "copied"
+                ? "Link copied"
+                : shareState === "manual"
+                  ? "Link shown"
+                  : "Share audit"}
+            </button>
+            <a
+              className="share-audit"
+              href={auditService.getAuditReportUrl(report.auditId)}
+              download
+            >
+              <DownloadSimple size={16} weight="bold" aria-hidden="true" />
+              Export report
+            </a>
+            {!report.verification && missionState.assessmentComplete ? (
+              <a
+                className="share-audit assessment-receipt-action"
+                href={auditService.getAssessmentReceiptUrl(report.auditId)}
+                download
+              >
+                <ClipboardText size={16} weight="bold" aria-hidden="true" />
+                Export assessment
+              </a>
+            ) : null}
+          </div>
+          <p className="kicker">
+            {report.verification ? "Verification measurement complete" : "Audit complete"} · {evidenceLabel}
+          </p>
+          <h1 id="report-title">{report.hostname}</h1>
+        </div>
+        <div
+          className="score-card"
+          aria-label={`${isDocumentAudit ? "Document coverage" : "Measured frontend health"} score ${report.score} out of 100`}
+        >
+          <strong>{report.score}</strong>
+          <span>{isDocumentAudit ? "Coverage" : "Health"}</span>
+        </div>
+      </div>
+
+      <AuditMissionSummary
+        audit={audit}
+        diagnosticMissions={diagnosticMissions}
+        repairs={repairs}
+        browserReview={browserReview}
+        missionState={missionState}
+      />
+
+      <AgentTakeover
+        auditId={report.auditId}
+        state={missionState}
+        webMcp={webMcp}
+        onOpened={setBrowserReview}
+      />
+
+      <BrowserReviewMission
+        auditId={report.auditId}
+        state={missionState}
+        review={browserReview}
+        verification={report.verification}
+        webMcp={webMcp}
+        onChanged={setBrowserReview}
+      />
+
+      {shareState === "manual" ? (
+        <div className="manual-share" role="status">
+          <label htmlFor="manual-share-url">Stable audit link</label>
+          <div>
+            <input
+              ref={shareInputRef}
+              id="manual-share-url"
+              value={shareUrl}
+              readOnly
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button
+              type="button"
+              aria-label="Close stable audit link"
+              onClick={() => setShareState("idle")}
+            >
+              <X size={15} weight="bold" />
+            </button>
+          </div>
+          <small>Clipboard access is unavailable. Copy this reloadable workspace URL manually.</small>
+        </div>
+      ) : null}
+
+      <div className="summary-row" aria-label="Audit summary">
+        <div>
+          <span className="metric-good">{report.checks.passed}</span>
+          <small>Checks passed</small>
+        </div>
+        <div>
+          <span>{report.findingCount}</span>
+          <small>Findings</small>
+        </div>
+        <div>
+          <span>{report.viewportCount}</span>
+          <small>Viewports measured</small>
+        </div>
+        <p>{report.engine.notice}</p>
+      </div>
+
+      {viewportFailures.length ? (
+        <section className="viewport-failures" aria-labelledby="viewport-failures-title">
+          <Warning size={19} weight="fill" aria-hidden="true" />
+          <div>
+            <strong id="viewport-failures-title">Partial viewport evidence retained</strong>
+            <p>
+              Frontmend kept every successful measurement instead of discarding the run. Unavailable
+              strategies remain explicit and can be retried without turning them into inferred results.
+            </p>
+            <ul>
+              {viewportFailures.map((failure) => (
+                <li key={failure.id}>
+                  <span>{failure.label}</span>
+                  <code>{failure.code}</code>
+                  <small>{failure.message}</small>
+                </li>
+              ))}
+            </ul>
+            {report.documentSupplement ? (
+              <small className="document-supplement-note">
+                {report.documentSupplement.evaluatedRuleCount} non-overlapping document rules added · {report.documentSupplement.overlappingRulesOmitted} overlapping rules omitted from totals. Document evidence does not replace the unavailable viewport.
+              </small>
+            ) : null}
+          </div>
+        </section>
+      ) : null}
+
+      {report.verification ? (
+        <LazyWorkspace
+          load={loadVerificationWorkspace}
+          label="verification evidence workspace"
+          resetKey={`${report.auditId}:verification:${audit.missionRevision ?? 1}`}
+          componentProps={{ verification: report.verification }}
+        />
+      ) : null}
+
+      {findings.length ? (
+        <LazyWorkspace
+          load={loadRepairPolicyWorkspace}
+          label="repair policy workspace"
+          resetKey={`${report.auditId}:policy:${audit.missionRevision ?? 1}`}
+          variant="inline"
+          componentProps={{
+            auditId: report.auditId,
+            policy: repairPolicy,
+            onPolicyChange: setRepairPolicy,
+          }}
+        />
+      ) : null}
+
+      <RouteJourney
+        exploration={report.exploration}
+        currentPath={new URL(report.finalUrl ?? report.url).pathname}
+      />
+
+      <ObservedRoutes
+        auditId={report.auditId}
+        profile={report.documentProfile}
+        onAuditRoute={onAuditRoute}
+      />
+
+      <SiteExploration report={report} />
+
+      <div className="workspace-grid">
+        <div className="preview-column">
+          <div className="viewport-tabs" role="tablist" aria-label="Preview viewport">
+            {viewports.map((item, index) => {
+              const Icon = item.icon
+                ?? (item.id === "mobile" ? DeviceMobile : item.id === "document" ? Browser : Desktop);
+              const tabId = `${viewportTabIdPrefix}-${item.id}`;
+              return (
+                <button
+                  key={item.id}
+                  id={tabId}
+                  type="button"
+                  role="tab"
+                  aria-selected={item.id === viewportId}
+                  aria-controls={viewportPanelId}
+                  tabIndex={item.id === viewportId ? 0 : -1}
+                  className={item.id === viewportId ? "active" : ""}
+                  onClick={() => setViewportId(item.id)}
+                  onKeyDown={(event) => selectViewportFromKeyboard(event, index)}
+                >
+                  <Icon size={17} aria-hidden="true" />
+                  <span>{item.label}</span>
+                  <small>{item.detail}</small>
+                </button>
+              );
+            })}
+          </div>
+          <BrowserPreview
+            url={report.finalUrl ?? report.url}
+            viewport={viewport}
+            selectedFinding={selectedFinding}
+            documentProfile={report.documentProfile}
+            panelId={viewportPanelId}
+            labelledBy={`${viewportTabIdPrefix}-${viewport.id}`}
+          />
+
+          {selectedFinding ? (
+            <article
+              className="finding-detail"
+              id={findingDetailId}
+              aria-labelledby={findingDetailTitleId}
+              aria-live="polite"
+            >
+              <div className="finding-detail-heading">
+                <span className={`severity-badge ${selectedFinding.severity}`}>
+                  <SeverityIcon severity={selectedFinding.severity} />
+                  {selectedFinding.severity}
+                </span>
+                <span>{selectedFinding.viewport}</span>
+              </div>
+              <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
+              <p>{selectedFinding.summary}</p>
+              {selectedFindingScope.length > 1 ? (
+                <section className="finding-scope" aria-label="Cross-viewport finding scope">
+                  <div>
+                    <span>Repair scope</span>
+                    <strong>{selectedFindingScope.length} measured occurrences</strong>
+                  </div>
+                  <ul>
+                    {selectedFindingScope.map((occurrence) => (
+                      <li key={occurrence.id}>
+                        <span>{occurrence.viewport}</span>
+                        <code title={occurrence.selector}>{occurrence.selector}</code>
+                      </li>
+                    ))}
+                  </ul>
+                  <p>One repository change may own several failures; verify every listed strategy.</p>
+                </section>
+              ) : null}
+              <dl>
+                <div>
+                  <dt>Evidence</dt>
+                  <dd>{selectedFinding.evidence}</dd>
+                </div>
+                <div>
+                  <dt>Suggested repair</dt>
+                  <dd>{selectedFinding.repair}</dd>
+                </div>
+              </dl>
+              <BrowserFindingProvenance finding={selectedFinding} />
+              {selectedFinding.diagnosticEvidence ? (
+                <LazyWorkspace
+                  load={loadDiagnosisWorkspace}
+                  label="diagnostic evidence workspace"
+                  resetKey={`${report.auditId}:evidence:${selectedFinding.id}`}
+                  variant="inline"
+                  componentProps={{ mode: "evidence", evidence: selectedFinding.diagnosticEvidence }}
+                />
+              ) : null}
+              <CspResourceInventory context={selectedFinding.repairContext} />
+            </article>
+          ) : null}
+          {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
+            <LazyWorkspace
+              load={loadDiagnosisWorkspace}
+              label="repository diagnosis workspace"
+              resetKey={`${report.auditId}:diagnosis:${selectedFinding.id}:${audit.missionRevision ?? 1}`}
+              variant="inline"
+              componentProps={{
+                mode: "mission",
+                auditId: report.auditId,
+                finding: selectedFinding,
+                mission: selectedDiagnosticMission,
+                webMcp,
+              }}
+            />
+          ) : null}
+          <PrepareRepairIntent
+            auditId={report.auditId}
+            priority={selectedPriority}
+            mission={mission}
+            preparedFindingTitle={preparedFinding?.title}
+          />
+          {(selectedRepairPrepared || selectedRepair) ? (
+            <LazyWorkspace
+              load={loadRepairWorkspace}
+              label="repair and verification workspace"
+              resetKey={`${report.auditId}:repair:${selectedFinding?.id ?? "none"}:${audit.missionRevision ?? 1}`}
+              variant="inline"
+              componentProps={{
+                auditId: report.auditId,
+                finding: selectedFinding,
+                repair: selectedRepair,
+                repairPrepared: selectedRepairPrepared,
+                diagnosticReady: selectedDiagnosticReady,
+                onRepairChange: rememberRepair,
+                onVerify,
+              }}
+            />
+          ) : null}
+        </div>
+
+        <aside className="findings-panel" aria-label="Audit findings">
+          <div className="findings-heading">
+            <div>
+              <p className="kicker">Evidence queue</p>
+              <h2>What needs attention</h2>
+            </div>
+            <span>{findings.length}</span>
+          </div>
+          <MissionPriorities
+            state={missionState}
+            selectedFindingId={selectedFindingId}
+            onSelect={selectFinding}
+            detailId={findingDetailId}
+          />
+          <div className="finding-list">
+            {findings.map((finding, index) => (
+              <button
+                type="button"
+                key={finding.id}
+                className={finding.id === selectedFindingId ? "selected" : ""}
+                aria-pressed={finding.id === selectedFindingId}
+                aria-controls={findingDetailId}
+                onClick={() => selectFinding(finding.id)}
+              >
+                <span className={`finding-index ${finding.severity}`}>{index + 1}</span>
+                <span className="finding-copy">
+                  <small>{finding.category}</small>
+                  <strong>{finding.title}</strong>
+                  <em>{finding.selector}</em>
+                </span>
+                <ArrowRight size={16} weight="bold" aria-hidden="true" />
+              </button>
+            ))}
+            {!findings.length ? (
+              <p className="empty-findings">
+                {missionState.browserReview.required && missionState.browserReview.status !== "complete"
+                  ? "No provider failure matched this focus. The rendered-browser review is still active."
+                  : "No material failures were found in this completed assessment slice."}
+              </p>
+            ) : null}
+          </div>
+          {omittedFindingCount > 0 ? (
+            <p className="findings-omitted" role="note">
+              Showing the {report.findings.length} highest-priority findings. {omittedFindingCount} additional
+              measured failure{omittedFindingCount === 1 ? " remains" : "s remain"} in the explicit
+              rule-outcome record and export.
+            </p>
+          ) : null}
+          <div className="agent-handoff">
+            <Sparkle size={18} weight="fill" aria-hidden="true" />
+            <p>
+              {repairPolicy.mode === "auto-low-risk"
+                ? "After you prepare one priority, an agent can inspect the repository and submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
+                : "Prepare one priority, then an agent can inspect the repository and submit a repair mission through WebMCP. You approve it in this shared workspace."}
+            </p>
+          </div>
+        </aside>
+      </div>
+    </section>
+  );
+}

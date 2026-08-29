@@ -133,7 +133,9 @@ function measuredEvidenceSummary(finding, kindOverride = null) {
   return {
     kind,
     provenance: evidence?.kind === "browser-observation"
-      ? "agent-reported-browser"
+      ? ["agent-reported-browser", "person-reported-browser", "mixed-attributed-browser"].includes(evidence.provenance)
+        ? evidence.provenance
+        : "agent-reported-browser"
       : "measured-lighthouse",
     completeness: evidence?.completeness === "actionable" ? "actionable" : "partial",
     itemCount: Math.max(0, Math.min(5, itemCount)),
@@ -249,7 +251,9 @@ export function diagnosticMissionState(mission) {
         ? "agent-reported"
         : "person-reported"
       : blocked
-        ? "blocked-agent-reported"
+        ? mission?.blocker?.agentReported
+          ? "blocked-agent-reported"
+          : "blocked-person-reported"
         : "none",
     nextActions: ready
       ? [{ id: "submit_repository_mission", actor: "person-or-agent" }]

@@ -1,6 +1,8 @@
 import {
+  browserReviewAdoptionAvailable,
   browserReviewFindings,
   browserReviewChecksForMission,
+  browserReviewProvenance,
   browserReviewRequired,
   browserReviewState,
 } from "./browser-review-contract.js";
@@ -218,7 +220,9 @@ export function focusedAuditPriorities(
       suggestedRepair: finding?.suggestedRepair ?? "Diagnose the retained evidence before repair.",
       occurrenceCount: Math.max(1, occurrenceFindings.length),
       affectedStrategies,
-      evidenceProvenance: providerFindings.length ? "measured-provider" : "agent-reported-browser",
+      evidenceProvenance: providerFindings.length
+        ? "measured-provider"
+        : item.evidenceRecords.browser?.provenance ?? "agent-reported-browser",
       source: {
         provider: item.evidenceRecords.provider?.provider ?? "Frontmend browser review",
         auditId: item.evidenceRecords.provider?.ruleId ?? finding?.source?.auditId ?? item.findingId,
@@ -306,7 +310,8 @@ export function deriveAuditMissionState({
 }) {
   const mission = auditMissionSnapshot(missionValue);
   const projection = focusedAuditPriorities(report, mission, diagnosticMissions, browserReview, repairs);
-  const reviewRequired = browserReviewRequired(mission);
+  const reviewRequired = browserReviewRequired(mission, browserReview);
+  const reviewAdoptionAvailable = browserReviewAdoptionAvailable(mission, browserReview);
   const reviewState = browserReview ? browserReviewState(browserReview) : null;
   const requestedBrowserCheckCount = reviewState?.requestedCheckCount
     ?? (reviewRequired ? browserReviewChecksForMission(mission).length : 0);
@@ -412,14 +417,21 @@ export function deriveAuditMissionState({
     priorities: projection.priorities,
     browserReview: {
       required: reviewRequired,
-      status: reviewRequired ? reviewState?.status ?? "not-opened" : "not-required",
+      adoptionAvailable: reviewAdoptionAvailable,
+      adoptedFromHumanMission: browserReview?.adoption?.mode === "human-to-agent",
+      adoption: browserReview?.adoption ? { ...browserReview.adoption } : null,
+      status: reviewState?.status === "withdrawn"
+        ? "withdrawn"
+        : reviewRequired ? reviewState?.status ?? "not-opened" : "not-required",
       reviewId: browserReview?.id ?? null,
       requestedCheckCount: requestedBrowserCheckCount,
       completedCheckCount: reviewState?.completedCheckCount ?? 0,
       issueCount: reviewState?.issueCount ?? 0,
       blockedCheckCount: reviewState?.blockedCheckCount ?? 0,
       nextCheck: reviewState?.nextCheck ?? null,
-      provenance: browserReview ? "agent-reported-browser" : null,
+      withdrawalAvailable: reviewState?.withdrawalAvailable ?? false,
+      withdrawal: reviewState?.withdrawal ?? null,
+      provenance: browserReview ? browserReviewProvenance(browserReview) : null,
     },
     nextActor,
     nextAction,

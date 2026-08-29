@@ -134,6 +134,44 @@ test("validates mission goals before transport and sends only bounded semantic f
   assert.equal(calls[0].init.body.includes("prompt"), false);
 });
 
+test("starts a focused human assessment through the same bounded mission transport", async () => {
+  const calls = [];
+  const service = createAuditService({
+    now: () => 25,
+    transport: {
+      async start(input) {
+        calls.push(input);
+        return { id: AUDIT_ID, url: input.url, source: input.source, status: "queued" };
+      },
+    },
+  });
+
+  const started = await service.startAudit({
+    url: "example.com",
+    source: "human",
+    mission: {
+      intent: "assess",
+      focusAreas: ["accessibility", "seo", "performance"],
+      maxPriorities: 5,
+    },
+  });
+
+  assert.deepEqual(calls, [{
+    url: "https://example.com/",
+    source: "human",
+    mission: {
+      schemaVersion: 1,
+      intent: "assess",
+      focusAreas: ["accessibility", "seo", "performance"],
+      maxPriorities: 5,
+      requestedBy: "human",
+      requestedAt: 25,
+      repairPreparation: null,
+    },
+  }]);
+  assert.deepEqual(started.mission, calls[0].mission);
+});
+
 test("retains mission goals through partial polling and fresh restoration", async () => {
   const report = { auditId: AUDIT_ID, schemaVersion: 2, findings: [], viewports: [] };
   const service = createAuditService({
@@ -193,6 +231,8 @@ test("retains mission goals through partial polling and fresh restoration", asyn
 
 test("synchronizes a browser review and records only bounded agent evidence", async () => {
   const calls = [];
+  const openCalls = [];
+  const withdrawalCalls = [];
   const opened = {
     schemaVersion: 1,
     id: "browser-review-1",
@@ -205,17 +245,50 @@ test("synchronizes a browser review and records only bounded agent evidence", as
   };
   const service = createAuditService({
     transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        missionRevision: 5,
+        status: "complete",
+        progress: 100,
+        report: {
+          auditId: AUDIT_ID,
+          url,
+          finalUrl: url,
+          engine: { mode: "live-document", provider: "Frontmend live document" },
+          findings: [],
+          viewports: [],
+        },
+      }),
       getBrowserReview: async () => ({ auditId: AUDIT_ID, review: opened }),
-      openBrowserReview: async () => opened,
+      openBrowserReview: async (auditId, input, revision) => {
+        openCalls.push({ auditId, input, revision });
+        return opened;
+      },
       recordBrowserReviewCheck: async (auditId, reviewId, input, source) => {
         calls.push({ auditId, reviewId, input, source });
         return completed;
       },
+      withdrawBrowserReview: async (auditId, reviewId, revision) => {
+        withdrawalCalls.push({ auditId, reviewId, revision });
+        return { ...opened, state: { status: "withdrawn" }, missionCheckpoint: { missionRevision: 7 } };
+      },
     },
   });
+  await service.startAudit({ url: "example.com", source: "human" });
   await service.loadBrowserReview(AUDIT_ID);
   assert.equal(service.getBrowserReview(AUDIT_ID).id, opened.id);
-  await service.openBrowserReview(AUDIT_ID);
+  await service.openBrowserReview(AUDIT_ID, {
+    source: "person",
+    focusAreas: ["accessibility", "seo"],
+  }, 5);
+  assert.deepEqual(openCalls, [{
+    auditId: AUDIT_ID,
+    input: { source: "person", focusAreas: ["accessibility", "seo"] },
+    revision: 5,
+  }]);
   await service.recordBrowserReviewCheck(AUDIT_ID, opened.id, {
     checkId: "rendered-structure",
     outcome: "passed",
@@ -234,6 +307,10 @@ test("synchronizes a browser review and records only bounded agent evidence", as
     },
     source: "agent",
   });
+  await service.withdrawBrowserReview(AUDIT_ID, opened.id, 6);
+  assert.deepEqual(withdrawalCalls, [{ auditId: AUDIT_ID, reviewId: opened.id, revision: 6 }]);
+  assert.equal(service.getBrowserReview(AUDIT_ID).state.status, "withdrawn");
+  assert.equal(service.getMissionCheckpoint(AUDIT_ID).missionRevision, 7);
 });
 
 test("refreshes the active verification report after a browser replay contribution", async () => {
@@ -303,17 +380,31 @@ test("HTTP transport uses the browser-review singleton and sequenced check route
     },
   });
   await transport.getBrowserReview(AUDIT_ID);
-  await transport.openBrowserReview(AUDIT_ID);
+  await transport.openBrowserReview(AUDIT_ID, {
+    source: "person",
+    focusAreas: ["accessibility", "seo"],
+  }, 7);
   await transport.recordBrowserReviewCheck(AUDIT_ID, "browser-review-1", {
     checkId: "rendered-structure",
     outcome: "passed",
     summary: "Rendered structure checked.",
     observations: ["One primary heading is rendered."],
   }, "agent");
+  await transport.withdrawBrowserReview(AUDIT_ID, "browser-review-1", 8);
   assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review`);
   assert.equal(calls[1].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].init.body), {
+    source: "person",
+    focusAreas: ["accessibility", "seo"],
+    expectedMissionRevision: 7,
+  });
   assert.equal(calls[2].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review/browser-review-1/checks`);
   assert.equal(JSON.parse(calls[2].init.body).source, "agent");
+  assert.equal(calls[3].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review/browser-review-1/withdrawal`);
+  assert.deepEqual(JSON.parse(calls[3].init.body), {
+    source: "person",
+    expectedMissionRevision: 8,
+  });
 });
 
 test("HTTP transport exposes verification candidates and aggregate repair proof without changing tool names", async () => {
@@ -339,6 +430,33 @@ test("HTTP transport exposes verification candidates and aggregate repair proof 
     transport.repairVerificationReceiptUrl(AUDIT_ID, "repair-1"),
     `https://frontmend.test/api/audits/${AUDIT_ID}/repairs/repair-1/verification/receipt`,
   );
+});
+
+test("HTTP transport carries human-selected server-issued verification targets into repair staging", async () => {
+  const calls = [];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { id: "repair-1", status: "draft" } });
+    },
+  });
+  const candidateId = "route-d8d88f15";
+
+  await transport.stageRepair(AUDIT_ID, {
+    findingId: "color-contrast",
+    source: "human",
+    verificationTargetIds: [candidateId],
+  }, 7);
+
+  assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/repairs`);
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    findingId: "color-contrast",
+    source: "human",
+    verificationTargetIds: [candidateId],
+    expectedMissionRevision: 7,
+  });
 });
 
 test("prepares one retained finding through the service and derives the remembered mission", async () => {
@@ -555,6 +673,128 @@ test("HTTP transport reads the dedicated checkpoint endpoint", async () => {
   assert.equal(calls[0].init.method, undefined);
 });
 
+test("refreshes every authoritative mission snapshot after a stale Human write", async () => {
+  const initialReview = {
+    id: "355df6bb-06e7-432e-870a-ad9db11dfd72",
+    auditId: AUDIT_ID,
+    purpose: "assessment",
+    state: { status: "active" },
+  };
+  let browserReadFails = false;
+  const transport = {
+    start: async ({ url, mission }) => ({
+      id: AUDIT_ID,
+      url,
+      status: "complete",
+      mission,
+      missionRevision: 2,
+      report: { auditId: AUDIT_ID, findings: [] },
+    }),
+    checkpoint: async () => ({
+      schemaVersion: 1,
+      auditId: AUDIT_ID,
+      workspacePath: `/audits/${AUDIT_ID}`,
+      missionRevision: 9,
+      status: "action-available",
+      nextActor: "person",
+      requiredCapability: "human-review",
+      action: null,
+      completionCriteria: [],
+      retainedEvidenceSummary: [],
+      authorityBoundary: { humanOnly: ["approval"], agentMay: "prepare", claim: "No deployment proof." },
+    }),
+    get: async () => ({
+      id: AUDIT_ID,
+      url: "https://removemyexif.com/",
+      status: "complete",
+      missionRevision: 9,
+      report: { auditId: AUDIT_ID, findings: [] },
+    }),
+    listRepairs: async () => ({
+      repairs: [{ id: "repair-1", auditId: AUDIT_ID, status: "draft" }],
+      policy: { version: 1, mode: "auto-low-risk", remainingAutoApprovals: 2 },
+    }),
+    listDiagnosticMissions: async () => ({
+      missions: [{ id: "diagnostic-1", auditId: AUDIT_ID, state: { state: "awaiting-diagnosis" } }],
+    }),
+    getBrowserReview: async () => {
+      if (browserReadFails) throw new AuditError("BROWSER_REVIEW_UNAVAILABLE", "Review unavailable.");
+      return { review: initialReview };
+    },
+    listExplorations: async () => ({
+      explorations: [{ id: "explore-1", rootAuditId: AUDIT_ID, createdAt: 20 }],
+    }),
+  };
+  const service = createAuditService({ transport });
+  await service.startAudit({ url: "removemyexif.com" });
+  await service.loadBrowserReview(AUDIT_ID);
+  browserReadFails = true;
+
+  const refreshed = await service.refreshMissionWorkspace(AUDIT_ID);
+
+  assert.equal(refreshed.missionCheckpoint.missionRevision, 9);
+  assert.deepEqual(refreshed.unavailable, ["browserReview"]);
+  assert.equal(service.getActiveAudit().missionRevision, 9);
+  assert.equal(service.getActiveAudit().mission.requestedBy, "human");
+  assert.equal(service.getRepairs(AUDIT_ID)[0].id, "repair-1");
+  assert.equal(service.getRepairPolicy(AUDIT_ID).remainingAutoApprovals, 2);
+  assert.equal(service.getDiagnosticMissions(AUDIT_ID)[0].id, "diagnostic-1");
+  assert.equal(service.getBrowserReview(AUDIT_ID).id, initialReview.id);
+  assert.equal(service.getSiteExplorations(AUDIT_ID)[0].id, "explore-1");
+});
+
+test("retries a stale workspace read until its checkpoint and snapshots share one revision", async () => {
+  let checkpointCalls = 0;
+  let auditReads = 0;
+  const checkpointRevisions = [8, 9, 9, 9];
+  const transport = {
+    start: async ({ url, mission }) => ({
+      id: AUDIT_ID,
+      url,
+      status: "complete",
+      mission,
+      missionRevision: 7,
+      report: { auditId: AUDIT_ID, findings: [] },
+    }),
+    checkpoint: async () => ({
+      schemaVersion: 1,
+      auditId: AUDIT_ID,
+      workspacePath: `/audits/${AUDIT_ID}`,
+      missionRevision: checkpointRevisions[checkpointCalls++],
+      status: "action-available",
+      nextActor: "person",
+      requiredCapability: "human-review",
+      action: null,
+      completionCriteria: [],
+      retainedEvidenceSummary: [],
+      authorityBoundary: { humanOnly: ["approval"], agentMay: "prepare", claim: "No deployment proof." },
+    }),
+    get: async () => {
+      auditReads += 1;
+      return {
+        id: AUDIT_ID,
+        url: "https://removemyexif.com/",
+        status: "complete",
+        missionRevision: auditReads === 1 ? 8 : 9,
+        report: { auditId: AUDIT_ID, findings: [], title: auditReads === 1 ? "old" : "current" },
+      };
+    },
+    listRepairs: async () => ({ repairs: [], policy: { version: 1, mode: "review" } }),
+    listDiagnosticMissions: async () => ({ missions: [] }),
+    getBrowserReview: async () => ({ review: null }),
+    listExplorations: async () => ({ explorations: [] }),
+  };
+  const service = createAuditService({ transport });
+  await service.startAudit({ url: "removemyexif.com" });
+
+  const refreshed = await service.refreshMissionWorkspace(AUDIT_ID);
+
+  assert.equal(refreshed.missionCheckpoint.missionRevision, 9);
+  assert.equal(checkpointCalls, 4);
+  assert.equal(auditReads, 2);
+  assert.equal(service.getActiveAudit().report.title, "current");
+});
+
 test("starts related audits through the authoritative route transport", async () => {
   const calls = [];
   const service = createAuditService({
@@ -716,6 +956,75 @@ test("records and remembers a diagnostic blocker through the bounded transport r
     summary: "The current route no longer emits the measured console failure.",
     source: "agent",
     expectedMissionRevision: 1,
+  });
+});
+
+test("submits person-attributed diagnostic evidence with the loaded mission revision", async () => {
+  const calls = [];
+  const missionId = "5ae85552-5412-468b-9e8c-54d162b55a11";
+  const checkpoint = {
+    schemaVersion: 1,
+    auditId: AUDIT_ID,
+    workspacePath: `/audits/${AUDIT_ID}`,
+    missionRevision: 7,
+    status: "action-available",
+    nextActor: "person",
+    requiredCapability: "repository",
+    action: null,
+    completionCriteria: [],
+    retainedEvidenceSummary: [],
+    authorityBoundary: { humanOnly: [], agentMay: "", claim: "" },
+  };
+  const diagnosisInput = {
+    summary: "The page initialiser reads a missing runtime global.",
+    reproduction: "Reload the public route and observe the first console failure.",
+    observations: [{ kind: "console", detail: "The first-party ReferenceError reproduces." }],
+    sourceLocations: [{ file: "src/runtime.js", reason: "Owns the failing initialiser." }],
+    verificationChecks: ["bun test"],
+    confidence: "medium",
+  };
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      if (url.endsWith(`/api/audits/${AUDIT_ID}`) && !init.method) {
+        return Response.json({
+          ok: true,
+          data: { id: AUDIT_ID, status: "complete", missionRevision: checkpoint.missionRevision },
+        });
+      }
+      return Response.json({
+        ok: true,
+        data: {
+          id: missionId,
+          auditId: AUDIT_ID,
+          findingId: "mobile-errors-in-console",
+          diagnosis: { ...diagnosisInput, source: "person", agentReported: false },
+          state: { state: "ready-for-repair" },
+          missionCheckpoint: { ...checkpoint, missionRevision: 8, status: "complete" },
+        },
+      });
+    },
+  });
+  const service = createAuditService({ transport });
+  await service.getAudit(AUDIT_ID);
+  calls.length = 0;
+
+  const result = await service.submitDiagnosticEvidence(
+    AUDIT_ID,
+    missionId,
+    diagnosisInput,
+    "person",
+  );
+
+  assert.equal(result.diagnosis.agentReported, false);
+  assert.equal(service.getDiagnosticMissions(AUDIT_ID)[0].diagnosis.source, "person");
+  assert.equal(service.getMissionCheckpoint(AUDIT_ID).missionRevision, 8);
+  assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/diagnostics/${missionId}/evidence`);
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    ...diagnosisInput,
+    source: "person",
+    expectedMissionRevision: 7,
   });
 });
 

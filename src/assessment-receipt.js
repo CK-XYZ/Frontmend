@@ -163,8 +163,9 @@ export function createAssessmentReceipt({
     browserReview: browserReview
       ? {
           id: browserReview.id,
-          provenance: "agent-reported-browser",
+          provenance: browserReview.authority.provenance,
           status: browserReview.state.status,
+          withdrawal: browserReview.withdrawal ? { ...browserReview.withdrawal } : null,
           requestedFocusAreas: [...browserReview.requestedFocusAreas],
           requestedCheckCount: browserReview.state.requestedCheckCount,
           completedCheckCount: browserReview.state.completedCheckCount,
@@ -176,6 +177,8 @@ export function createAssessmentReceipt({
               120,
             ),
             outcome: text(result.outcome, 40),
+            source: result.source === "person" ? "person" : "agent",
+            provenance: result.source === "person" ? "person-reported-browser" : "agent-reported-browser",
             summary: text(result.summary, 300),
             observations: result.observations.slice(0, 4).map((item) => text(item, 400)),
             reportedAt: Number.isFinite(result.reportedAt) ? result.reportedAt : null,
@@ -225,19 +228,28 @@ export function assessmentReceiptMarkdown(receipt) {
   if (receipt.browserReview) {
     lines.push(
       "",
-      "## Agent-contributed browser review",
+      receipt.browserReview.status === "withdrawn"
+        ? "## Rendered-review handoff"
+        : "## Contributed rendered-browser review",
       "",
       `- Provenance: ${markdownText(receipt.browserReview.provenance, 80)}`,
       `- Status: ${markdownText(receipt.browserReview.status, 40)}`,
       `- Coverage: ${receipt.browserReview.completedCheckCount} of ${receipt.browserReview.requestedCheckCount} requested checks`,
       `- Browser-observed issues: ${receipt.browserReview.issueCount}`,
     );
+    if (receipt.browserReview.status === "withdrawn") {
+      lines.push(
+        `- Handoff: withdrawn by the person before any browser evidence was recorded`,
+        `- History: retained as an untouched optional handoff; provider evidence remains the assessment basis`,
+      );
+    }
     for (const check of receipt.browserReview.checks ?? []) {
       lines.push(
         "",
         `### ${markdownText(check.label, 120)}`,
         "",
         `- Outcome: ${markdownText(check.outcome, 40)}`,
+        `- Provenance: ${markdownText(check.provenance, 80)}`,
         `- Summary: ${markdownText(check.summary, 300)}`,
         `- Reported: ${timestamp(check.reportedAt)}`,
         ...check.observations.map((observation) => `- Observed: ${markdownText(observation, 400)}`),

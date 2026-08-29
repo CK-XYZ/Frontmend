@@ -42,7 +42,7 @@ function browserResultRecord(result, task) {
       ? result.findings.slice(0, 3).map(providerFindingRecord)
       : [],
     reportedAt: Number.isFinite(result.reportedAt) ? result.reportedAt : null,
-    provenance: "agent-reported-browser",
+    provenance: result.source === "person" ? "person-reported-browser" : "agent-reported-browser",
     trigger: task?.trigger
       ? {
           provider: bounded(task.trigger.provider, 120),

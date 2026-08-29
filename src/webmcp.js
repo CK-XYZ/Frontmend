@@ -20,6 +20,7 @@ import {
 import {
   BROWSER_REVIEW_BLOCKER_REASONS,
   BROWSER_REVIEW_OUTCOMES,
+  browserReviewAdoptionAvailable,
 } from "./browser-review-contract.js";
 import { repairVerificationReceiptMarkdown } from "./verification-impact-contract.js";
 
@@ -212,7 +213,13 @@ export function contextualFrontmendToolNames(service) {
     available.add("prepare_site_repair");
   }
   if (repairs.length) available.add("get_repair_workspace");
-  if (missionState?.browserReview?.required && !browserReview) {
+  if (
+    !browserReview
+    && (
+      missionState?.browserReview?.required
+      || browserReviewAdoptionAvailable(audit.mission, browserReview)
+    )
+  ) {
     available.add("open_browser_review");
   }
   if (verificationReplayRequired && !browserReview) {
@@ -501,11 +508,19 @@ export function createFrontmendTools(service) {
       name: "open_browser_review",
       title: "Open agent browser review",
       description:
-        "Open the exact rendered-browser contribution required by an agent-started accessibility or SEO assessment, or the fresh replay required to verify a retained browser finding after deployment. Frontmend returns one non-destructive browser check at a time so the agent inspects the rendered target instead of repeating provider output. This creates no site interaction by itself, accepts no findings, and does not inspect source or claim the page passed.",
+        "Open the exact rendered-browser contribution required by an agent-started accessibility or SEO assessment, adopt an eligible person-started assessment without restarting its audit, or open the fresh replay required to verify a retained browser finding after deployment. Frontmend returns one non-destructive browser check at a time so the agent inspects the rendered target instead of repeating provider output. Adoption retains the original person attribution and audit ID. This creates no site interaction by itself, accepts no findings, and does not inspect source or claim the page passed.",
       inputSchema: {
         ...emptySchema,
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          focusAreas: {
+            type: "array",
+            minItems: 1,
+            maxItems: 2,
+            uniqueItems: true,
+            items: { type: "string", enum: ["accessibility", "seo"] },
+            description: "Optional rendered-review scope when adopting a broad person-started assessment. A focused assessment retains its existing accessibility or SEO scope.",
+          },
           expectedMissionRevision: expectedMissionRevisionProperty,
         },
         required: ["expectedMissionRevision"],
@@ -513,15 +528,17 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: false },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "focusAreas", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const review = await service.openBrowserReview(
           auditId,
+          { source: "agent", ...(value.focusAreas === undefined ? {} : { focusAreas: value.focusAreas }) },
           expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         return {
           auditId,
           browserReview: review,
+          adoption: review.adoption,
           missionCheckpoint: review.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: {
             tool: "record_browser_review_check",

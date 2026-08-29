@@ -344,6 +344,35 @@ test("proxies a sequenced browser-review contribution to the authoritative audit
   assert.deepEqual(calls[0].input, body);
 });
 
+test("proxies a same-origin human browser-review withdrawal to the authoritative audit job", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const reviewId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  const calls = [];
+  const body = { source: "person", expectedMissionRevision: 4 };
+  const response = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/browser-review/${reviewId}/withdrawal`,
+    {
+      method: "POST",
+      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  ), {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init) => {
+          calls.push({ url: new URL(url), input: JSON.parse(init.body) });
+          return Response.json({ ok: true, data: { id: reviewId, state: { status: "withdrawn" } } });
+        },
+      }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url.pathname, `/browser-review/${reviewId}/withdrawal`);
+  assert.deepEqual(calls[0].input, body);
+});
+
 test("proxies server-issued verification candidates and aggregate repair receipts", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
@@ -851,6 +880,234 @@ test("Durable Object freezes repair intent without creating or approving a repai
   assert.equal(values.has("repairs"), false);
 });
 
+test("Durable Object adopts a person-started audit without restarting or duplicating it", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: [],
+    maxPriorities: 3,
+    requestedBy: "human",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const originalState = {
+    id: auditId,
+    attempt: 1,
+    missionRevision: 1,
+    url: "https://example.com/",
+    source: "human",
+    mission,
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      completedAt: 100,
+      engine: { mode: "live-document", provider: "Frontmend live document" },
+      findings: [],
+      viewports: [],
+      documentProfile: { routes: [] },
+    },
+  };
+  const values = new Map([["state", structuredClone(originalState)]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const open = (expectedMissionRevision) => job.fetch(new Request(
+    "https://frontmend.internal/browser-review",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        focusAreas: ["accessibility", "seo"],
+        expectedMissionRevision,
+      }),
+    },
+  ));
+
+  const response = await open(1);
+  const opened = (await response.json()).data;
+  assert.equal(response.status, 201);
+  assert.equal(opened.auditId, auditId);
+  assert.equal(opened.adoption.mode, "human-to-agent");
+  assert.equal(opened.adoption.originalMissionActor, "human");
+  assert.equal(opened.adoption.openedBy, "agent");
+  assert.equal(opened.adoption.restarted, false);
+  assert.equal(opened.missionCheckpoint.auditId, auditId);
+  assert.equal(opened.missionCheckpoint.missionRevision, 2);
+  assert.equal(opened.missionCheckpoint.action.tool, "record_browser_review_check");
+  assert.equal(values.get("state").id, auditId);
+  assert.equal(values.get("state").attempt, 1);
+  assert.deepEqual(values.get("state").mission, mission);
+
+  const repeated = await open(1);
+  const repeatedPayload = (await repeated.json()).data;
+  assert.equal(repeated.status, 200);
+  assert.equal(repeatedPayload.id, opened.id);
+  assert.equal(repeatedPayload.missionCheckpoint.missionRevision, 2);
+  assert.equal(values.get("browserReview").id, opened.id);
+});
+
+test("Durable Object withdraws an untouched human handoff with stale recovery and idempotent replay", async () => {
+  const auditId = "withdrawal-audit";
+  const values = new Map([["state", {
+    id: auditId,
+    attempt: 1,
+    missionRevision: 1,
+    url: "https://example.com/",
+    source: "human",
+    mission: {
+      schemaVersion: 1,
+      intent: "assess",
+      focusAreas: ["seo"],
+      maxPriorities: 3,
+      requestedBy: "human",
+      requestedAt: 10,
+      repairPreparation: null,
+    },
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      completedAt: 100,
+      engine: { mode: "live-document", provider: "Frontmend live document" },
+      findings: [],
+      viewports: [],
+      documentProfile: { routes: [] },
+    },
+  }]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const post = (path, body) => job.fetch(new Request(`https://frontmend.internal${path}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }));
+  const opened = (await (await post("/browser-review", {
+    source: "person",
+    focusAreas: ["seo"],
+    expectedMissionRevision: 1,
+  })).json()).data;
+  assert.equal(opened.missionCheckpoint.missionRevision, 2);
+  assert.equal(opened.state.withdrawalAvailable, true);
+
+  const stale = await post(`/browser-review/${opened.id}/withdrawal`, {
+    source: "person",
+    expectedMissionRevision: 1,
+  });
+  const stalePayload = await stale.json();
+  assert.equal(stale.status, 409);
+  assert.equal(stalePayload.error.code, "MISSION_REVISION_STALE");
+  assert.equal(stalePayload.error.details.missionCheckpoint.missionRevision, 2);
+
+  const withdrawnResponse = await post(`/browser-review/${opened.id}/withdrawal`, {
+    source: "person",
+    expectedMissionRevision: 2,
+  });
+  const withdrawn = (await withdrawnResponse.json()).data;
+  assert.equal(withdrawn.state.status, "withdrawn");
+  assert.equal(withdrawn.withdrawal.withdrawnBy, "person");
+  assert.equal(withdrawn.missionCheckpoint.missionRevision, 3);
+  assert.equal(withdrawn.missionCheckpoint.status, "complete");
+
+  const replay = await post(`/browser-review/${opened.id}/withdrawal`, {
+    source: "person",
+    expectedMissionRevision: 2,
+  });
+  const replayPayload = (await replay.json()).data;
+  assert.equal(replay.status, 200);
+  assert.equal(replayPayload.updatedAt, withdrawn.updatedAt);
+  assert.equal(replayPayload.missionCheckpoint.missionRevision, 3);
+
+  const agentAttempt = await post(`/browser-review/${opened.id}/withdrawal`, {
+    source: "agent",
+    expectedMissionRevision: 3,
+  });
+  assert.equal(agentAttempt.status, 400);
+  assert.equal((await agentAttempt.json()).error.code, "BROWSER_REVIEW_WITHDRAWAL_HUMAN_ONLY");
+
+  const assessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(assessment.status, 200);
+  assert.match(await assessment.text(), /withdrawn by the person before any browser evidence/i);
+});
+
+test("Durable Object rejects withdrawal after a person records browser evidence", async () => {
+  const auditId = "withdrawal-locked-audit";
+  const values = new Map([["state", {
+    id: auditId,
+    missionRevision: 1,
+    url: "https://example.com/",
+    source: "human",
+    mission: {
+      schemaVersion: 1,
+      intent: "assess",
+      focusAreas: ["seo"],
+      maxPriorities: 3,
+      requestedBy: "human",
+      requestedAt: 10,
+      repairPreparation: null,
+    },
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      completedAt: 100,
+      engine: { mode: "live-document", provider: "Frontmend live document" },
+      findings: [],
+      viewports: [],
+      documentProfile: { routes: [] },
+    },
+  }]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const post = (path, body) => job.fetch(new Request(`https://frontmend.internal${path}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }));
+  const opened = (await (await post("/browser-review", {
+    source: "person",
+    focusAreas: ["seo"],
+    expectedMissionRevision: 1,
+  })).json()).data;
+  const recorded = await post(`/browser-review/${opened.id}/checks`, {
+    source: "person",
+    expectedMissionRevision: 2,
+    checkId: opened.state.nextCheck.id,
+    outcome: "passed",
+    summary: "The rendered structure was checked directly by the person.",
+    observations: ["The primary heading names the page topic."],
+  });
+  const recordedPayload = await recorded.json();
+  assert.equal(recorded.status, 200);
+  assert.equal(recordedPayload.data.results[0].source, "person");
+
+  const withdrawal = await post(`/browser-review/${opened.id}/withdrawal`, {
+    source: "person",
+    expectedMissionRevision: 3,
+  });
+  assert.equal(withdrawal.status, 409);
+  assert.equal((await withdrawal.json()).error.code, "BROWSER_REVIEW_WITHDRAWAL_LOCKED");
+});
+
 test("Durable Object persists sequential browser review evidence before completing assessment", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const mission = {
@@ -949,7 +1206,7 @@ test("Durable Object persists sequential browser review evidence before completi
   const assessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
   assert.equal(assessment.status, 200);
   const markdown = await assessment.text();
-  assert.match(markdown, /Agent-contributed browser review/);
+  assert.match(markdown, /Contributed rendered-browser review/);
   assert.match(markdown, /Coverage: 2 of 2 requested checks/);
 });
 
@@ -1095,7 +1352,7 @@ test("Durable Object cancellation is persisted, aborts the provider, and is idem
   assert.equal(Number.isFinite(alarmAt), true);
 });
 
-test("local development exports the same completed audit report contract", async () => {
+test("local development exports completed evidence and adopts it without a second audit", async () => {
   const middleware = createLocalAuditRuntime({
     fetchImpl: async (input) => {
       const url = new URL(input);
@@ -1163,6 +1420,74 @@ test("local development exports the same completed audit report contract", async
     url: `/api/audits/${auditId}/results`,
   });
   assert.equal(JSON.parse(results.body).data.missionCheckpoint.missionRevision, 2);
+
+  const adopt = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/browser-review`,
+    headers: {
+      host: "localhost:3434",
+      origin: "http://localhost:3434",
+    },
+    body: JSON.stringify({
+      source: "agent",
+      focusAreas: ["accessibility", "seo"],
+      expectedMissionRevision: 2,
+    }),
+  });
+  const adopted = JSON.parse(adopt.body).data;
+  assert.equal(adopt.status, 201);
+  assert.equal(adopted.auditId, auditId);
+  assert.equal(adopted.adoption.mode, "human-to-agent");
+  assert.equal(adopted.adoption.originalMissionActor, "human");
+  assert.equal(adopted.adoption.openedBy, "agent");
+  assert.equal(adopted.adoption.sameAudit, true);
+  assert.equal(adopted.adoption.restarted, false);
+  assert.equal(adopted.missionCheckpoint.missionRevision, 3);
+  assert.equal(adopted.missionCheckpoint.action.tool, "record_browser_review_check");
+
+  const repeatedAdopt = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/browser-review`,
+    headers: {
+      host: "localhost:3434",
+      origin: "http://localhost:3434",
+    },
+    body: JSON.stringify({
+      source: "agent",
+      focusAreas: ["accessibility", "seo"],
+      expectedMissionRevision: 2,
+    }),
+  });
+  const repeated = JSON.parse(repeatedAdopt.body).data;
+  assert.equal(repeatedAdopt.status, 200);
+  assert.equal(repeated.id, adopted.id);
+  assert.equal(repeated.missionCheckpoint.missionRevision, 3);
+
+  const withheldAssessment = await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/assessment`,
+  });
+  assert.equal(withheldAssessment.status, 409);
+  assert.equal(JSON.parse(withheldAssessment.body).error.code, "ASSESSMENT_INCOMPLETE");
+
+  const withdrawal = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/browser-review/${adopted.id}/withdrawal`,
+    headers: {
+      host: "localhost:3434",
+      origin: "http://localhost:3434",
+    },
+    body: JSON.stringify({ source: "person", expectedMissionRevision: 3 }),
+  });
+  const withdrawn = JSON.parse(withdrawal.body).data;
+  assert.equal(withdrawal.status, 200);
+  assert.equal(withdrawn.state.status, "withdrawn");
+  assert.equal(withdrawn.missionCheckpoint.missionRevision, 4);
+
+  const restoredAssessment = await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/assessment`,
+  });
+  assert.equal(restoredAssessment.status, 200);
+  assert.match(restoredAssessment.body, /withdrawn by the person before any browser evidence/i);
 });
 
 test("local development persists related-route lineage into snapshots and reports", async () => {

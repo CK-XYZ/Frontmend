@@ -116,6 +116,34 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
     };
   }
 
+  if (missionState?.browserReview?.adoptionAvailable) {
+    return {
+      stage: "investigation",
+      actor: "Person or browser-capable agent",
+      title: "Continue this person-started audit with an agent",
+      summary: "The retained assessment can gain rendered-browser evidence without starting another audit or changing its original person attribution.",
+      why: "Provider measurement is retained and the current Assess mission has accessibility or SEO scope that a capable agent can investigate directly.",
+      mustReturn: ["The same audit ID", "One versioned rendered-browser task", "No repair or deployment authority"],
+      unlocks: ["Sequential direct browser observations", "Reconciled provider and browser evidence in this workspace"],
+      requiredCapability: "Rendered-browser inspection",
+      action: { tool: "open_browser_review", input: {} },
+    };
+  }
+
+  if (missionState?.browserReview?.status === "withdrawn") {
+    return {
+      stage: "human-review",
+      actor: "Person",
+      title: "Review the provider evidence after the untouched handoff",
+      summary: "The optional rendered-review handoff was withdrawn before any browser evidence was recorded. Its visible record remains, while the original completed assessment is provider-only again.",
+      why: "No browser result was contributed, so there is no rendered evidence to reconcile or complete.",
+      mustReturn: checkpointCriteria.length ? checkpointCriteria : ["A person-selected next action or an exported provider-only assessment"],
+      unlocks: ["A new product decision without implying browser proof"],
+      requiredCapability: "Human result review",
+      action: checkpointAction ?? { tool: "get_site_audit_results", input: {} },
+    };
+  }
+
   if (["open_diagnostic_mission", "submit_runtime_diagnosis", "record_diagnostic_blocker"].includes(missionState?.nextAction?.tool)) {
     return {
       stage: "diagnosis",
@@ -213,6 +241,7 @@ export function createMissionInspector({
     ? [...new Set(contextualToolNames.filter((name) => typeof name === "string"))].slice(0, 21)
     : [];
   const projection = stageProjection({ audit, missionState, repairs, browserReview, checkpoint });
+  const preferOptionalAdoption = missionState?.browserReview?.adoptionAvailable === true;
   const humanOnly = checkpoint?.authorityBoundary?.humanOnly
     ? checkpoint.authorityBoundary.humanOnly.slice(0, 6).map((item) => bounded(item, 240))
     : [...HUMAN_ONLY];
@@ -225,8 +254,12 @@ export function createMissionInspector({
         title: projection.title,
         actor: projection.actor,
         summary: projection.summary,
-        requiredCapability: checkpoint?.requiredCapability ?? projection.requiredCapability,
-        action: checkpoint?.action ?? projection.action ?? null,
+        requiredCapability: preferOptionalAdoption
+          ? projection.requiredCapability
+          : checkpoint?.requiredCapability ?? projection.requiredCapability,
+        action: preferOptionalAdoption
+          ? projection.action ?? null
+          : checkpoint?.action ?? projection.action ?? null,
       },
       whyNow: projection.why,
       whatMustReturn: projection.mustReturn,

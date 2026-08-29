@@ -83,6 +83,40 @@ test("accepts bounded agent diagnosis and freezes it separately for repair", () 
   assert.equal(frozen.measuredEvidence.provenance, "measured-lighthouse");
 });
 
+test("retains person-contributed diagnosis and blocker provenance without changing authority", () => {
+  const mission = createDiagnosticMission({ auditId: "audit-1", finding, now: 10 });
+  const blocked = recordDiagnosticBlocker(mission, {
+    reason: "wrong-repository",
+    summary: "The available checkout does not own the deployed runtime being measured.",
+  }, "person", 20);
+
+  assert.equal(blocked.blocker.source, "person");
+  assert.equal(blocked.blocker.agentReported, false);
+  assert.equal(blocked.state.diagnosisEvidence, "blocked-person-reported");
+  assert.equal(blocked.state.repairAuthority, "separate-review-or-delegation");
+
+  const diagnosed = submitDiagnosticEvidence(blocked, {
+    summary: "The route initialiser reads a missing vendor global.",
+    reproduction: "Reload the public route and observe the first console failure.",
+    observations: [{ kind: "console", detail: "The first-party ReferenceError reproduces before interaction." }],
+    sourceLocations: [{ file: "src/runtime.js", reason: "Owns the early vendor-global read." }],
+    verificationChecks: ["bun test"],
+    confidence: "medium",
+  }, "person", 30);
+
+  assert.equal(diagnosed.diagnosis.source, "person");
+  assert.equal(diagnosed.diagnosis.agentReported, false);
+  assert.equal(diagnosed.state.diagnosisEvidence, "person-reported");
+  assert.deepEqual(diagnosed.evidenceChain.stages.slice(1).map((stage) => stage.provenance), [
+    "person-reported",
+    "person-reported",
+    "person-reported",
+  ]);
+  assert.equal(diagnosed.blocker, null);
+  assert.equal(diagnosed.blockerHistory[0].agentReported, false);
+  assert.equal(diagnosed.state.repairAuthority, "separate-review-or-delegation");
+});
+
 test("derives a bounded evidence chain for legacy diagnostic snapshots", () => {
   const chain = diagnosticEvidenceChain({
     measuredEvidence: { provenance: "measured-lighthouse", itemCount: 99 },

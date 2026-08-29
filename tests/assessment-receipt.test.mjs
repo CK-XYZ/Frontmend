@@ -13,6 +13,7 @@ import {
 import {
   createBrowserReviewMission,
   recordBrowserReviewCheck,
+  withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
 
 const finding = {
@@ -109,6 +110,81 @@ test("withholds an assessment receipt when diagnosis is explicitly blocked", () 
   );
 });
 
+test("withholds a previously complete human assessment after rendered review adoption", () => {
+  const humanMission = createAuditMission({ focusAreas: [], maxPriorities: 3 }, "human", 100);
+  const adoptedReview = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission: humanMission,
+    report,
+    target: report.finalUrl,
+    source: "agent",
+    focusAreas: ["accessibility"],
+    now: 150,
+  });
+
+  assert.throws(
+    () => createAssessmentReceipt({ report, mission: humanMission, browserReview: adoptedReview }),
+    (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /record_browser_review_check/.test(error.message),
+  );
+});
+
+test("exports a visible no-evidence record after an untouched human handoff is withdrawn", () => {
+  const humanMission = createAuditMission({ focusAreas: ["seo"], maxPriorities: 3 }, "human", 100);
+  const opened = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission: humanMission,
+    report: { ...report, findings: [] },
+    target: report.finalUrl,
+    source: "person",
+    now: 150,
+  });
+  const browserReview = withdrawBrowserReview(opened, "person", 160);
+  const receipt = createAssessmentReceipt({
+    report: { ...report, findings: [] },
+    mission: humanMission,
+    browserReview,
+  });
+
+  assert.equal(receipt.browserReview.status, "withdrawn");
+  assert.equal(receipt.browserReview.provenance, "no-browser-evidence");
+  assert.equal(receipt.browserReview.checks.length, 0);
+  assert.match(assessmentReceiptMarkdown(receipt), /withdrawn by the person before any browser evidence/i);
+  assert.doesNotMatch(assessmentReceiptMarkdown(receipt), /Agent-contributed browser review/);
+});
+
+test("exports person-completed rendered checks with person provenance", () => {
+  const humanMission = createAuditMission({ focusAreas: ["seo"], maxPriorities: 3 }, "human", 100);
+  const emptyReport = { ...report, findings: [], viewports: [] };
+  let browserReview = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission: humanMission,
+    report: emptyReport,
+    target: report.finalUrl,
+    source: "person",
+    now: 150,
+  });
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: browserReview.state.nextCheck.id,
+    outcome: "passed",
+    summary: "The rendered structure was inspected directly by the person.",
+    observations: ["The primary heading names the page topic."],
+  }, "person", 160);
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: browserReview.state.nextCheck.id,
+    outcome: "passed",
+    summary: "The rendered discovery path was inspected directly by the person.",
+    observations: ["Descriptive same-site links expose the important destinations."],
+  }, "person", 170);
+
+  const receipt = createAssessmentReceipt({ report: emptyReport, mission: humanMission, browserReview });
+  assert.equal(receipt.browserReview.provenance, "person-reported-browser");
+  assert.deepEqual(receipt.browserReview.checks.map((check) => check.provenance), [
+    "person-reported-browser",
+    "person-reported-browser",
+  ]);
+  assert.match(assessmentReceiptMarkdown(receipt), /Provenance: person-reported-browser/);
+});
+
 test("exports measured and contributed evidence with separate provenance and authority", () => {
   const browserReview = completeAccessibilityReview();
   const opened = createDiagnosticMission({ auditId: report.auditId, finding, now: 200 });
@@ -146,7 +222,7 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.match(markdown, /^# Frontmend assessment receipt/m);
   assert.match(markdown, /Measured symptom \| retained \| measured-lighthouse/);
   assert.match(markdown, /Evidence relationship: diagnosis-contributed/);
-  assert.match(markdown, /Agent-contributed browser review/);
+  assert.match(markdown, /Contributed rendered-browser review/);
   assert.match(markdown, /Coverage: 3 of 3 requested checks/);
   assert.match(markdown, /Browser reproduction \| contributed \| agent-reported/);
   assert.match(markdown, /`src\/startup\.js:42`/);

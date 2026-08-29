@@ -47,6 +47,7 @@ import {
   createBrowserVerificationReview,
   isIdenticalBrowserReviewContribution,
   recordBrowserReviewCheck,
+  withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
 import {
   advanceMissionRevision,
@@ -112,6 +113,9 @@ function publicError(error) {
             "BROWSER_REVIEW_SEQUENCE",
             "BROWSER_REVIEW_COMPLETE",
             "BROWSER_REVIEW_CHECK_COMPLETE",
+            "BROWSER_REVIEW_WITHDRAWAL_LOCKED",
+            "BROWSER_REVIEW_WITHDRAWAL_UNAVAILABLE",
+            "BROWSER_REVIEW_WITHDRAWN",
             "MISSION_REVISION_STALE",
           ].includes(error.code)
           ? 409
@@ -750,7 +754,7 @@ async function routeApi(request, env, url) {
   }
 
   const browserReviewMatch = url.pathname.match(
-    /^\/api\/audits\/([^/]+)\/browser-review(?:\/([^/]+)\/(checks))?$/,
+    /^\/api\/audits\/([^/]+)\/browser-review(?:\/([^/]+)\/(checks|withdrawal))?$/,
   );
   if (browserReviewMatch) {
     const [, auditId, reviewId, action] = browserReviewMatch;
@@ -1842,7 +1846,7 @@ export class FrontmendAuditJob {
     if (state.status !== "complete" || !state.report || (!state.mission && !verificationReplay)) {
       return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the measurement before opening its browser review."));
     }
-    const match = url.pathname.match(/^\/browser-review(?:\/([^/]+)\/(checks))?$/);
+    const match = url.pathname.match(/^\/browser-review(?:\/([^/]+)\/(checks|withdrawal))?$/);
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That browser review route does not exist."));
     const [, rawReviewId, action] = match;
     const stored = await this.ctx.storage.get("browserReview");
@@ -1854,7 +1858,9 @@ export class FrontmendAuditJob {
     }
     if (!rawReviewId && request.method === "POST") {
       const input = await readJsonBody(request);
-      const extra = Object.keys(input ?? {}).find((key) => key !== "expectedMissionRevision");
+      const extra = Object.keys(input ?? {}).find(
+        (key) => !["source", "focusAreas", "expectedMissionRevision"].includes(key),
+      );
       if (extra) return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
       if (stored) {
         return json({ ok: true, data: await checkpointedJobData(this.ctx, state, browserReviewSnapshot(stored)) });
@@ -1873,6 +1879,8 @@ export class FrontmendAuditJob {
               report: state.report,
               documentProfile: state.report.documentProfile,
               target: state.report.finalUrl ?? state.report.url ?? state.url,
+              source: input?.source,
+              focusAreas: input?.focusAreas,
             });
         await this.ctx.storage.put("browserReview", review);
         const updatedState = await advanceJobRevision(this.ctx, state);
@@ -1914,6 +1922,35 @@ export class FrontmendAuditJob {
           });
           return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
         }
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (action === "withdrawal" && request.method === "POST") {
+      if (!stored || stored.id !== decodeURIComponent(rawReviewId ?? "")) {
+        return errorResponse(new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist."));
+      }
+      const input = await readJsonBody(request);
+      const extra = Object.keys(input ?? {}).find(
+        (key) => !["source", "expectedMissionRevision"].includes(key),
+      );
+      if (extra) return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review withdrawal field: ${extra}.`));
+      if (input?.source !== "person") {
+        return errorResponse(new AuditError(
+          "BROWSER_REVIEW_WITHDRAWAL_HUMAN_ONLY",
+          "Only a person can withdraw an optional rendered-review handoff.",
+        ));
+      }
+      try {
+        const current = browserReviewSnapshot(stored);
+        if (current.withdrawal?.status === "withdrawn") {
+          return json({ ok: true, data: await checkpointedJobData(this.ctx, state, current) });
+        }
+        await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
+        const review = withdrawBrowserReview(current, "person");
+        await this.ctx.storage.put("browserReview", review);
         const updated = await advanceJobRevision(this.ctx, state);
         return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
       } catch (error) {

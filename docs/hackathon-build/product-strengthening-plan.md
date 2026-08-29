@@ -418,6 +418,100 @@ bun run build
 
 `feat: verify reviewed repair impact scope`
 
+## Freeform Product Round — Human Mission Parity And Review Depth
+
+The evidence-driven contracts exposed two human-product gaps worth resolving before release work. First, WebMCP could start a focused mission while the visible URL intake could only start a broad audit. Second, the server issued bounded optional verification routes to agents, but the human staging path could not inspect or select them before reviewing the matrix.
+
+### Focused human assessment intake
+
+- Keep the URL-first landing and broad audit as the zero-configuration default.
+- Add a progressive native disclosure for zero to three supported focus areas and a one-to-five mission shortlist.
+- Send the selection through the existing `createAuditMission()` and application service path with `requestedBy: human`.
+- Preserve the selection through cancellation, retry, restoration, and the stable workspace.
+- Clarify that focus ranks the mission shortlist while the complete evidence record remains available.
+
+### Human-reviewed optional verification routes
+
+- Read candidates only from the existing server-authoritative verification-candidate endpoint after repair intent and diagnosis are ready.
+- Let a person select at most the existing three server-issued IDs before staging a human repair draft.
+- Keep root and retained failed routes automatic and keep approval as the point where the matrix is frozen.
+- Show every eligible candidate on the draft/review surface as included or not selected, with its retained path, evaluated strategies, and evidence reason.
+- If the read-only candidate projection is unavailable, retain required verification scope and do not invent a route.
+
+These changes add no tool, dependency, Durable Object, browser automation, authority, or second mission state. They deepen the human-facing product around contracts already available to agents.
+
+## Freeform Product Round — Seamless Human-To-Agent Takeover
+
+A person who already measured a site should not need to restart that audit merely because a browser-capable agent becomes available later. Eligible completed human **Assess** missions therefore adopt the existing browser-review transition instead of creating a new job or tool.
+
+- Keep the original audit ID, attempt, person mission attribution, completed provider report, and human-only authority boundary.
+- Offer takeover only for broad Assess missions or retained accessibility/SEO focus. Performance-only and repair-preparation missions remain ineligible.
+- Let broad missions choose one or two rendered-review areas from accessibility and SEO; focused missions must retain their exact existing rendered scope.
+- Record bounded adoption provenance (`human-to-agent`, original actor, opener, timestamp, same-audit, no restart) inside the existing browser-review record.
+- Increment the authoritative mission revision only when the review is first opened. Reopening the singleton is idempotent even when the caller still holds the pre-open revision.
+- Once adopted, treat the rendered review as required until every compiled task completes. An honest blocker keeps the current task resumable, and a previously available assessment receipt stays withheld throughout that continuation.
+- Expose the same transition through the visible Human-mode handoff, mission inspector, checkpoint, HTTP/service adapters, and contextual `open_browser_review` tool. Keep the library at twenty-one tools.
+- Preserve Worker/local payload parity and do not add browser automation, deployment authority, repair authority, or a parallel mission state.
+
+## Freeform Product Round — Complete Human Rendered Review
+
+The retained task must remain useful when WebMCP is unavailable or when the person prefers to perform the rendered inspection directly. Human mode therefore exposes the same exact assignment and response contract through the shared application service rather than treating agent handoff as the only completion path.
+
+- Render the current target, retained trigger, instructions, completion criteria, and authority boundary before collecting a result.
+- Accept passed, issue, or blocked with the same bounded summary, observations, conditional structured findings, blocker reasons, sequencing, and validation as WebMCP.
+- Attribute person-recorded browser evidence through reconciliation, diagnosis, repair baselines, verification replay, mission state, and portable receipts without relabelling it as agent evidence.
+- Offer agent handoff only when WebMCP registration is ready; otherwise explain and open the complete Human-mode path.
+- Refresh the authoritative checkpoint and current review after `MISSION_REVISION_STALE`, but require the person to inspect the refreshed task before resubmitting.
+- Let a person withdraw only an untouched optional human-to-agent assessment handoff. Retain the withdrawn record with no evidence provenance; once any result exists, require completion or an honest blocker.
+- Preserve the twenty-one-tool library, Worker/local parity, person-owned deployment, and the absence of embedded browser automation.
+
+## Freeform Product Round — Complete Human Repository Diagnosis
+
+Rendered evidence can now be completed without WebMCP, but a supported diagnostic mission still asks the visible person to wait for `submit_runtime_diagnosis`. Complete Human mode by rendering that existing bounded contract through the same application service.
+
+- Let a person contribute the same causal summary, reproduction, one to five typed observations, one to eight repository-relative ownership locations, one to eight planned checks, and bounded confidence used by the agent tool.
+- Offer the same honest blocker reasons when matching browser or repository evidence is unavailable; never turn the blocker into dismissal, completion, or repair permission.
+- Attribute both evidence and blockers as person-reported through reconciliation, repair provenance, checkpoints, and portable receipts.
+- When WebMCP is ready, explain that a repository-aware agent can take the task; when it is unavailable, keep the full form usable instead of presenting a dead end.
+- On `MISSION_REVISION_STALE`, reload the authoritative checkpoint and diagnostic workspace, then require the person to inspect the refreshed state before submitting again.
+- Reuse the current diagnostic mission, service, HTTP routes, validation, and revision rules. Add no tool, dependency, source upload, approval authority, deployment authority, or parallel mission state.
+
+## Freeform Product Round — Human Mission Conflict Recovery
+
+Mission revisions already reject stale writes, but a generic error can leave a person looking at obsolete review or deployment state. Make concurrency recovery a complete Human-mode behaviour rather than a transport detail.
+
+- Add one read-only application-service refresh for the current checkpoint and all authoritative mission snapshots already owned by the audit job.
+- On `MISSION_REVISION_STALE`, refresh audit, repair/policy, diagnosis, browser-review, and exploration state, then require the person to inspect the new mission before taking another action.
+- Apply the recovery path to repair intent, policy changes, staging, approval, change requests, deployment attestation, exploration, related-route starts, cancellation, and verification.
+- Clear local confirmations, feedback, and route selections when keeping them could accidentally authorise or submit against a different revision.
+- Never automatically replay a rejected mutation. Idempotency remains an authoritative server decision, not a UI retry heuristic.
+- Keep ordinary structured errors unchanged and tolerate optional snapshot-read failures without erasing successfully refreshed state.
+- Add no WebMCP tool, permission, provider, dependency, Durable Object, or parallel mission state.
+
+## Freeform Product Round — Deferred Mission Workspaces
+
+The completed mission experience has grown into a capable review surface, but that code currently ships before a person has even submitted a URL. Split by user-visible phase so the first interaction remains small while every later workspace preserves the same durable state and authority.
+
+- Keep landing, public-URL validation, stable-audit restoration, and active audit progress in the synchronous shell.
+- Lazy-load the completed report and the WebMCP mission inspector. Split diagnosis, repair, and verification presentation into deferred workspace modules instead of hiding the current monolith behind a no-op wrapper.
+- Use one accessible loading/error boundary contract. A retry creates a fresh lazy component instance while retaining the current audit and mission revision; it never restarts a job or replays a mutation.
+- Keep Human mode complete and preserve all twenty-one contextual WebMCP tools, schemas, registration rules, shared services, and authority boundaries.
+- Compare the production assets with the retained 546.44 kB raw / 147.66 kB gzip initial JavaScript baseline. Record all new chunks and retain any genuine warning.
+- Add no dependency, provider, Durable Object, browser automation, deployment authority, or parallel mission state.
+
+## Freeform Product Round — Focused Accessibility And Responsive Hardening
+
+The mission surfaces now have enough depth that keyboard order, state announcements, and narrow-screen legibility are product requirements rather than finish-line polish. Harden the existing direction without redesigning the workflow or changing its authority.
+
+- Give the application one main landmark and a first-focus skip target while keeping the global header and footer outside that landmark.
+- Move focus and the page title only when the user crosses a meaningful landing, restoration, progress, terminal-failure, or report boundary; do not steal focus during ordinary polling.
+- Associate URL validation with its input, expose progress value and phase text, and make stage state textual rather than colour/icon-only.
+- Retain the existing dialog focus trap, Escape handling, and focus restoration while adding descriptions, body-scroll containment, dynamic viewport height, and a focusable fallback.
+- Complete the viewport chooser as a roving-tab pattern with arrow, Home, and End navigation plus one labelled tabpanel.
+- Make hidden radio-card focus visible, raise dense Human/inspector metadata to readable sizes, preserve reduced motion, and retain at least 44 px controls plus 16 px form text at the 390 px breakpoint.
+- Preserve Human-only fallback, the twenty-one-tool library, contextual registration, shared services, persisted missions, and every person-owned approval/deployment boundary.
+- Treat source, test, and production-build evidence as structural proof only. Fresh 390 px, 200% zoom, keyboard, high-contrast, and screen-reader evidence remains a separate browser gate.
+
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
@@ -426,9 +520,17 @@ bun run build
 - [x] **4. Fresh-session mission checkpoints** — completed and verified locally on 30 August 2026
 - [x] **5. Reviewed repair impact and verification matrix** — completed and verified locally on 30 August 2026
 - [x] **6. Full command-safe regression and release gate** — 193/193 tests, production build, and strict no-upload Wrangler dry run passed from application commit `3022965` on 30 August 2026
-- [ ] **7. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **7. Focused human assessment composer** — implemented and locally verified on 30 August 2026; fresh visual proof remains separate
+- [x] **8. Human-reviewed optional verification routes** — implemented and locally verified on 30 August 2026
+- [x] **9. Seamless human-to-agent takeover** — implemented and locally verified on 30 August 2026; the same audit now resumes into rendered investigation
+- [x] **10. Complete Human rendered review and untouched-handoff recovery** — implemented and locally verified on 30 August 2026; person provenance, stale recovery, visible withdrawal, and Worker/local parity are covered without adding a tool
+- [x] **11. Complete Human repository diagnosis and honest blocker recovery** — implemented and locally verified on 30 August 2026; the shared service now accepts complete person-attributed evidence or a resumable blocker with stale-session refresh
+- [x] **12. Human mission conflict recovery across person-owned controls** — implemented and locally verified on 30 August 2026; stale writes refresh the bounded workspace, clear unsafe local authority state, and are never replayed automatically
+- [x] **13. Deferred report, diagnosis, repair, verification, and mission-inspector workspaces** — implemented and locally verified on 30 August 2026; initial JavaScript fell 24.62% raw and 21.22% gzip without changing the twenty-one-tool library
+- [x] **14. Focused accessibility and responsive hardening** — implemented and locally verified on 30 August 2026; 234/234 tests pass and the twenty-one-tool library is unchanged
+- [ ] **15. Fresh current-candidate browser proof after explicit deployment/server authority**
 
-Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler.
+Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, and accessibility rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 
 ## Full Regression Gate
 

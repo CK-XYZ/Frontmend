@@ -88,6 +88,53 @@ test("projects investigation and diagnosis from the exact mission continuation",
   assert.match(diagnosis.questions.whyNow, /conflict/i);
 });
 
+test("projects optional same-audit takeover ahead of a completed human checkpoint", () => {
+  const value = inspector({
+    missionState: {
+      assessmentComplete: true,
+      browserReview: {
+        required: false,
+        status: "not-required",
+        adoptionAvailable: true,
+      },
+      nextAction: null,
+    },
+    checkpoint: {
+      requiredCapability: "Human result review",
+      action: { tool: "get_site_audit_results", input: { auditId: "audit-1" } },
+      completionCriteria: ["Review the completed priorities"],
+    },
+    contextualToolNames: ["get_site_audit_results", "open_browser_review"],
+  });
+
+  assert.equal(value.stage, "investigation");
+  assert.equal(value.questions.whatHappensNow.action.tool, "open_browser_review");
+  assert.equal(value.questions.whatHappensNow.actor, "Person or browser-capable agent");
+  assert.match(value.questions.whatHappensNow.summary, /without starting another audit/i);
+  assert.match(value.questions.whatMustReturn.join(" "), /same audit ID/i);
+});
+
+test("projects an untouched withdrawn handoff as provider-only human review", () => {
+  const value = inspector({
+    browserReview: { id: "review-1", state: { status: "withdrawn" } },
+    missionState: {
+      assessmentComplete: true,
+      browserReview: {
+        required: false,
+        status: "withdrawn",
+        adoptionAvailable: false,
+        provenance: "no-browser-evidence",
+      },
+      nextAction: null,
+    },
+  });
+
+  assert.equal(value.stage, "human-review");
+  assert.equal(value.questions.whatHappensNow.actor, "Person");
+  assert.match(value.questions.whatHappensNow.summary, /provider-only again/i);
+  assert.match(value.questions.whyNow, /no browser result/i);
+});
+
 test("keeps human review, deployment, and replay authority explicit", () => {
   const review = inspector({
     missionState: {

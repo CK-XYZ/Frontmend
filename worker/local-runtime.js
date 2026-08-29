@@ -46,6 +46,7 @@ import {
   createBrowserVerificationReview,
   isIdenticalBrowserReviewContribution,
   recordBrowserReviewCheck,
+  withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
 import {
   advanceMissionRevision,
@@ -864,7 +865,7 @@ export function createLocalAuditRuntime(options = {}) {
       }
 
       const browserReviewMatch = requestUrl.pathname.match(
-        /^\/api\/audits\/([^/]+)\/browser-review(?:\/([^/]+)\/(checks))?$/,
+        /^\/api\/audits\/([^/]+)\/browser-review(?:\/([^/]+)\/(checks|withdrawal))?$/,
       );
       if (browserReviewMatch) {
         const [, auditId, rawReviewId, action] = browserReviewMatch;
@@ -886,7 +887,9 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawReviewId && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const extra = Object.keys(input ?? {}).find((key) => key !== "expectedMissionRevision");
+          const extra = Object.keys(input ?? {}).find(
+            (key) => !["source", "focusAreas", "expectedMissionRevision"].includes(key),
+          );
           if (extra) return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
           if (baseline.browserReview) return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, browserReviewSnapshot(baseline.browserReview)) });
           try {
@@ -903,11 +906,19 @@ export function createLocalAuditRuntime(options = {}) {
                   report: baseline.report,
                   documentProfile: baseline.report.documentProfile,
                   target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
+                  source: input?.source,
+                  focusAreas: input?.focusAreas,
                 });
             advanceLocalRevision(baseline);
             return sendJson(response, 201, { ok: true, data: checkpointedLocal(baseline, baseline.browserReview) });
           } catch (error) {
-            return sendError(response, error);
+            return sendError(
+              response,
+              error,
+              ["MISSION_REVISION_STALE", "BROWSER_REVIEW_WITHDRAWAL_LOCKED", "BROWSER_REVIEW_WITHDRAWAL_UNAVAILABLE", "BROWSER_REVIEW_WITHDRAWN"].includes(error?.code)
+                ? 409
+                : 400,
+            );
           }
         }
         if (action === "checks" && request.method === "POST") {
@@ -940,7 +951,48 @@ export function createLocalAuditRuntime(options = {}) {
             advanceLocalRevision(baseline);
             return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, baseline.browserReview) });
           } catch (error) {
-            return sendError(response, error);
+            return sendError(
+              response,
+              error,
+              ["MISSION_REVISION_STALE", "BROWSER_REVIEW_WITHDRAWAL_LOCKED", "BROWSER_REVIEW_WITHDRAWAL_UNAVAILABLE", "BROWSER_REVIEW_WITHDRAWN"].includes(error?.code)
+                ? 409
+                : 400,
+            );
+          }
+        }
+        if (action === "withdrawal" && request.method === "POST") {
+          assertSameOrigin(request);
+          if (!baseline.browserReview || baseline.browserReview.id !== decodeURIComponent(rawReviewId ?? "")) {
+            return sendError(response, new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist."), 404);
+          }
+          const input = await readBody(request);
+          const extra = Object.keys(input ?? {}).find(
+            (key) => !["source", "expectedMissionRevision"].includes(key),
+          );
+          if (extra) return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review withdrawal field: ${extra}.`));
+          if (input?.source !== "person") {
+            return sendError(response, new AuditError(
+              "BROWSER_REVIEW_WITHDRAWAL_HUMAN_ONLY",
+              "Only a person can withdraw an optional rendered-review handoff.",
+            ));
+          }
+          try {
+            const current = browserReviewSnapshot(baseline.browserReview);
+            if (current.withdrawal?.status === "withdrawn") {
+              return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, current) });
+            }
+            assertLocalRevision(baseline, input.expectedMissionRevision);
+            baseline.browserReview = withdrawBrowserReview(current, "person");
+            advanceLocalRevision(baseline);
+            return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, baseline.browserReview) });
+          } catch (error) {
+            return sendError(
+              response,
+              error,
+              ["MISSION_REVISION_STALE", "BROWSER_REVIEW_WITHDRAWAL_LOCKED", "BROWSER_REVIEW_WITHDRAWAL_UNAVAILABLE", "BROWSER_REVIEW_WITHDRAWN"].includes(error?.code)
+                ? 409
+                : 400,
+            );
           }
         }
         return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That browser review operation is not supported."), 405);

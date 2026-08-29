@@ -182,12 +182,14 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async openBrowserReview(auditId, expectedMissionRevision) {
+    async openBrowserReview(auditId, input = {}, expectedMissionRevision) {
+      const options = Number.isInteger(input) ? {} : input ?? {};
+      const revision = Number.isInteger(input) ? input : expectedMissionRevision;
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ expectedMissionRevision }),
+          body: JSON.stringify({ ...options, expectedMissionRevision: revision }),
         }),
       );
     },
@@ -200,6 +202,19 @@ export function createHttpAuditTransport(options = {}) {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
             body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent", expectedMissionRevision }),
+          },
+        ),
+      );
+    },
+
+    async withdrawBrowserReview(auditId, reviewId, expectedMissionRevision) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review/${encodeURIComponent(reviewId)}/withdrawal`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ source: "person", expectedMissionRevision }),
           },
         ),
       );
@@ -498,6 +513,106 @@ export function createAuditService(options = {}) {
     return exploration;
   };
 
+  const refreshMissionWorkspace = async (auditId) => {
+    if (typeof auditId !== "string" || !auditId) {
+      throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+    }
+    const expectedGeneration = generation;
+    let snapshot = null;
+    let latestCheckpoint = null;
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      const checkpointBefore = await transport.checkpoint(auditId);
+      const settled = await Promise.allSettled([
+        transport.get(auditId),
+        transport.listRepairs(auditId),
+        transport.listDiagnosticMissions(auditId),
+        transport.getBrowserReview(auditId),
+        transport.listExplorations(auditId),
+      ]);
+      const checkpointAfter = await transport.checkpoint(auditId);
+      latestCheckpoint = checkpointAfter;
+      const auditResult = settled[0];
+      const auditRevision = auditResult.status === "fulfilled"
+        ? auditResult.value?.missionRevision
+        : null;
+      const revisionStayedCurrent =
+        checkpointBefore.missionRevision === checkpointAfter.missionRevision
+        && (!Number.isInteger(auditRevision) || auditRevision === checkpointAfter.missionRevision);
+      if (revisionStayedCurrent) {
+        snapshot = { missionCheckpoint: checkpointAfter, settled };
+        break;
+      }
+    }
+    if (!snapshot) {
+      throw new AuditError(
+        "MISSION_REFRESH_UNSTABLE",
+        "The mission kept changing while Frontmend refreshed it. Refresh this audit again before acting.",
+        true,
+        latestCheckpoint ? { missionCheckpoint: latestCheckpoint } : null,
+      );
+    }
+    const missionCheckpoint = snapshot.missionCheckpoint;
+    const [auditResult, repairResult, diagnosticResult, browserResult, explorationResult] = snapshot.settled;
+    const results = {
+      audit: auditResult.status === "fulfilled",
+      repairs: repairResult.status === "fulfilled",
+      diagnostics: diagnosticResult.status === "fulfilled",
+      browserReview: browserResult.status === "fulfilled",
+      explorations: explorationResult.status === "fulfilled",
+    };
+    if (expectedGeneration !== generation) {
+      return {
+        auditId,
+        missionCheckpoint,
+        refreshed: results,
+        unavailable: Object.entries(results).filter(([, ready]) => !ready).map(([name]) => name),
+      };
+    }
+
+    if (auditResult.status === "fulfilled" && auditResult.value?.id) {
+      const previous = jobs.get(auditId);
+      const retained = auditResult.value.mission || !previous?.mission
+        ? auditResult.value
+        : { ...auditResult.value, mission: previous.mission };
+      jobs.set(auditId, retained);
+      activeAuditId = auditId;
+    }
+    const refreshedAudit = jobs.get(auditId);
+    if (refreshedAudit) {
+      jobs.set(auditId, {
+        ...refreshedAudit,
+        missionRevision: missionCheckpoint.missionRevision,
+        missionCheckpoint,
+      });
+    }
+    if (repairResult.status === "fulfilled") {
+      repairs.set(auditId, repairResult.value.repairs ?? []);
+      if (repairResult.value.policy) repairPolicies.set(auditId, repairResult.value.policy);
+    }
+    if (diagnosticResult.status === "fulfilled") {
+      diagnosticMissions.set(auditId, diagnosticResult.value.missions ?? []);
+    }
+    if (browserResult.status === "fulfilled") {
+      if (browserResult.value.review) browserReviews.set(auditId, browserResult.value.review);
+      else browserReviews.delete(auditId);
+    }
+    if (explorationResult.status === "fulfilled") {
+      explorations.set(
+        auditId,
+        [...(explorationResult.value.explorations ?? [])].sort(
+          (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
+        ),
+      );
+    }
+    emit();
+    return {
+      auditId,
+      missionCheckpoint,
+      refreshed: results,
+      unavailable: Object.entries(results).filter(([, ready]) => !ready).map(([name]) => name),
+    };
+  };
+
   return {
     async startAudit(input) {
       const url = normalizePublicUrl(input?.url);
@@ -620,6 +735,10 @@ export function createAuditService(options = {}) {
       return checkpoint;
     },
 
+    async refreshMissionWorkspace(auditId) {
+      return refreshMissionWorkspace(auditId);
+    },
+
     async cancelAudit(auditId, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
@@ -722,13 +841,21 @@ export function createAuditService(options = {}) {
       return workspace;
     },
 
-    async openBrowserReview(auditId, expectedMissionRevision) {
+    async openBrowserReview(auditId, options = {}, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
+      const input = Number.isInteger(options) ? {} : options ?? {};
+      const explicitRevision = Number.isInteger(options) ? options : expectedMissionRevision;
+      const source = input.source === "person" ? "person" : "agent";
+      const focusAreas = input.focusAreas;
       const expectedGeneration = generation;
       return rememberBrowserReview(
-        await transport.openBrowserReview(auditId, revisionFor(auditId, expectedMissionRevision)),
+        await transport.openBrowserReview(
+          auditId,
+          { source, ...(focusAreas === undefined ? {} : { focusAreas }) },
+          revisionFor(auditId, explicitRevision),
+        ),
         expectedGeneration,
       );
     },
@@ -759,6 +886,21 @@ export function createAuditService(options = {}) {
         }
       }
       return review;
+    },
+
+    async withdrawBrowserReview(auditId, reviewId, expectedMissionRevision) {
+      if (typeof auditId !== "string" || !auditId || typeof reviewId !== "string" || !reviewId) {
+        throw new AuditError("INVALID_INPUT", "auditId and reviewId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberBrowserReview(
+        await transport.withdrawBrowserReview(
+          auditId,
+          reviewId,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
+        expectedGeneration,
+      );
     },
 
     async submitDiagnosticEvidence(auditId, missionId, input, source = "agent", expectedMissionRevision) {

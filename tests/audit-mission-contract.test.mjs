@@ -15,6 +15,7 @@ import {
 import {
   createBrowserReviewMission,
   recordBrowserReviewCheck,
+  withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
 
 const consoleFinding = (strategy, severity = "medium") => ({
@@ -174,6 +175,56 @@ test("completes an honest zero-match assessment only after its requested browser
   assert.equal(state.nextAction, null);
   assert.deepEqual(state.categoryScores, { seo: null });
   assert.equal(state.browserReview.status, "complete");
+});
+
+test("turns an optional human-to-agent takeover into a required same-audit investigation", () => {
+  const mission = createAuditMission({ focusAreas: ["seo"] }, "human", 10);
+  const beforeAdoption = deriveAuditMissionState({ report, mission });
+  assert.equal(beforeAdoption.assessmentComplete, true);
+  assert.equal(beforeAdoption.browserReview.required, false);
+  assert.equal(beforeAdoption.browserReview.adoptionAvailable, true);
+
+  const browserReview = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission,
+    report,
+    target: "https://example.com/",
+    source: "agent",
+    now: 20,
+  });
+  const adopted = deriveAuditMissionState({ report, mission, browserReview });
+
+  assert.equal(adopted.assessmentComplete, false);
+  assert.equal(adopted.browserReview.required, true);
+  assert.equal(adopted.browserReview.adoptionAvailable, false);
+  assert.equal(adopted.browserReview.adoptedFromHumanMission, true);
+  assert.equal(adopted.browserReview.adoption.originalMissionActor, "human");
+  assert.equal(adopted.status, "in-progress");
+  assert.equal(adopted.nextAction.tool, "record_browser_review_check");
+  assert.equal(browserReview.auditId, report.auditId);
+  assert.equal(mission.requestedBy, "human");
+});
+
+test("restores a human assessment after an untouched handoff is visibly withdrawn", () => {
+  const mission = createAuditMission({ focusAreas: ["seo"] }, "human", 10);
+  const opened = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission,
+    report,
+    target: "https://example.com/",
+    source: "person",
+    now: 20,
+  });
+  const withdrawn = withdrawBrowserReview(opened, "person", 30);
+  const state = deriveAuditMissionState({ report, mission, browserReview: withdrawn });
+
+  assert.equal(state.assessmentComplete, true);
+  assert.equal(state.browserReview.required, false);
+  assert.equal(state.browserReview.status, "withdrawn");
+  assert.equal(state.browserReview.withdrawal.withdrawnBy, "person");
+  assert.equal(state.browserReview.provenance, "no-browser-evidence");
+  assert.equal(state.browserReview.adoptionAvailable, false);
+  assert.equal(state.nextAction, null);
 });
 
 test("ranks browser-observed issues separately and requires repository diagnosis", () => {

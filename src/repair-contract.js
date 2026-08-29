@@ -620,7 +620,11 @@ function browserFindingEvidenceSnapshot(finding) {
       reviewId: briefText(finding.browserReviewEvidence.reviewId, 160),
       checkId: briefText(finding.browserReviewEvidence.checkId, 80),
       checkLabel: briefText(finding.browserReviewEvidence.checkLabel, 120),
-      provenance: "agent-reported-browser",
+      provenance: ["agent-reported-browser", "person-reported-browser", "mixed-attributed-browser"].includes(
+        finding.browserReviewEvidence.provenance,
+      )
+        ? finding.browserReviewEvidence.provenance
+        : "agent-reported-browser",
       reportedAt: Number.isFinite(finding.browserReviewEvidence.reportedAt)
         ? finding.browserReviewEvidence.reportedAt
         : null,
@@ -1405,7 +1409,7 @@ function browserReplayComparison(verification, review) {
         observations: [...(result?.observations ?? [])],
         blockerReason: result?.blockerReason ?? null,
         reportedAt: result?.reportedAt ?? null,
-        provenance: "agent-reported-browser",
+        provenance: result?.source === "person" ? "person-reported-browser" : "agent-reported-browser",
       },
     };
   }
@@ -1424,7 +1428,7 @@ function browserReplayComparison(verification, review) {
       observations: [...(result.observations ?? [])],
       blockerReason: null,
       reportedAt: result.reportedAt,
-      provenance: "agent-reported-browser",
+      provenance: result.source === "person" ? "person-reported-browser" : "agent-reported-browser",
     },
   };
 }

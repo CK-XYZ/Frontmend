@@ -10,6 +10,7 @@ import {
   createBrowserReviewMission,
   createBrowserVerificationReview,
   recordBrowserReviewCheck,
+  withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
 
 function findTool(tools, name) {
@@ -698,6 +699,117 @@ test("browser review tools turn one exact browser task at a time into attributed
   assert.deepEqual(calls.map((call) => call[0]), ["open", "record", "record"]);
 });
 
+test("a browser-capable agent adopts a person-started assessment under the same audit ID", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: [],
+    maxPriorities: 3,
+    requestedBy: "human",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const report = {
+    auditId,
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    engine: { mode: "live-document", provider: "Frontmend live document" },
+    findings: [],
+    viewports: [],
+  };
+  let review = null;
+  const calls = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", missionRevision: 4, mission, report }),
+    getBrowserReview: () => review,
+    getRepairs: () => [],
+    getDiagnosticMissions: () => [],
+    getSiteExplorations: () => [],
+    getMissionCheckpoint: () => ({ auditId, missionRevision: 4 }),
+    openBrowserReview: async (id, options, revision) => {
+      calls.push({ id, options, revision });
+      review = createBrowserReviewMission({
+        auditId: id,
+        mission,
+        report,
+        target: report.finalUrl,
+        source: options.source,
+        focusAreas: options.focusAreas,
+        now: 20,
+      });
+      return review;
+    },
+  };
+
+  const contextual = contextualFrontmendToolNames(service);
+  assert.ok(contextual.includes("open_browser_review"));
+  assert.equal(contextual.includes("record_browser_review_check"), false);
+
+  const opened = await findTool(createFrontmendTools(service), "open_browser_review").execute({
+    focusAreas: ["accessibility", "seo"],
+    expectedMissionRevision: 4,
+  });
+
+  assert.equal(opened.ok, true);
+  assert.equal(opened.data.auditId, auditId);
+  assert.equal(opened.data.browserReview.auditId, auditId);
+  assert.equal(opened.data.adoption.mode, "human-to-agent");
+  assert.equal(opened.data.adoption.originalMissionActor, "human");
+  assert.equal(opened.data.adoption.restarted, false);
+  assert.deepEqual(calls, [{
+    id: auditId,
+    options: { source: "agent", focusAreas: ["accessibility", "seo"] },
+    revision: 4,
+  }]);
+  assert.equal(mission.requestedBy, "human");
+  assert.ok(contextualFrontmendToolNames(service).includes("record_browser_review_check"));
+});
+
+test("a withdrawn untouched handoff returns contextual WebMCP to read-only assessment tools", () => {
+  const auditId = "withdrawn-audit";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["seo"],
+    maxPriorities: 3,
+    requestedBy: "human",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const report = {
+    auditId,
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    engine: { mode: "live-document", provider: "Frontmend live document" },
+    findings: [],
+    viewports: [],
+  };
+  const opened = createBrowserReviewMission({
+    auditId,
+    mission,
+    report,
+    target: report.finalUrl,
+    source: "person",
+    now: 20,
+  });
+  const review = withdrawBrowserReview(opened, "person", 30);
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", missionRevision: 3, mission, report }),
+    getBrowserReview: () => review,
+    getRepairs: () => [],
+    getDiagnosticMissions: () => [],
+    getSiteExplorations: () => [],
+  };
+  const contextual = contextualFrontmendToolNames(service);
+
+  assert.ok(contextual.includes("get_site_audit_results"));
+  assert.ok(contextual.includes("get_assessment_receipt"));
+  assert.equal(contextual.includes("open_browser_review"), false);
+  assert.equal(contextual.includes("record_browser_review_check"), false);
+  assert.equal(createFrontmendTools(service).length, 21);
+});
+
 test("contextual WebMCP withholds a browser-finding receipt until one exact fresh replay completes", async () => {
   const auditId = "c1de4f26-c222-4e44-a7e5-884ba6d9fe9a";
   const verificationContext = {
@@ -897,6 +1009,7 @@ test("repair preparation updates contextual tools without exposing person-only a
   await service.startAudit({ url: "example.com", source: "human", mission: { focusAreas: ["seo"] } });
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
+    "open_browser_review",
     "get_repository_fix_brief",
     "prepare_site_repair",
   ]);
