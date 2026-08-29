@@ -36,3 +36,12 @@
 - Privacy decision: never store the raw natural-language prompt; retain only bounded intent, focus areas, maximum priorities, attribution, and selected repair finding.
 - Time-budget decision: no new dependency, provider, Durable Object class, database, crawler, or agent runtime.
 - Deepening rounds: zero additional interview rounds. Repository and PRD evidence resolved stack, deployment, data-flow, risk, and file-boundary decisions.
+
+## 2026-08-29 — Build checklist
+
+- Plan ownership inferred as handed off from the participant's repeated request to keep building and prior instruction that guided help should not become a box.
+- Build mode locked to autonomous, with each completed item committed separately using CK-XYZ.
+- Verification uses targeted automated checks per slice and the full release gate at item 10. Human visual/browser pauses are deferred until a server or external session is explicitly authorised.
+- Wow moment is participant-derived: a natural audit prompt becomes a visible read-only browser/repository assessment, and repair tools appear only after explicit intent.
+- Checklist contains eleven sequenced items: five core contract/service/WebMCP slices, two human-experience slices, regression hardening, evidence documentation, command-safe release verification, and final Devpost handoff.
+- Deepening rounds: zero. Autonomous handoff path used the mandatory final gut-check; scope is deliberately at the upper item limit because production/local parity and submission evidence are separate gates.
