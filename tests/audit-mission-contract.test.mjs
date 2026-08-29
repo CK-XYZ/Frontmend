@@ -97,7 +97,7 @@ test("keeps assessment incomplete until supported diagnosis is contributed", () 
   const inProgress = deriveAuditMissionState({ report, mission, diagnosticMissions: [diagnostic] });
   assert.equal(inProgress.status, "in-progress");
   assert.equal(inProgress.nextAction.tool, "submit_runtime_diagnosis");
-  assert.deepEqual(inProgress.nextAction.input, { diagnosticMissionId: diagnostic.id });
+  assert.deepEqual(inProgress.nextAction.input, { missionId: diagnostic.id });
 
   const diagnosed = submitDiagnosticEvidence(diagnostic, {
     summary: "The route reads a vendor global before its script finishes loading.",

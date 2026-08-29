@@ -173,6 +173,7 @@ test("agent tools use the same audit service as the human interface", async () =
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const report = { auditId, schemaVersion: 2, findings: [] };
   const service = createAuditService({
+    now: () => 10,
     transport: {
       start: async ({ url, source }) => ({
         id: auditId,
@@ -198,12 +199,19 @@ test("agent tools use the same audit service as the human interface", async () =
     },
   });
   const tools = createFrontmendTools(service);
-  const started = await findTool(tools, "start_site_audit").execute({ url: "removemyexif.com" });
+  const started = await findTool(tools, "start_site_audit").execute({
+    url: "removemyexif.com",
+    intent: "assess",
+    focusAreas: ["accessibility", "seo"],
+    maxPriorities: 3,
+  });
 
   assert.equal(started.ok, true);
   assert.equal(started.data.workspacePath, `/audits/${started.data.id}`);
   assert.equal(service.getActiveAudit().id, started.data.id);
   assert.equal(service.getActiveAudit().source, "agent");
+  assert.deepEqual(started.data.mission.focusAreas, ["accessibility", "seo"]);
+  assert.equal(started.data.nextAction.tool, "check_site_audit_progress");
 
   const progress = await findTool(tools, "check_site_audit_progress").execute({});
   assert.equal(progress.data.status, "complete");
@@ -211,6 +219,8 @@ test("agent tools use the same audit service as the human interface", async () =
   const results = await findTool(tools, "get_site_audit_results").execute({});
   assert.equal(results.ok, true);
   assert.equal(results.data.auditId, started.data.id);
+  assert.equal(results.data.missionState.assessmentComplete, true);
+  assert.equal(results.data.resultProjection.mode, "persisted-mission");
   const activities = service.getAgentActivities();
   assert.deepEqual(
     activities.map((activity) => [activity.tool, activity.status]),
@@ -454,11 +464,24 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
       { id: "desktop", scores: { accessibility: 96, seo: 100 } },
     ],
   };
-  const service = { getActiveAudit: () => ({ id: auditId }), getResults: async () => report };
-  const result = await findTool(createFrontmendTools(service), "get_site_audit_results").execute({
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
     focusAreas: ["accessibility", "seo"],
     maxPriorities: 3,
-  });
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  let diagnosticMissions = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", report, mission }),
+    getResults: async () => report,
+    getDiagnosticMissions: () => diagnosticMissions,
+    getRepairs: () => [],
+  };
+  const tool = findTool(createFrontmendTools(service), "get_site_audit_results");
+  const result = await tool.execute({});
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.data.requestedFocusAreas, ["accessibility", "seo"]);
@@ -469,9 +492,31 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.deepEqual(result.data.recommendedNextAction, {
     tool: "open_diagnostic_mission",
     findingId: "mobile-color-contrast",
-    reason: "The top measured symptom needs browser reproduction and repository ownership before an agent repair proposal.",
+    reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
   });
   assert.deepEqual(result.data.focusSummary.categoryScores, { accessibility: 94, seo: 94 });
+  assert.equal(result.data.missionState.auditComplete, true);
+  assert.equal(result.data.missionState.assessmentComplete, false);
+  assert.deepEqual(result.data.missionState.nextAction.input, {
+    findingId: "mobile-color-contrast",
+  });
+  assert.equal(result.data.resultProjection.mode, "persisted-mission");
+
+  diagnosticMissions = [{
+    id: "diagnostic-1",
+    findingId: "mobile-color-contrast",
+    state: { state: "ready-for-repair" },
+  }];
+  const contributed = await tool.execute({});
+  assert.equal(contributed.data.priorities[0].evidenceState, "diagnosis-contributed");
+  assert.equal(contributed.data.missionState.assessmentComplete, true);
+  assert.equal(contributed.data.missionState.nextAction, null);
+
+  const override = await tool.execute({ focusAreas: ["seo"], maxPriorities: 1 });
+  assert.equal(override.data.resultProjection.mode, "read-only-override");
+  assert.equal(override.data.resultProjection.changedPersistedMission, false);
+  assert.deepEqual(override.data.requestedFocusAreas, ["seo"]);
+  assert.deepEqual(mission.focusAreas, ["accessibility", "seo"]);
 });
 
 test("staged repair tools disclose delegated auto authority and the next agent action", async () => {

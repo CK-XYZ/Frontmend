@@ -35,7 +35,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Same-finding repetition is idempotent; different-finding replacement fails closed; incomplete/unknown audits and findings return actionable errors; no delegated allowance is consumed; repair policy, source, implementation, deployment, and verification state remain unchanged.
   Verify: `bun test tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/repair-contract.test.mjs`
 
-- [ ] **4. Make WebMCP start and results mission-aware**
+- [x] **4. Make WebMCP start and results mission-aware**
   Spec ref: `spec.md > WebMCP Tools > start_site_audit changes`; `spec.md > WebMCP Tools > get_site_audit_results changes`
   What to build: Add optional intent/focus/max fields to `start_site_audit`, persist them through the service, and make `get_site_audit_results` use persisted focus by default. Return typed mission state, per-priority evidence state, assessment completion, exact next actor/tool/input, and a clearly labelled read-only projection override.
   Acceptance: The natural accessibility/SEO call needs no repeated focus on the result call; audit-job completion is distinct from assessment completion; zero matches finish honestly; diagnostic priorities point to exact existing tools; no result claims manual completeness or repair permission.

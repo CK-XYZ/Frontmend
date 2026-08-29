@@ -5,9 +5,14 @@ import {
   verificationReceiptMarkdown,
 } from "./repair-contract.js";
 import { findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
+import {
+  AUDIT_FOCUS_AREAS,
+  auditMissionSnapshot,
+  createAuditMission,
+  deriveAuditMissionState,
+} from "./audit-mission-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
-const AUDIT_FOCUS_AREAS = Object.freeze(["accessibility", "seo", "performance", "security", "reliability"]);
 
 function objectInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -38,95 +43,6 @@ function observedPaths(value) {
     throw new AuditError("INVALID_INPUT", "paths must contain between 1 and 3 observed routes.");
   }
   return value.map((path) => requiredString(path, "path", 256));
-}
-
-function requestedFocusAreas(value) {
-  if (value === undefined) return [];
-  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
-    throw new AuditError("INVALID_INPUT", "focusAreas must contain between 1 and 3 areas.");
-  }
-  const areas = value.map((area) => requiredString(area, "focus area", 40).toLowerCase());
-  if (areas.some((area) => !AUDIT_FOCUS_AREAS.includes(area)) || new Set(areas).size !== areas.length) {
-    throw new AuditError("INVALID_INPUT", "focusAreas must contain unique supported audit areas.");
-  }
-  return areas;
-}
-
-function focusedAuditResult(report, focusAreas, maximum = 3) {
-  const findings = Array.isArray(report?.findings) ? report.findings : [];
-  const candidates = focusAreas.length
-    ? findings.filter((finding) => focusAreas.some((area) => finding.focusAreas?.includes(area)))
-    : findings;
-  const severityOrder = { high: 0, medium: 1, low: 2 };
-  const grouped = new Map();
-  for (const finding of [...candidates].sort(
-    (left, right) => (severityOrder[left.severity] ?? 3) - (severityOrder[right.severity] ?? 3),
-  )) {
-    const key = `${finding.source?.provider ?? "unknown"}:${finding.source?.auditId ?? finding.id}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.occurrenceCount += 1;
-      if (finding.source?.strategy && !existing.affectedStrategies.includes(finding.source.strategy)) {
-        existing.affectedStrategies.push(finding.source.strategy);
-      }
-      continue;
-    }
-    grouped.set(key, {
-      findingId: finding.id,
-      title: finding.title,
-      severity: finding.severity,
-      category: finding.category,
-      focusAreas: finding.focusAreas ?? [],
-      evidence: finding.evidence,
-      suggestedRepair: finding.repair,
-      occurrenceCount: 1,
-      affectedStrategies: finding.source?.strategy ? [finding.source.strategy] : [],
-      diagnosticMissionRequired: findingRequiresDiagnosticMission(finding),
-    });
-  }
-  const priorities = [...grouped.values()]
-    .sort((left, right) =>
-      (severityOrder[left.severity] ?? 3) - (severityOrder[right.severity] ?? 3) ||
-      right.occurrenceCount - left.occurrenceCount,
-    )
-    .slice(0, maximum).map((priority, index) => ({
-    rank: index + 1,
-    ...priority,
-    whyPrioritized: `${priority.severity} severity${priority.occurrenceCount > 1 ? ` across ${priority.occurrenceCount} measured strategies` : ""}`,
-    }));
-  const categoryScores = {};
-  for (const area of focusAreas) {
-    const values = (report.viewports ?? [])
-      .map((viewport) => viewport.scores?.[area])
-      .filter(Number.isFinite);
-    categoryScores[area] = values.length
-      ? Math.round(values.reduce((total, score) => total + score, 0) / values.length)
-      : null;
-  }
-  return {
-    ...report,
-    requestedFocusAreas: focusAreas,
-    focusSummary: {
-      matchingFindingCount: candidates.length,
-      returnedPriorityCount: priorities.length,
-      categoryScores,
-      message: priorities.length
-        ? "Priorities are deduplicated by measured rule and ordered by severity. They are decision support, not a complete manual audit."
-        : "No supported failed rule matched the requested focus in this run. Category scores are retained when Lighthouse supplied them; this is not a complete manual audit.",
-    },
-    priorities,
-    recommendedNextAction: priorities[0]
-      ? {
-          tool: priorities[0].diagnosticMissionRequired
-            ? "open_diagnostic_mission"
-            : "get_repository_fix_brief",
-          findingId: priorities[0].findingId,
-          reason: priorities[0].diagnosticMissionRequired
-            ? "The top measured symptom needs browser reproduction and repository ownership before an agent repair proposal."
-            : "Prepare the repository-aware evidence and acceptance criteria for the top measured priority.",
-        }
-      : null,
-  };
 }
 
 function auditIdForTool(service, value) {
@@ -249,7 +165,7 @@ export function createFrontmendTools(service) {
       name: "start_site_audit",
       title: "Start site audit",
       description:
-        "Start a full Frontmend audit for a public HTTP or HTTPS website. Use this when a person naturally asks to audit their site, including requests focused on accessibility or SEO. Resolve the target URL from their request or the current repository's public deployment configuration; ask only when it cannot be determined safely. Returns an audit ID and stable workspace path without navigating during the tool call. Follow that path after the call, check progress, then read results with the person's requested focus areas.",
+        "Start a durable Frontmend assessment for a public HTTP or HTTPS website. Use intent assess for natural audit requests, preserve any requested accessibility, SEO, performance, security, or reliability focus, and use prepare-fix only when the person explicitly asked to prepare a repair. Resolve the target URL from their request or current repository deployment configuration; ask only when it cannot be determined safely. After starting, navigate to the stable workspace, check progress, then continue the exact mission until assessmentComplete is true or its named blocker cannot be resolved.",
       inputSchema: {
         type: "object",
         properties: {
@@ -259,6 +175,25 @@ export function createFrontmendTools(service) {
             maxLength: 2048,
             description: "Public website URL to audit, with or without an HTTPS scheme.",
           },
+          intent: {
+            type: "string",
+            enum: ["assess", "prepare-fix"],
+            description: "Mission intent. Defaults to assess; prepare-fix requires an explicit person request.",
+          },
+          focusAreas: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            uniqueItems: true,
+            items: { type: "string", enum: AUDIT_FOCUS_AREAS },
+            description: "One to three focus areas explicitly requested by the person.",
+          },
+          maxPriorities: {
+            type: "integer",
+            minimum: 1,
+            maximum: 5,
+            description: "Maximum deduplicated mission priorities. Defaults to 3.",
+          },
         },
         required: ["url"],
         additionalProperties: false,
@@ -266,12 +201,28 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["url"]);
+        noExtra(value, ["url", "intent", "focusAreas", "maxPriorities"]);
         if (typeof value.url !== "string") {
           throw new AuditError("INVALID_INPUT", "url must be a string.");
         }
-        const audit = await service.startAudit({ url: value.url, source: "agent" });
-        return { ...audit, workspacePath: `/audits/${encodeURIComponent(audit.id)}` };
+        const audit = await service.startAudit({
+          url: value.url,
+          source: "agent",
+          mission: {
+            intent: value.intent,
+            focusAreas: value.focusAreas,
+            maxPriorities: value.maxPriorities,
+          },
+        });
+        return {
+          ...audit,
+          workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
+          nextAction: {
+            tool: "check_site_audit_progress",
+            input: { auditId: audit.id },
+            reason: "Wait for the live measurement job, then continue the persisted assessment mission.",
+          },
+        };
       },
     }),
     tool({
@@ -300,6 +251,7 @@ export function createFrontmendTools(service) {
           phase: audit.phase,
           phaseLabel: audit.phaseLabel,
           progress: audit.progress,
+          mission: audit.mission ?? null,
         };
       },
     }),
@@ -336,7 +288,7 @@ export function createFrontmendTools(service) {
       name: "get_site_audit_results",
       title: "Get site audit results",
       description:
-        "Return the completed Frontmend report with safe counts, structured findings, and up to three deduplicated priorities. When the person asked about accessibility, SEO, performance, security, or reliability, pass those focus areas instead of making them restate the workflow. Omit auditId to use the visible audit. The result remains automated evidence, not a complete manual audit.",
+        "Return the completed measurement and the persisted assessment mission with bounded priorities, evidence state, assessmentComplete, and an exact next tool/input. Omit focus and maximum to continue the person's original goal without restating it. Optional focus/max values are a labelled read-only result projection and never rewrite mission intent. Do not stop at Lighthouse job completion while assessmentComplete is false and the named diagnostic action is available.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -353,13 +305,51 @@ export function createFrontmendTools(service) {
       async run(input) {
         const value = objectInput(input);
         noExtra(value, ["auditId", "focusAreas", "maxPriorities"]);
-        const focusAreas = requestedFocusAreas(value.focusAreas);
-        const maximum = value.maxPriorities === undefined ? 3 : Number(value.maxPriorities);
-        if (!Number.isInteger(maximum) || maximum < 1 || maximum > 5) {
-          throw new AuditError("INVALID_INPUT", "maxPriorities must be an integer between 1 and 5.");
+        if (value.focusAreas !== undefined && (!Array.isArray(value.focusAreas) || value.focusAreas.length < 1)) {
+          throw new AuditError("INVALID_INPUT", "focusAreas must contain between 1 and 3 areas when supplied.");
         }
-        const report = await service.getResults(auditIdForTool(service, value.auditId));
-        return focusedAuditResult(report, focusAreas, maximum);
+        const auditId = auditIdForTool(service, value.auditId);
+        const report = await service.getResults(auditId);
+        const remembered = service?.getActiveAudit?.();
+        const persistedMission = remembered?.id === auditId && remembered.mission
+          ? auditMissionSnapshot(remembered.mission)
+          : createAuditMission({}, "agent", 0);
+        const projectionMission = auditMissionSnapshot({
+          ...persistedMission,
+          focusAreas: value.focusAreas ?? persistedMission.focusAreas,
+          maxPriorities: value.maxPriorities ?? persistedMission.maxPriorities,
+        });
+        const missionState = deriveAuditMissionState({
+          report,
+          mission: projectionMission,
+          diagnosticMissions: service?.getDiagnosticMissions?.(auditId) ?? [],
+          repairs: service?.getRepairs?.(auditId) ?? [],
+        });
+        const overridden = value.focusAreas !== undefined || value.maxPriorities !== undefined;
+        return {
+          ...report,
+          mission: persistedMission,
+          requestedFocusAreas: missionState.requestedFocusAreas,
+          focusSummary: {
+            matchingFindingCount: missionState.matchingFindingCount,
+            returnedPriorityCount: missionState.priorityCount,
+            categoryScores: missionState.categoryScores,
+            message: missionState.priorities.length
+              ? "Priorities are deduplicated measured rules with explicit diagnosis state. Automated evidence is not a complete manual audit."
+              : "No supported failed rule matched this focus. Retained scores are automated evidence, not a complete manual audit.",
+          },
+          priorities: missionState.priorities,
+          missionState,
+          resultProjection: {
+            mode: overridden ? "read-only-override" : "persisted-mission",
+            changedPersistedMission: false,
+            focusAreas: missionState.requestedFocusAreas,
+            maxPriorities: projectionMission.maxPriorities,
+          },
+          recommendedNextAction: missionState.nextAction
+            ? { tool: missionState.nextAction.tool, ...missionState.nextAction.input, reason: missionState.nextAction.reason }
+            : null,
+        };
       },
     }),
     tool({

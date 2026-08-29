@@ -310,10 +310,14 @@ export function createAuditService(options = {}) {
 
   const remember = (audit, expectedGeneration = generation) => {
     if (!audit?.id || expectedGeneration !== generation) return audit;
-    jobs.set(audit.id, audit);
+    const previous = jobs.get(audit.id);
+    const retained = audit.mission || !previous?.mission
+      ? audit
+      : { ...audit, mission: previous.mission };
+    jobs.set(audit.id, retained);
     activeAuditId = audit.id;
     emit();
-    return audit;
+    return retained;
   };
 
   const rememberRepair = (repair, expectedGeneration = generation) => {
@@ -356,7 +360,7 @@ export function createAuditService(options = {}) {
       const mission = createAuditMission(input?.mission ?? {}, source, now());
       const expectedGeneration = generation;
       const audit = await transport.start({ url, source, mission });
-      return remember(audit, expectedGeneration);
+      return remember({ ...audit, mission: audit.mission ?? mission }, expectedGeneration);
     },
 
     async startRelatedAudit(auditId, path, source = "human") {

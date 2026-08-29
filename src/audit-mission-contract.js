@@ -251,7 +251,7 @@ function diagnosticNextAction(priority) {
   if (priority.evidenceState === "diagnosis-in-progress") {
     return {
       tool: "submit_runtime_diagnosis",
-      input: { diagnosticMissionId: priority.diagnosticMissionId },
+      input: { missionId: priority.diagnosticMissionId },
       reason: "Contribute the browser and repository diagnosis already requested for this measured symptom.",
     };
   }

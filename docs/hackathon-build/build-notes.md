@@ -72,3 +72,12 @@
 - Repeated same-finding calls are idempotent; incomplete jobs, unknown findings, unknown fields, and attempts to swap findings fail closed.
 - Tests prove the transition creates no repair, grants no approval, leaves deployment authority false, and does not consume or rewrite repair policy allowance.
 - Verification: `bun test tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/repair-contract.test.mjs tests/audit-mission-contract.test.mjs` — 77 passed, 0 failed.
+
+## 2026-08-29 — Build item 4
+
+- `start_site_audit` now accepts bounded intent, focus areas, and maximum priorities, returns the persisted mission, and names the exact progress action.
+- Natural audit requests default to read-only Assess; the tool description explicitly requires continuing beyond completed Lighthouse measurement while supported diagnosis remains.
+- `get_site_audit_results` uses persisted focus by default, returns typed `missionState`, per-priority evidence state, distinct audit/assessment completion, and exact next tool/input.
+- Optional focus/maximum overrides are labelled `read-only-override` and leave the persisted mission unchanged.
+- Service state preserves the original mission when a legacy or partial transport snapshot omits it.
+- Verification: `bun test tests/webmcp.test.mjs tests/audit-mission-contract.test.mjs tests/audit-service.test.mjs` — 42 passed, 0 failed.
