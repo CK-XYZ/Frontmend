@@ -117,7 +117,7 @@ bun run build
 bunx wrangler deploy --dry-run --strict --config wrangler.jsonc
 ```
 
-Fresh local receipt on 29 August 2026: 125 tests passed; Vite transformed 4,576 modules; Wrangler 4.126.0 recognised the assets plus both Durable Object bindings and exited in dry-run mode without uploading.
+Fresh local receipt on 30 August 2026 from tracked revision `ba2cf0189ce568adb856ee0aaae3f418c685181b`: 125 tests passed; Vite transformed 4,576 modules; Wrangler 4.126.0 recognised the assets plus both Durable Object bindings and exited in dry-run mode without uploading.
 
 ## Public Demo Link
 

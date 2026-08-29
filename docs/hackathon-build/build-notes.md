@@ -160,3 +160,10 @@
 - Authority remains separate: contributed evidence cannot approve, implement, deploy, attest deployment, or verify a repair.
 - Added legacy-snapshot derivation and bounded-count coverage without adding a provider, dependency, database, agent runtime, or source-upload path.
 - Verification before the slice commit: targeted diagnostic/WebMCP tests passed 25/25; `bun run test` passed 125/125 and rebuilt the package; `bun run build` transformed 4,576 modules; strict Wrangler dry run read five assets and exited without upload at 212.09 KiB raw / 46.61 KiB gzip.
+
+## 2026-08-30 — Diagnostic evidence-chain release gate
+
+- Product slice committed as `ba2cf0189ce568adb856ee0aaae3f418c685181b` with the CK-XYZ Git identity.
+- Reran the allowed release gate from that exact clean commit: `bun run test` passed 125/125, `bun run build` transformed 4,576 modules, and Wrangler 4.126.0 recognised five assets plus both Durable Object bindings before exiting in strict dry-run mode.
+- Current assets are `index-BTDKodKk.css` at 76.46 kB raw / 15.63 kB gzip and `index-DyXq3uEW.js` at 416.18 kB raw / 116.11 kB gzip. The dry bundle is 212.09 KiB raw / 46.61 KiB gzip.
+- `git status --short` was empty before and after verification. No server, deployment, push, Access change, public-repository write, browser proof, or Devpost write occurred.
