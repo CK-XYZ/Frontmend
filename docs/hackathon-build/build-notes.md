@@ -151,3 +151,12 @@
 - The official form does not request a Codex session ID, so no machine-wide session identifier was inspected or recorded.
 - State advances to Prepare/drafting, but `prepare-submission` is not marked complete and remains the next command because the packet still has material external gaps.
 - No Devpost project write, submission, deployment, server start, Access change, repository publication, push, or video upload occurred.
+
+## 2026-08-29 — Freeform diagnostic evidence chain
+
+- Continued beyond the completed guided checklist at the participant's request, using the existing product evidence instead of reopening planning interviews.
+- Added one derived four-stage diagnostic evidence chain: provider measurement is retained separately while browser reproduction, repository ownership, and planned checks remain visibly required or contributed.
+- The chain is returned by `open_diagnostic_mission` and `submit_runtime_diagnosis`, while the human workspace renders the same stage states plus bounded observations, repository-relative ownership, and planned checks.
+- Authority remains separate: contributed evidence cannot approve, implement, deploy, attest deployment, or verify a repair.
+- Added legacy-snapshot derivation and bounded-count coverage without adding a provider, dependency, database, agent runtime, or source-upload path.
+- Verification before the slice commit: targeted diagnostic/WebMCP tests passed 25/25; `bun run test` passed 125/125 and rebuilt the package; `bun run build` transformed 4,576 modules; strict Wrangler dry run read five assets and exited without upload at 212.09 KiB raw / 46.61 KiB gzip.

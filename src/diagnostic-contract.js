@@ -137,6 +137,57 @@ function diagnosisSnapshot(diagnosis) {
   };
 }
 
+export function diagnosticEvidenceChain(mission) {
+  const diagnosis = mission?.diagnosis ?? null;
+  const contributedBy = diagnosis
+    ? diagnosis.agentReported
+      ? "agent-reported"
+      : "person-reported"
+    : null;
+  const stages = [
+    {
+      id: "measurement",
+      label: "Measured symptom",
+      state: "retained",
+      provenance: mission?.measuredEvidence?.provenance ?? "measured-provider",
+      itemCount: Math.max(0, Math.min(5, mission?.measuredEvidence?.itemCount ?? 0)),
+    },
+    {
+      id: "browser",
+      label: "Browser reproduction",
+      state: diagnosis?.observations?.length ? "contributed" : "required",
+      provenance: diagnosis?.observations?.length ? contributedBy : null,
+      itemCount: Math.max(0, Math.min(5, diagnosis?.observations?.length ?? 0)),
+    },
+    {
+      id: "repository",
+      label: "Repository ownership",
+      state: diagnosis?.sourceLocations?.length ? "contributed" : "required",
+      provenance: diagnosis?.sourceLocations?.length ? contributedBy : null,
+      itemCount: Math.max(0, Math.min(8, diagnosis?.sourceLocations?.length ?? 0)),
+    },
+    {
+      id: "verification",
+      label: "Planned checks",
+      state: diagnosis?.verificationChecks?.length ? "contributed" : "required",
+      provenance: diagnosis?.verificationChecks?.length ? contributedBy : null,
+      itemCount: Math.max(0, Math.min(8, diagnosis?.verificationChecks?.length ?? 0)),
+    },
+  ];
+  return {
+    schemaVersion: 1,
+    status: stages.slice(1).every((stage) => stage.state === "contributed")
+      ? "ready-for-repair"
+      : "awaiting-diagnosis",
+    stages,
+    authority: {
+      repair: "separate-review-or-delegation",
+      deployment: "site-owner",
+      claim: "Contributed evidence does not approve, implement, deploy, or verify a repair.",
+    },
+  };
+}
+
 export function diagnosticMissionState(mission) {
   const diagnosis = mission?.diagnosis;
   const ready = Boolean(
@@ -165,11 +216,15 @@ export function diagnosticMissionState(mission) {
 }
 
 export function diagnosticMissionSnapshot(mission) {
-  return {
+  const snapshot = {
     ...mission,
     diagnosis: diagnosisSnapshot(mission.diagnosis),
     history: (mission.history ?? []).slice(-MAX_DIAGNOSTIC_REVISIONS).map(diagnosisSnapshot),
     state: diagnosticMissionState(mission),
+  };
+  return {
+    ...snapshot,
+    evidenceChain: diagnosticEvidenceChain(snapshot),
   };
 }
 

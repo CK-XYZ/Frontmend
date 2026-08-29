@@ -54,7 +54,7 @@ Codex was both the primary development collaborator and the intended repository-
 
 During the build, Codex inspected the existing React, service, Worker, Durable Object, and test architecture; helped turn the product risk into a scope, PRD, technical specification, and eleven-item build checklist; implemented each isolated slice; and committed each completed slice with the existing project identity. It added the pure mission contract, cross-runtime persistence, explicit repair-preparation route, mission-aware WebMCP outputs, contextual tool gating, visible mission and priority UI, responsive styling, and cross-layer regression coverage.
 
-Codex also challenged weak claims. The guided build explicitly treated “stops after Lighthouse” as a failed evaluation, kept historical browser receipts separate from current proof, preserved unrelated work, rejected raw prompt/source/absolute-path retention, and distinguished tests/build/dry-run from deployment. The final command-safe gate ran 124 deterministic tests, built the production client/Worker package, and completed a strict Wrangler dry run without upload.
+Codex also challenged weak claims. The guided build explicitly treated “stops after Lighthouse” as a failed evaluation, kept historical browser receipts separate from current proof, preserved unrelated work, rejected raw prompt/source/absolute-path retention, and distinguished tests/build/dry-run from deployment. The current command-safe gate runs 125 deterministic tests, builds the production client/Worker package, and completes a strict Wrangler dry run without upload.
 
 The intended live demonstration uses Codex inside a controlled target repository: Codex can receive independent public evidence from Frontmend, use its own repository access to investigate and implement an authorised plan, and return a bounded receipt without uploading the source tree to Frontmend.
 
@@ -64,7 +64,7 @@ The intended live demonstration uses Codex inside a controlled target repository
 - Real asynchronous PageSpeed Insights/Lighthouse measurement for independent mobile and desktop strategies, with truthful partial and bounded live-document fallback modes.
 - No more than five bounded priorities by contract and three in the natural demo, deduplicated across viewports with occurrence and evidence state preserved.
 - Distinct `auditComplete` and `assessmentComplete` states with an exact next tool/input when supported diagnosis remains.
-- Durable diagnostic missions that keep measured symptoms separate from agent-reported browser and repository evidence.
+- Durable diagnostic missions with a shared four-stage evidence chain that keeps provider measurement separate from agent-reported browser reproduction, repository ownership, and planned checks.
 - Explicit `prepare_site_repair` transition that freezes one finding before repair staging is eligible.
 - Seventeen contextual WebMCP tools; only actions valid for the visible mission state are registered.
 - Source-safe repository fix briefs, bounded repository plans, human review/revision, and optional low-risk delegated-auto approval capped at three uses.
@@ -117,7 +117,7 @@ bun run build
 bunx wrangler deploy --dry-run --strict --config wrangler.jsonc
 ```
 
-Fresh local receipt on 29 August 2026: 124 tests passed; Vite transformed 4,576 modules; Wrangler 4.126.0 recognised the assets plus both Durable Object bindings and exited in dry-run mode without uploading.
+Fresh local receipt on 29 August 2026: 125 tests passed; Vite transformed 4,576 modules; Wrangler 4.126.0 recognised the assets plus both Durable Object bindings and exited in dry-run mode without uploading.
 
 ## Public Demo Link
 
@@ -162,7 +162,7 @@ Official live Devpost data was fetched on 29 August 2026. Submissions close at `
 Judging fit:
 
 - **WebMCP Leverage:** seventeen contextual semantic tools share the human application's service, validation, persistence, and state transitions; tool availability is itself part of the authority protocol.
-- **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 124 tests, production build, and strict deployment dry run.
+- **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 125 tests, production build, and strict deployment dry run.
 - **Potential Impact:** replaces a fragmented developer workflow with a durable, inspectable path from live evidence to repository work and fresh proof.
 - **Creativity & Ambition:** applies WebMCP to a multi-actor engineering protocol with changing authority rather than a single stateless agent action.
 

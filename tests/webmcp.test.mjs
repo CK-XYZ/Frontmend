@@ -874,6 +874,12 @@ test("diagnostic tools keep measured evidence separate from agent-reported repos
   const opened = await findTool(tools, "open_diagnostic_mission").execute({ findingId: mission.findingId });
   assert.equal(opened.ok, true);
   assert.equal(opened.data.measuredEvidence.provenance, "measured-lighthouse");
+  assert.equal(opened.data.evidenceChain.status, "awaiting-diagnosis");
+  assert.deepEqual(opened.data.evidenceChain.stages.slice(1).map((stage) => stage.state), [
+    "required",
+    "required",
+    "required",
+  ]);
 
   const diagnosed = await findTool(tools, "submit_runtime_diagnosis").execute({
     missionId,
@@ -887,6 +893,12 @@ test("diagnostic tools keep measured evidence separate from agent-reported repos
   assert.equal(diagnosed.ok, true);
   assert.equal(diagnosed.data.diagnosis.agentReported, true);
   assert.equal(diagnosed.data.measuredEvidence.provenance, "measured-lighthouse");
+  assert.equal(diagnosed.data.evidenceChain.status, "ready-for-repair");
+  assert.deepEqual(diagnosed.data.evidenceChain.stages.slice(1).map((stage) => stage.provenance), [
+    "agent-reported",
+    "agent-reported",
+    "agent-reported",
+  ]);
   assert.equal(diagnosed.data.state.state, "ready-for-repair");
 });
 

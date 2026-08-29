@@ -35,6 +35,7 @@ Only a later explicit request such as “Please prepare the first priority for a
 - Truthful high-volume Lighthouse results: the summary reports the full measured failure total, while the bounded ten-detail queue exposes its omitted count and retains every explicit rule outcome for agents and exports.
 - Actionable diagnostic evidence for console errors, low-contrast nodes, and main-thread blocking: Frontmend retains bounded runtime details from Lighthouse, then opens a persisted mission requiring browser reproduction, repository ownership, and planned checks before an agent can propose a repair for that symptom.
 - Separately attributed diagnosis provenance: measured Lighthouse evidence remains provider evidence, while contributed browser observations and repository locations remain explicitly agent- or person-reported through repair exports and fresh verification receipts.
+- A shared four-stage diagnostic evidence chain—measured symptom, browser reproduction, repository ownership, and planned checks—appears in both WebMCP results and the human workspace, with missing contributions and the separate repair/deployment authority boundary left visible.
 - Portable completed-audit Markdown export backed by the persisted report, with bounded escaped findings, every recorded rule outcome, provider provenance, and evidence-mode limits.
 - Bounded repository repair missions that may be proposed by a person or agent and appear in the same visible workspace used by the site owner.
 - An audit-scoped operating policy chosen only in the human UI: **Review each plan** keeps explicit approval per proposal, while **Delegated auto mode** records a prior human grant for at most three agent-authored low-risk HTML or CSS plans that include bounded repository-relative files and planned checks. JavaScript, headers, configuration, medium/high risk, deployment, and deployment attestation remain gated.
@@ -112,7 +113,7 @@ WebMCP controls the application; it does not perform the audit itself. Both adap
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 124 contracts.
+`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 125 contracts.
 
 ```powershell
 bun install

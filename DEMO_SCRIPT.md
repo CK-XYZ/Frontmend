@@ -28,11 +28,14 @@ Choose a priority whose evidence says diagnosis is recommended. Show the crucial
 
 Codex opens the mission, reproduces the symptom in the browser, and inspects the repository with its normal repository tools. It then calls `submit_runtime_diagnosis` with a short reproduction, bounded observations, repository-relative ownership locations, and planned checks.
 
+Show the four-stage evidence chain changing in place: provider measurement remains **Measured**, while browser reproduction, repository ownership, and planned checks move from **Required** to **Contributed**. Open the contribution detail long enough to show one real browser observation, one repository-relative owner, and the planned checks; this is the visual proof that the workflow continued beyond Lighthouse.
+
 Compare the visible and structured state:
 
 - Lighthouse evidence remains labelled measured.
 - The causal diagnosis remains labelled agent-reported.
 - Frontmend received no source contents, absolute paths, prompts, credentials, or command output.
+- The visible evidence chain and the `evidenceChain` returned through WebMCP agree stage for stage.
 - `assessmentComplete` becomes true only after the required evidence is present.
 
 Narration: “The agent keeps source access. Frontmend keeps the public evidence, shared mission, and authority boundary.”

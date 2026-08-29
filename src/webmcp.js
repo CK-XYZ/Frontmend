@@ -4,7 +4,7 @@ import {
   repairMissionState,
   verificationReceiptMarkdown,
 } from "./repair-contract.js";
-import { findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
+import { diagnosticEvidenceChain, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import {
   AUDIT_FOCUS_AREAS,
   auditMissionSnapshot,
@@ -425,7 +425,7 @@ export function createFrontmendTools(service) {
       name: "open_diagnostic_mission",
       title: "Open diagnostic mission",
       description:
-        "Open an idempotent diagnostic mission for a finding with structured runtime evidence, such as console errors, low-contrast nodes, or main-thread blocking. The mission turns the measured symptom into explicit browser reproduction, repository ownership, and verification investigations. It does not diagnose the cause, read repository source, stage a repair, or change the target site.",
+        "Open an idempotent diagnostic mission for a finding with structured runtime evidence, such as console errors, low-contrast nodes, or main-thread blocking. The mission returns an evidenceChain that keeps the measured symptom separate from required browser reproduction, repository ownership, and planned verification. It does not diagnose the cause, read repository source, stage a repair, or change the target site.",
       inputSchema: {
         type: "object",
         properties: {
@@ -449,6 +449,7 @@ export function createFrontmendTools(service) {
           diagnosticMissionId: mission.id,
           findingId: mission.findingId,
           measuredEvidence: mission.measuredEvidence,
+          evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
           requiredInvestigations: mission.requiredInvestigations,
           state: mission.state,
           nextAction: "Reproduce the issue in the browser, map it to repository-relative source locations, then submit the bounded diagnosis. Do not include source contents or absolute paths.",
@@ -459,7 +460,7 @@ export function createFrontmendTools(service) {
       name: "submit_runtime_diagnosis",
       title: "Submit runtime diagnosis",
       description:
-        "Contribute agent-reported diagnostic evidence after reproducing a measured issue in the browser and mapping it to repository ownership. Submit observations, repository-relative source locations, and exact planned checks; never submit source contents, credentials, private data, or absolute paths. This evidence is labelled agent-reported and does not itself approve, implement, deploy, or verify a repair.",
+        "Contribute agent-reported diagnostic evidence after reproducing a measured issue in the browser and mapping it to repository ownership. Submit observations, repository-relative source locations, and exact planned checks; the returned evidenceChain makes every contributed stage and its provenance visible. Never submit source contents, credentials, private data, or absolute paths. This evidence is labelled agent-reported and does not itself approve, implement, deploy, or verify a repair.",
       inputSchema: {
         type: "object",
         properties: {
@@ -523,6 +524,7 @@ export function createFrontmendTools(service) {
           diagnosticMissionId: mission.id,
           findingId: mission.findingId,
           measuredEvidence: mission.measuredEvidence,
+          evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
           diagnosis: mission.diagnosis,
           state: mission.state,
           nextAction: "The diagnosis is ready for a separate repository repair proposal. Human review or a previously scoped auto-mode grant still controls approval.",

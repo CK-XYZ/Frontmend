@@ -28,7 +28,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "./audit-service.js";
 import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
-import { findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
+import { diagnosticEvidenceChain, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import { repairMissionState } from "./repair-contract.js";
 import { contextualFrontmendToolNames, registerFrontmendTools } from "./webmcp.js";
 
@@ -50,8 +50,8 @@ const WEBMCP_TOOL_COPY = {
   cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
   get_site_audit_results: ["Read focused audit evidence", "Return up to three deduplicated priorities for requested areas such as accessibility and SEO."],
   get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
-  open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into browser, repository, and verification investigations."],
-  submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Attach clearly labelled browser observations and repository ownership before proposing a repair."],
+  open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into a visible browser, repository, and verification evidence chain."],
+  submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Complete the labelled evidence chain with browser observations, repository ownership, and planned checks."],
   record_repository_implementation: ["Record repository implementation", "Attach bounded file and check evidence after an approved repair is implemented by a coding agent."],
   start_related_page_audit: ["Audit an observed route", "Start a new audit from a same-site path found in this evidence."],
   start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
@@ -1293,6 +1293,49 @@ function RepositoryPlanCard({ plan }) {
   );
 }
 
+function DiagnosticEvidenceChain({ mission }) {
+  const chain = mission?.evidenceChain ?? diagnosticEvidenceChain(mission);
+  const detail = (stage) => {
+    if (stage.id === "measurement") {
+      return `${stage.itemCount} bounded provider item${stage.itemCount === 1 ? "" : "s"} · ${stage.provenance}`;
+    }
+    if (stage.state !== "contributed") {
+      return stage.id === "browser"
+        ? "Reproduce the measured symptom in a real browser"
+        : stage.id === "repository"
+          ? "Map the runtime owner to repository-relative source"
+          : "Name the checks that would prove the implementation";
+    }
+    return `${stage.itemCount} bounded ${stage.id === "browser" ? "observation" : stage.id === "repository" ? "source location" : "check"}${stage.itemCount === 1 ? "" : "s"} · ${stage.provenance}`;
+  };
+  return (
+    <section className="diagnostic-evidence-chain" aria-label="Diagnostic evidence chain">
+      <div className="diagnostic-chain-heading">
+        <div>
+          <p className="kicker">Evidence chain</p>
+          <strong>Measurement stays separate from contributed diagnosis</strong>
+        </div>
+        <span>{chain.status === "ready-for-repair" ? "Evidence ready" : "Contribution required"}</span>
+      </div>
+      <ol>
+        {chain.stages.map((stage, index) => (
+          <li key={stage.id} className={`diagnostic-stage ${stage.state}`}>
+            <span className="diagnostic-stage-marker" aria-hidden="true">
+              {stage.state === "required" ? index + 1 : <Check size={12} weight="bold" />}
+            </span>
+            <div>
+              <strong>{stage.label}</strong>
+              <small>{detail(stage)}</small>
+            </div>
+            <em>{stage.state === "required" ? "Required" : stage.state === "retained" ? "Measured" : "Contributed"}</em>
+          </li>
+        ))}
+      </ol>
+      <small>{chain.authority.claim}</small>
+    </section>
+  );
+}
+
 function DiagnosticMissionCard({ auditId, finding, mission }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -1322,23 +1365,49 @@ function DiagnosticMissionCard({ auditId, finding, mission }) {
       </header>
       {mission ? (
         <>
-          <ol>
-            {mission.requiredInvestigations.map((item) => <li key={item}>{item}</li>)}
-          </ol>
+          <DiagnosticEvidenceChain mission={mission} />
+          {!mission.diagnosis ? (
+            <ol className="diagnostic-investigations">
+              {mission.requiredInvestigations.map((item) => <li key={item}>{item}</li>)}
+            </ol>
+          ) : null}
           {mission.diagnosis ? (
             <div className="diagnostic-diagnosis">
               <div>
                 <strong>{mission.diagnosis.summary}</strong>
                 <span>{mission.diagnosis.agentReported ? "Agent-reported" : "Person-reported"} · {mission.diagnosis.confidence} confidence</span>
               </div>
-              <p>{mission.diagnosis.reproduction}</p>
-              <ul>
-                {mission.diagnosis.sourceLocations.map((location) => (
-                  <li key={`${location.file}-${location.line ?? "file"}`}>
-                    <code>{location.file}{location.line ? `:${location.line}` : ""}</code> — {location.reason}
-                  </li>
-                ))}
-              </ul>
+              <p><strong>Reproduction:</strong> {mission.diagnosis.reproduction}</p>
+              <div className="diagnostic-contribution-grid">
+                <section>
+                  <small>Browser observations</small>
+                  <ul>
+                    {mission.diagnosis.observations.map((observation) => (
+                      <li key={`${observation.kind}-${observation.detail}`}>
+                        <span>{observation.kind}</span>
+                        {observation.detail}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+                <section>
+                  <small>Repository ownership</small>
+                  <ul>
+                    {mission.diagnosis.sourceLocations.map((location) => (
+                      <li key={`${location.file}-${location.line ?? "file"}`}>
+                        <code>{location.file}{location.line ? `:${location.line}` : ""}</code>
+                        {location.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+                <section>
+                  <small>Planned checks</small>
+                  <ul>
+                    {mission.diagnosis.verificationChecks.map((check) => <li key={check}><code>{check}</code></li>)}
+                  </ul>
+                </section>
+              </div>
             </div>
           ) : (
             <p className="diagnostic-mission-note">
