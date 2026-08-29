@@ -27,9 +27,10 @@
   "rules_acknowledged": true,
   "learning": {
     "status": "active",
-    "current_step": "scope",
+    "current_step": "prd",
     "completed_steps": [
-      "onboard"
+      "onboard",
+      "scope"
     ],
     "plan_file": "docs/hackathon-build/scope.md",
     "checklist_file": ""
@@ -38,5 +39,5 @@
     "draft_file": "devpost-submission.md",
     "status": "not-started"
   },
-  "next_command": "build-prd"
+  "next_command": "build-spec"
 }

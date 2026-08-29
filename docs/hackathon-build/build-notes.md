@@ -17,3 +17,12 @@
 - Demo decision: lead with the natural accessibility/SEO prompt, then spend the majority of the demo on the differentiated post-measurement workflow.
 - Release note: Cloudflare Access is temporary; judge accessibility is a release gate.
 - Deepening rounds: zero. The participant explicitly asked the guide to use established context and not force the project into its interview structure.
+
+## 2026-08-29 — PRD
+
+- Expanded the scope into user-facing mission behaviour and testable acceptance criteria without selecting implementation details.
+- Key product decision: “audit” defaults to a read-only Assess mission. Browser and repository diagnosis may continue the assessment, but repair staging requires a separate, attributable person request.
+- Key authority decision: delegated auto mode affects approval only; it cannot create repair intent, consume grants during assessment, deploy, or attest deployment.
+- Key success gate: a fresh session that completes Lighthouse but stops before a supported read-only diagnosis fails the mission-continuity evaluation.
+- Existing audit, repair, implementation, deployment, and verification boundaries remain product requirements rather than being replaced by a new autonomous layer.
+- Deepening rounds: zero additional interview rounds. The source, scope, prior active-shaping direction, and existing verified product behaviour resolved the required user and edge-case decisions.
