@@ -26,3 +26,13 @@
 - Key success gate: a fresh session that completes Lighthouse but stops before a supported read-only diagnosis fails the mission-continuity evaluation.
 - Existing audit, repair, implementation, deployment, and verification boundaries remain product requirements rather than being replaced by a new autonomous layer.
 - Deepening rounds: zero additional interview rounds. The source, scope, prior active-shaping direction, and existing verified product behaviour resolved the required user and edge-case decisions.
+
+## 2026-08-29 — Technical spec
+
+- Mapped the PRD onto the current React/application-service/Worker Durable Object architecture after inspecting the current source and contracts.
+- Architecture decision: add one pure audit-mission contract and persist only structured goal metadata on the existing audit job; derive continuation from current diagnostic and repair records.
+- Workflow decision: add one explicit `prepare_site_repair` transition so Assess does not expose repair staging and delegated auto mode cannot silently broaden intent.
+- Deduplication decision: same URL plus same structured mission may reuse a job; a materially different mission signature cannot overwrite the first goal.
+- Privacy decision: never store the raw natural-language prompt; retain only bounded intent, focus areas, maximum priorities, attribution, and selected repair finding.
+- Time-budget decision: no new dependency, provider, Durable Object class, database, crawler, or agent runtime.
+- Deepening rounds: zero additional interview rounds. Repository and PRD evidence resolved stack, deployment, data-flow, risk, and file-boundary decisions.
