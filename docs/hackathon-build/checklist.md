@@ -17,7 +17,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
 
 ## Checklist
 
-- [ ] **1. Build the pure audit-mission contract**
+- [x] **1. Build the pure audit-mission contract**
   Spec ref: `spec.md > Audit Mission Contract`; `spec.md > Derived Mission State`
   What to build: Add `src/audit-mission-contract.js` with strict intent/focus/max validation, bounded snapshots and signatures, focused cross-viewport priority projection, diagnostic evidence states, derived assessment completion, and idempotent/conflicting repair-intent transitions. Add exhaustive native contract tests.
   Acceptance: Assess is the default; raw prompts are never retained; priorities are bounded/deduplicated; a supported undiagnosed symptom keeps assessment incomplete with an exact next action; contributed diagnosis completes its read-only obligation; repair intent freezes one finding and cannot be silently replaced.

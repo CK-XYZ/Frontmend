@@ -45,3 +45,12 @@
 - Wow moment is participant-derived: a natural audit prompt becomes a visible read-only browser/repository assessment, and repair tools appear only after explicit intent.
 - Checklist contains eleven sequenced items: five core contract/service/WebMCP slices, two human-experience slices, regression hardening, evidence documentation, command-safe release verification, and final Devpost handoff.
 - Deepening rounds: zero. Autonomous handoff path used the mandatory final gut-check; scope is deliberately at the upper item limit because production/local parity and submission evidence are separate gates.
+
+## 2026-08-29 — Build item 1
+
+- Added the dependency-free audit mission contract with strict bounded inputs and no prompt storage.
+- Mission signatures ignore timestamps, attribution, and focus ordering while retaining the semantic goal used for audit admission.
+- Focused priorities now have stable cross-viewport deduplication and explicit measured, recommended, in-progress, or contributed diagnostic evidence state.
+- Derived assessment completion distinguishes a finished measurement job from unfinished browser/repository diagnosis.
+- Repair preparation is immutable per selected finding, idempotent for repetition, and carries no deployment authority.
+- Verification: `bun test tests/audit-mission-contract.test.mjs` — 7 passed, 0 failed.

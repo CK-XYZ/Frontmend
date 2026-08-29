@@ -27,12 +27,13 @@
   "rules_acknowledged": true,
   "learning": {
     "status": "active",
-    "current_step": "checklist",
+    "current_step": "build",
     "completed_steps": [
       "onboard",
       "scope",
       "prd",
-      "spec"
+      "spec",
+      "checklist"
     ],
     "plan_file": "docs/hackathon-build/scope.md",
     "checklist_file": "docs/hackathon-build/checklist.md"
