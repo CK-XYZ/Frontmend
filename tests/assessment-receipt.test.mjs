@@ -135,12 +135,17 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.equal(receipt.priorities[0].evidenceChain.stages[0].provenance, "measured-lighthouse");
   assert.equal(receipt.priorities[0].diagnosis.provenance, "agent-reported");
   assert.equal(receipt.priorities[0].diagnosis.sourceLocations[0].file, "src/startup.js");
+  assert.equal(receipt.priorities[0].relationship, "diagnosis-contributed");
+  assert.match(receipt.priorities[0].relationshipReason, /repository evidence/i);
+  assert.equal(receipt.priorities[0].evidenceRecords.provider.provenance, "measured-provider");
+  assert.equal(receipt.priorities[0].evidenceRecords.repository.provenance, "agent-reported-repository");
   assert.equal(receipt.authority.sourceContentsReceived, false);
   assert.equal(receipt.authority.deploymentProved, false);
 
   const markdown = assessmentReceiptMarkdown(receipt);
   assert.match(markdown, /^# Frontmend assessment receipt/m);
   assert.match(markdown, /Measured symptom \| retained \| measured-lighthouse/);
+  assert.match(markdown, /Evidence relationship: diagnosis-contributed/);
   assert.match(markdown, /Agent-contributed browser review/);
   assert.match(markdown, /Coverage: 3 of 3 requested checks/);
   assert.match(markdown, /Browser reproduction \| contributed \| agent-reported/);

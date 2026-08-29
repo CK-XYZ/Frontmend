@@ -5,6 +5,7 @@ const DIAGNOSTIC_KINDS = Object.freeze([
   "contrast-nodes",
   "main-thread-blocking",
   "browser-observation",
+  "evidence-conflict",
 ]);
 const OBSERVATION_KINDS = Object.freeze([
   "console",
@@ -108,12 +109,18 @@ function requiredInvestigations(kind) {
       "Map the rendered element or journey to repository ownership",
       "Name local and fresh-browser checks that will prove the repair",
     ],
+    "evidence-conflict": [
+      "Reproduce the exact provider and browser disagreement",
+      "Map the affected rule or element to repository ownership",
+      "Name fresh provider and browser checks that can resolve the conflict",
+    ],
   };
   return byKind[kind] ?? [];
 }
 
-function measuredEvidenceSummary(finding) {
+function measuredEvidenceSummary(finding, kindOverride = null) {
   const evidence = finding?.diagnosticEvidence;
+  const kind = kindOverride ?? diagnosticKind(finding);
   const itemCount = evidence?.kind === "console-errors"
     ? evidence.entries?.length ?? 0
     : evidence?.kind === "contrast-nodes"
@@ -122,9 +129,9 @@ function measuredEvidenceSummary(finding) {
         ? evidence.longTasks?.length ?? 0
         : evidence?.kind === "browser-observation"
           ? evidence.items?.length ?? 0
-        : 0;
+        : kind === "evidence-conflict" ? 1 : 0;
   return {
-    kind: diagnosticKind(finding),
+    kind,
     provenance: evidence?.kind === "browser-observation"
       ? "agent-reported-browser"
       : "measured-lighthouse",
@@ -278,8 +285,9 @@ export function diagnosticMissionSnapshot(mission) {
   };
 }
 
-export function createDiagnosticMission({ auditId, finding, now = Date.now() }) {
-  const kind = diagnosticKind(finding);
+export function createDiagnosticMission({ auditId, finding, relationship = null, now = Date.now() }) {
+  const kind = diagnosticKind(finding)
+    ?? (relationship === "provider-browser-conflict" ? "evidence-conflict" : null);
   if (!kind) {
     throw new AuditError(
       "DIAGNOSTIC_NOT_SUPPORTED",
@@ -296,7 +304,7 @@ export function createDiagnosticMission({ auditId, finding, now = Date.now() }) 
       auditId: String(finding.source?.auditId ?? finding.id).slice(0, 160),
       strategy: String(finding.source?.strategy ?? "unknown").slice(0, 40),
     },
-    measuredEvidence: measuredEvidenceSummary(finding),
+    measuredEvidence: measuredEvidenceSummary(finding, kind),
     requiredInvestigations: requiredInvestigations(kind),
     diagnosis: null,
     history: [],

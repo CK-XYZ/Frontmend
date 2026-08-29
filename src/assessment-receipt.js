@@ -64,6 +64,7 @@ export function createAssessmentReceipt({
   mission: missionValue,
   diagnosticMissions = [],
   browserReview: browserReviewValue = null,
+  repairs = [],
 }) {
   if (!report?.auditId || !report?.engine?.provider) {
     throw new AuditError(
@@ -81,6 +82,7 @@ export function createAssessmentReceipt({
     mission,
     diagnosticMissions: diagnostics,
     browserReview,
+    repairs,
   });
   if (!state.assessmentComplete) {
     const action = state.nextAction?.tool
@@ -112,6 +114,18 @@ export function createAssessmentReceipt({
         : findingSource(report, priority.findingId),
       evidenceProvenance: text(priority.evidenceProvenance, 80),
       evidenceState: text(priority.evidenceState, 60),
+      relationship: text(priority.relationship, 60),
+      relationshipReason: text(priority.relationshipReason, 500),
+      unresolvedRequirement: priority.unresolvedRequirement
+        ? text(priority.unresolvedRequirement, 500)
+        : null,
+      provenance: (priority.provenance ?? []).slice(0, 4).map((record) => ({
+        kind: text(record.kind, 40),
+        provenance: text(record.provenance, 80),
+        sourceId: record.sourceId ? text(record.sourceId, 200) : null,
+        recordedAt: Number.isFinite(record.recordedAt) ? record.recordedAt : null,
+      })),
+      evidenceRecords: priority.evidenceRecords,
       diagnosticMissionId: diagnostic?.id ?? null,
       evidenceChain: diagnostic
         ? diagnostic.evidenceChain ?? diagnosticEvidenceChain(diagnostic)
@@ -239,6 +253,9 @@ export function assessmentReceiptMarkdown(receipt) {
       `- Category: ${markdownText(priority.category, 80)}`,
       `- Evidence source: ${markdownText(priority.measuredSource?.provider, 120)} · ${markdownText(priority.measuredSource?.auditId, 160)}`,
       `- Evidence provenance: ${markdownText(priority.evidenceProvenance, 80)}`,
+      `- Evidence relationship: ${markdownText(priority.relationship, 80)}`,
+      `- Relationship reason: ${markdownText(priority.relationshipReason, 500)}`,
+      `- Unresolved requirement: ${priority.unresolvedRequirement ? markdownText(priority.unresolvedRequirement, 500) : "none"}`,
       `- Strategies: ${priority.affectedStrategies?.length ? priority.affectedStrategies.map((strategy) => markdownText(strategy, 40)).join(", ") : "document"}`,
       `- Occurrences: ${priority.occurrenceCount}`,
       `- Measured evidence: ${markdownText(priority.evidence, 600)}`,

@@ -177,10 +177,21 @@ export function contextualFrontmendToolNames(service) {
     available.add("record_browser_review_check");
   }
   const diagnosticFindings = findings.filter(findingRequiresDiagnosticMission);
+  const diagnosticPriorityIds = new Set(
+    (missionState?.priorities ?? [])
+      .filter((priority) => priority.diagnosticMissionRequired)
+      .map((priority) => priority.findingId),
+  );
   const openedDiagnosticFindingIds = new Set(
     diagnosticMissions.map((mission) => mission.findingId).filter(Boolean),
   );
-  if (browserReviewComplete && diagnosticFindings.some((finding) => !openedDiagnosticFindingIds.has(finding.id))) {
+  if (
+    browserReviewComplete &&
+    (
+      diagnosticFindings.some((finding) => !openedDiagnosticFindingIds.has(finding.id)) ||
+      [...diagnosticPriorityIds].some((id) => !openedDiagnosticFindingIds.has(id))
+    )
+  ) {
     available.add("open_diagnostic_mission");
   }
   if (browserReviewComplete && diagnosticMissions.some((mission) => ["awaiting-diagnosis", "blocked"].includes(mission.state?.state))) {
@@ -197,7 +208,7 @@ export function contextualFrontmendToolNames(service) {
   if (
     preparedFinding &&
     (
-      !findingRequiresDiagnosticMission(preparedFinding) ||
+      (!findingRequiresDiagnosticMission(preparedFinding) && !diagnosticPriorityIds.has(preparedFindingId)) ||
       preparedDiagnostic?.state?.state === "ready-for-repair"
     )
   ) {

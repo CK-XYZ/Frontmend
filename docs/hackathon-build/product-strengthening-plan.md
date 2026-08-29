@@ -417,7 +417,7 @@ bun run build
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
-- [ ] **2. Evidence reconciliation contract**
+- [x] **2. Evidence reconciliation contract** — completed and verified locally on 30 August 2026
 - [ ] **3. WebMCP mission inspector**
 - [ ] **4. Fresh-session mission checkpoints**
 - [ ] **5. Reviewed repair impact and verification matrix**

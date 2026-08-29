@@ -639,7 +639,20 @@ export function createLocalAuditRuntime(options = {}) {
           const existing = baseline.diagnosticMissions.find((mission) => mission.findingId === finding.id);
           if (existing) return sendJson(response, 200, { ok: true, data: diagnosticMissionSnapshot(existing) });
           if (baseline.diagnosticMissions.length >= 10) return sendError(response, new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
-          const mission = createDiagnosticMission({ auditId, finding });
+          const priority = baseline.mission
+            ? deriveAuditMissionState({
+                report: baseline.report,
+                mission: baseline.mission,
+                diagnosticMissions: baseline.diagnosticMissions,
+                repairs: baseline.repairs,
+                browserReview: baseline.browserReview,
+              }).priorities.find((item) => item.findingId === finding.id)
+            : null;
+          const mission = createDiagnosticMission({
+            auditId,
+            finding,
+            relationship: priority?.relationship ?? null,
+          });
           baseline.diagnosticMissions.push(mission);
           return sendJson(response, 201, { ok: true, data: mission });
         }
@@ -791,7 +804,16 @@ export function createLocalAuditRuntime(options = {}) {
           }
           const { source, ...proposal } = input;
           let diagnosticMission = null;
-          if (source === "agent" && findingRequiresDiagnosticMission(finding)) {
+          const priority = baseline.mission
+            ? deriveAuditMissionState({
+                report: baseline.report,
+                mission: baseline.mission,
+                diagnosticMissions: baseline.diagnosticMissions ?? [],
+                repairs: baseline.repairs,
+                browserReview: baseline.browserReview,
+              }).priorities.find((item) => item.findingId === finding.id)
+            : null;
+          if (source === "agent" && (findingRequiresDiagnosticMission(finding) || priority?.diagnosticMissionRequired)) {
             diagnosticMission = (baseline.diagnosticMissions ?? []).find((mission) => mission.findingId === finding.id) ?? null;
             if (!diagnosticMission || diagnosticMission.state?.state !== "ready-for-repair") {
               return sendError(response, new AuditError(
@@ -1025,6 +1047,7 @@ export function createLocalAuditRuntime(options = {}) {
             mission: job.mission,
             diagnosticMissions: job.diagnosticMissions ?? [],
             browserReview: job.browserReview ?? null,
+            repairs: job.repairs ?? [],
           });
           response.statusCode = 200;
           response.setHeader("content-type", "text/markdown; charset=utf-8");

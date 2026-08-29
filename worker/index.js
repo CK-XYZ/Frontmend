@@ -1074,15 +1074,17 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
       }
       try {
-        const [diagnosticMissions, browserReview] = await Promise.all([
+        const [diagnosticMissions, browserReview, repairs] = await Promise.all([
           this.ctx.storage.get("diagnosticMissions"),
           this.ctx.storage.get("browserReview"),
+          this.ctx.storage.get("repairs"),
         ]);
         const receipt = createAssessmentReceipt({
           report: state.report,
           mission: state.mission,
           diagnosticMissions,
           browserReview: browserReview ?? null,
+          repairs: repairs ?? [],
         });
         return new Response(assessmentReceiptMarkdown(receipt), {
           headers: {
@@ -1157,8 +1159,17 @@ export class FrontmendAuditJob {
       }
       const { source, ...proposal } = input;
       let diagnosticMission = null;
-      if (source === "agent" && findingRequiresDiagnosticMission(finding)) {
-        const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
+      const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
+      const priority = state.mission
+        ? deriveAuditMissionState({
+            report: state.report,
+            mission: state.mission,
+            diagnosticMissions: missions,
+            repairs,
+            browserReview,
+          }).priorities.find((item) => item.findingId === finding.id)
+        : null;
+      if (source === "agent" && (findingRequiresDiagnosticMission(finding) || priority?.diagnosticMissionRequired)) {
         diagnosticMission = missions.find((mission) => mission.findingId === finding.id) ?? null;
         if (!diagnosticMission || diagnosticMission.state?.state !== "ready-for-repair") {
           return errorResponse(new AuditError(
@@ -1308,7 +1319,21 @@ export class FrontmendAuditJob {
       if (existing) return json({ ok: true, data: diagnosticMissionSnapshot(existing) });
       if (missions.length >= 10) return errorResponse(new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
       try {
-        const mission = createDiagnosticMission({ auditId: state.id, finding });
+        const repairs = (await this.ctx.storage.get("repairs")) ?? [];
+        const priority = state.mission
+          ? deriveAuditMissionState({
+              report: state.report,
+              mission: state.mission,
+              diagnosticMissions: missions,
+              repairs,
+              browserReview,
+            }).priorities.find((item) => item.findingId === finding.id)
+          : null;
+        const mission = createDiagnosticMission({
+          auditId: state.id,
+          finding,
+          relationship: priority?.relationship ?? null,
+        });
         missions.push(mission);
         await this.ctx.storage.put("diagnosticMissions", missions);
         return json({ ok: true, data: mission }, { status: 201 });

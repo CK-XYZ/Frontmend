@@ -1,4 +1,3 @@
-import { diagnosticMissionState, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import {
   browserReviewFindings,
   browserReviewChecksForMission,
@@ -6,6 +5,7 @@ import {
   browserReviewState,
 } from "./browser-review-contract.js";
 import { AuditError } from "./url-policy.js";
+import { reconcileAssessmentEvidence } from "./evidence-reconciliation-contract.js";
 
 export const AUDIT_FOCUS_AREAS = Object.freeze([
   "accessibility",
@@ -164,28 +164,6 @@ export function prepareRepairIntent(missionValue, selectedFindingId, source = "h
   });
 }
 
-function diagnosticForFinding(diagnosticMissions, id) {
-  return diagnosticMissions.find((mission) => mission?.findingId === id) ?? null;
-}
-
-function priorityEvidence(finding, diagnosticMissions) {
-  if (!findingRequiresDiagnosticMission(finding)) {
-    return { evidenceState: "measured-evidence-sufficient", diagnosticMissionId: null };
-  }
-  const diagnostic = diagnosticForFinding(diagnosticMissions, finding.id);
-  if (!diagnostic) return { evidenceState: "diagnosis-recommended", diagnosticMissionId: null };
-  const state = diagnostic?.state?.state ?? diagnosticMissionState(diagnostic).state;
-  return {
-    evidenceState: state === "ready-for-repair"
-      ? "diagnosis-contributed"
-      : state === "blocked"
-        ? "diagnosis-blocked"
-        : "diagnosis-in-progress",
-    diagnosticMissionId: diagnostic.id ?? null,
-    diagnosticBlocker: state === "blocked" ? diagnostic.blocker ?? null : null,
-  };
-}
-
 export function assessmentFindings(report, browserReview = null) {
   return [
     ...(Array.isArray(report?.findings) ? report.findings : []),
@@ -198,46 +176,71 @@ export function focusedAuditPriorities(
   missionValue,
   diagnosticMissions = [],
   browserReview = null,
+  repairs = [],
 ) {
   const mission = auditMissionSnapshot(missionValue);
-  const findings = assessmentFindings(report, browserReview);
+  const reconciled = reconcileAssessmentEvidence({
+    report,
+    browserReview,
+    diagnosticMissions,
+    repairs,
+  });
   const candidates = mission.focusAreas.length
-    ? findings.filter((finding) => mission.focusAreas.some((area) => finding.focusAreas?.includes(area)))
-    : findings;
-  const grouped = new Map();
-
-  for (const [sourceIndex, finding] of candidates.entries()) {
-    const key = `${finding.source?.provider ?? "unknown"}:${finding.source?.auditId ?? finding.id}`;
-    const existing = grouped.get(key);
-    if (existing) {
-      existing.occurrenceCount += 1;
-      if (finding.source?.strategy && !existing.affectedStrategies.includes(finding.source.strategy)) {
-        existing.affectedStrategies.push(finding.source.strategy);
-      }
-      continue;
-    }
-    grouped.set(key, {
+    ? reconciled.filter((item) => {
+        const records = item.evidenceRecords.provider?.findings ?? item.evidenceRecords.browser?.findings ?? [];
+        return records.some((finding) => mission.focusAreas.some((area) => finding.focusAreas.includes(area)));
+      })
+    : reconciled;
+  const grouped = candidates.map((item, sourceIndex) => {
+    const providerFindings = item.evidenceRecords.provider?.findings ?? [];
+    const browserFindings = item.evidenceRecords.browser?.findings ?? [];
+    const finding = providerFindings[0] ?? browserFindings[0];
+    const occurrenceFindings = providerFindings.length ? providerFindings : browserFindings;
+    const affectedStrategies = [...new Set(occurrenceFindings.map((entry) => entry.strategy).filter(Boolean))];
+    const repository = item.evidenceRecords.repository;
+    const evidenceState = repository?.state === "blocked"
+      ? "diagnosis-blocked"
+      : item.relationship === "diagnosis-contributed"
+        ? "diagnosis-contributed"
+        : item.nextAction?.tool === "submit_runtime_diagnosis"
+          ? "diagnosis-in-progress"
+          : item.nextAction?.tool === "open_diagnostic_mission"
+            ? "diagnosis-recommended"
+            : "measured-evidence-sufficient";
+    return {
       sourceIndex,
-      findingId: finding.id,
-      title: finding.title,
-      severity: finding.severity,
-      category: finding.category,
-      focusAreas: Array.isArray(finding.focusAreas) ? [...finding.focusAreas] : [],
-      evidence: finding.evidence,
-      suggestedRepair: finding.repair,
-      occurrenceCount: 1,
-      affectedStrategies: finding.source?.strategy ? [finding.source.strategy] : [],
-      evidenceProvenance: finding.browserReviewEvidence?.provenance ?? "measured-provider",
+      findingId: item.findingId,
+      title: finding?.title ?? "Retained evidence priority",
+      severity: finding?.severity ?? "low",
+      category: finding?.category ?? "Evidence",
+      focusAreas: finding?.focusAreas ?? [],
+      evidence: finding?.evidence ?? item.evidenceRecords.browser?.summary ?? "Retained evidence",
+      suggestedRepair: finding?.suggestedRepair ?? "Diagnose the retained evidence before repair.",
+      occurrenceCount: Math.max(1, occurrenceFindings.length),
+      affectedStrategies,
+      evidenceProvenance: providerFindings.length ? "measured-provider" : "agent-reported-browser",
       source: {
-        provider: finding.source?.provider ?? "unknown",
-        auditId: finding.source?.auditId ?? finding.id,
+        provider: item.evidenceRecords.provider?.provider ?? "Frontmend browser review",
+        auditId: item.evidenceRecords.provider?.ruleId ?? finding?.source?.auditId ?? item.findingId,
       },
-      diagnosticMissionRequired: findingRequiresDiagnosticMission(finding),
-      ...priorityEvidence(finding, diagnosticMissions),
-    });
-  }
+      diagnosticMissionRequired: [
+        "provider-browser-conflict",
+        "diagnosis-required",
+        "browser-only",
+      ].includes(item.relationship),
+      evidenceState,
+      diagnosticMissionId: repository?.missionId ?? null,
+      diagnosticBlocker: repository?.blocker ?? null,
+      relationship: item.relationship,
+      relationshipReason: item.relationshipReason,
+      unresolvedRequirement: item.unresolvedRequirement,
+      provenance: item.provenance,
+      evidenceRecords: item.evidenceRecords,
+      nextAction: item.nextAction,
+    };
+  });
 
-  const priorities = [...grouped.values()]
+  const priorities = grouped
     .sort((left, right) =>
       (SEVERITY_ORDER[left.severity] ?? 3) - (SEVERITY_ORDER[right.severity] ?? 3) ||
       right.occurrenceCount - left.occurrenceCount ||
@@ -262,13 +265,21 @@ export function focusedAuditPriorities(
 
   return {
     requestedFocusAreas: [...mission.focusAreas],
-    matchingFindingCount: candidates.length,
+    matchingFindingCount: candidates.reduce((total, item) => {
+      const providerCount = item.evidenceRecords.provider?.findings?.length ?? 0;
+      const browserCount = item.evidenceRecords.provider ? 0 : item.evidenceRecords.browser?.findings?.length ?? 0;
+      return total + providerCount + browserCount;
+    }, 0),
     categoryScores,
     priorities,
   };
 }
 
 function diagnosticNextAction(priority) {
+  if (priority.evidenceState === "diagnosis-blocked") return null;
+  if (["open_diagnostic_mission", "submit_runtime_diagnosis"].includes(priority.nextAction?.tool)) {
+    return priority.nextAction;
+  }
   if (priority.evidenceState === "diagnosis-recommended") {
     return {
       tool: "open_diagnostic_mission",
@@ -294,7 +305,7 @@ export function deriveAuditMissionState({
   browserReview = null,
 }) {
   const mission = auditMissionSnapshot(missionValue);
-  const projection = focusedAuditPriorities(report, mission, diagnosticMissions, browserReview);
+  const projection = focusedAuditPriorities(report, mission, diagnosticMissions, browserReview, repairs);
   const reviewRequired = browserReviewRequired(mission);
   const reviewState = browserReview ? browserReviewState(browserReview) : null;
   const requestedBrowserCheckCount = reviewState?.requestedCheckCount
@@ -363,12 +374,13 @@ export function deriveAuditMissionState({
     const selected = projection.priorities.find(
       (priority) => priority.findingId === mission.repairPreparation.findingId,
     );
-    const selectedFinding = assessmentFindings(report, browserReview).find(
-      (finding) => finding.id === mission.repairPreparation.findingId,
-    );
-    const selectedEvidence = selectedFinding
-      ? priorityEvidence(selectedFinding, diagnosticMissions)
-      : { evidenceState: "unsupported-continuation", diagnosticMissionId: null };
+    const selectedEvidence = selected
+      ? {
+          evidenceState: selected.evidenceState,
+          diagnosticMissionId: selected.diagnosticMissionId,
+          nextAction: selected.nextAction,
+        }
+      : { evidenceState: "unsupported-continuation", diagnosticMissionId: null, nextAction: null };
     const repair = repairs.find((item) => item?.findingId === mission.repairPreparation.findingId);
     status = "action-available";
     nextActor = "agent";

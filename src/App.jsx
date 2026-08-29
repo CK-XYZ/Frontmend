@@ -748,6 +748,22 @@ function missionEvidenceLabel(value) {
   return labels[value] ?? "Evidence retained";
 }
 
+function evidenceRelationshipLabel(value) {
+  const labels = {
+    "verified-resolved": "Verified resolved",
+    "verified-still-present": "Verified still present",
+    "verification-inconclusive": "Verification inconclusive",
+    "verification-required": "Verification required",
+    "provider-browser-conflict": "Provider/browser conflict",
+    "diagnosis-contributed": "Diagnosis contributed",
+    "diagnosis-required": "Diagnosis required",
+    "browser-confirmed": "Browser confirmed",
+    "browser-only": "Browser only",
+    "provider-only": "Provider only",
+  };
+  return labels[value] ?? "Evidence retained";
+}
+
 function MissionPriorities({ state, selectedFindingId, onSelect }) {
   const titleId = useId();
   return (
@@ -783,6 +799,10 @@ function MissionPriorities({ state, selectedFindingId, onSelect }) {
                       : "document"}
                     {priority.occurrenceCount > 1 ? ` · ${priority.occurrenceCount} occurrences` : ""}
                   </small>
+                  <span className="evidence-relationship-copy">
+                    <b>{evidenceRelationshipLabel(priority.relationship)}</b>
+                    {priority.relationshipReason}
+                  </span>
                 </span>
                 <em className={`evidence-state ${priority.evidenceState}`}>
                   {missionEvidenceLabel(priority.evidenceState)}

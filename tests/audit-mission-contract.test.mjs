@@ -212,6 +212,36 @@ test("ranks browser-observed issues separately and requires repository diagnosis
   assert.equal(state.nextAction.input.findingId, "browser:search-discovery:01");
 });
 
+test("keeps a trigger-linked browser pass as a resumable provider conflict", () => {
+  const mission = createAuditMission({ focusAreas: ["accessibility"] }, "agent", 10);
+  let browserReview = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission,
+    report,
+    target: "https://example.com/",
+    now: 20,
+  });
+  assert.equal(browserReview.state.nextCheck.trigger.ruleId, "color-contrast");
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: browserReview.state.nextCheck.id,
+    outcome: "passed",
+    summary: "The retained control appeared readable in the rendered mobile state.",
+    observations: ["The foreground and background were visually distinct at the retained selector."],
+  }, "agent", 30);
+
+  const state = deriveAuditMissionState({ report, mission, browserReview });
+  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.priorities[0].relationship, "provider-browser-conflict");
+  assert.equal(state.nextAction.tool, "open_diagnostic_mission");
+  const conflictMission = createDiagnosticMission({
+    auditId: report.auditId,
+    finding: report.findings.find((finding) => finding.source.auditId === "color-contrast"),
+    relationship: state.priorities[0].relationship,
+    now: 40,
+  });
+  assert.equal(conflictMission.measuredEvidence.kind, "evidence-conflict");
+});
+
 test("freezes explicit repair intent idempotently and rejects replacement", () => {
   const mission = createAuditMission({ intent: "assess", focusAreas: ["accessibility"] }, "agent", 10);
   const prepared = prepareRepairIntent(mission, "mobile-color-contrast", "human", 20);

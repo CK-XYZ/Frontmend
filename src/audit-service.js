@@ -765,6 +765,7 @@ export function createAuditService(options = {}) {
         mission: audit?.mission,
         diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
         browserReview: browserReviews.get(auditId) ?? null,
+        repairs: repairs.get(auditId) ?? [],
       });
     },
 

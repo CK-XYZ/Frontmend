@@ -236,3 +236,14 @@
 - Targeted compiler/browser/mission suites passed 22/22. Shared service, WebMCP, Worker, and local-runtime suites passed 83/83, including the packaging test.
 - The production build transformed 4,579 modules and emitted `index-DI7L0EII.css` at 84.41 kB raw / 17.03 kB gzip and `index-Dkx5fmOY.js` at 467.00 kB raw / 128.52 kB gzip.
 - No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — Provider, browser, repository, and verification reconciliation
+
+- Added one pure reconciliation contract that retains provider, trigger-linked browser, repository-diagnosis, and verification records separately for every ranked priority.
+- Added exactly one categorical relationship with an explicit precedence, plain-language reason, unresolved requirement, bounded provenance, and next action. Final verification outcomes, verification-required work, provider/browser conflicts, diagnosis states, browser confirmation, browser-only findings, and provider-only findings remain distinct.
+- Evidence-led browser issues group with the provider rule that triggered them; evidence-led passes create an unresolved provider/browser conflict. Generic coverage issues remain independent browser-only priorities.
+- Provider/browser conflicts can open the existing bounded diagnosis mission even when the original provider rule had no diagnostic recipe. The conflict cannot be averaged, silently completed, or used to unlock agent repair staging.
+- The visible priority list, assessment receipt, and `get_site_audit_results` consume the same relationship projection. Receipt Markdown now includes the relationship, reason, unresolved requirement, and source-specific records.
+- Reconciliation, mission, receipt, and diagnostic suites passed 27/27. Shared service, WebMCP, Worker, and local-runtime suites passed 83/83, including the packaging test.
+- The production build transformed 4,580 modules and emitted `index-BtoHKy_Q.css` at 84.63 kB raw / 17.07 kB gzip and `index-CP_3yMRn.js` at 480.44 kB raw / 131.42 kB gzip.
+- No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.
