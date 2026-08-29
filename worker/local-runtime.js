@@ -2,6 +2,8 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import {
   auditMissionSignature,
   createAuditMission,
+  deriveAuditMissionState,
+  prepareRepairIntent,
 } from "../src/audit-mission-contract.js";
 import { createRelatedAuditInput } from "../src/route-contract.js";
 import {
@@ -516,6 +518,68 @@ export function createLocalAuditRuntime(options = {}) {
       }
 
       const repairPolicyMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
+
+      const prepareRepairMatch = requestUrl.pathname.match(
+        /^\/api\/audits\/([^/]+)\/mission\/prepare-repair$/,
+      );
+      if (prepareRepairMatch) {
+        const baseline = jobs.get(prepareRepairMatch[1]);
+        if (!baseline) {
+          return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        }
+        if (request.method !== "POST") {
+          return sendError(
+            response,
+            new AuditError("METHOD_NOT_ALLOWED", "That audit mission operation is not supported."),
+            405,
+          );
+        }
+        assertSameOrigin(request);
+        if (baseline.status !== "complete" || !baseline.report) {
+          return sendError(
+            response,
+            new AuditError("AUDIT_NOT_READY", "Finish the audit before preparing a finding for repair."),
+            409,
+          );
+        }
+        const input = await readBody(request);
+        const extra = Object.keys(input ?? {}).find((key) => !["findingId", "source"].includes(key));
+        if (extra) return sendError(response, new AuditError("INVALID_INPUT", `Unknown mission field: ${extra}.`));
+        if (input?.source !== "human" && input?.source !== "agent") {
+          return sendError(response, new AuditError("INVALID_INPUT", "source must be human or agent."));
+        }
+        const finding = baseline.report.findings.find((item) => item.id === input.findingId);
+        if (!finding) {
+          return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
+        }
+        try {
+          baseline.mission = prepareRepairIntent(
+            baseline.mission ?? createAuditMission(
+              {},
+              baseline.source === "agent" ? "agent" : "human",
+              Number.isInteger(baseline.createdAt) ? baseline.createdAt : Date.now(),
+            ),
+            finding.id,
+            input.source,
+          );
+          return sendJson(response, 200, {
+            ok: true,
+            data: {
+              audit: snapshot(baseline),
+              mission: baseline.mission,
+              missionState: deriveAuditMissionState({
+                report: baseline.report,
+                mission: baseline.mission,
+                diagnosticMissions: baseline.diagnosticMissions ?? [],
+                repairs: baseline.repairs ?? [],
+              }),
+            },
+          });
+        } catch (error) {
+          return sendError(response, error, error?.code === "REPAIR_INTENT_CONFLICT" ? 409 : 400);
+        }
+      }
+
       if (repairPolicyMatch) {
         const baseline = jobs.get(repairPolicyMatch[1]);
         if (!baseline) {

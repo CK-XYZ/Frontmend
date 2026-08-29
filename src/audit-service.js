@@ -1,5 +1,5 @@
 import { AuditError, normalizePublicUrl } from "./url-policy.js";
-import { createAuditMission } from "./audit-mission-contract.js";
+import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
 
 export { AuditError, normalizePublicUrl } from "./url-policy.js";
 
@@ -56,6 +56,22 @@ export function createHttpAuditTransport(options = {}) {
           headers: { accept: "application/json", "content-type": "application/json" },
           body: JSON.stringify({ path, source }),
         }),
+      );
+    },
+
+    async prepareRepair(auditId, findingId, source) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/mission/prepare-repair`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({
+              findingId,
+              source: source === "agent" ? "agent" : "human",
+            }),
+          },
+        ),
       );
     },
 
@@ -359,6 +375,23 @@ export function createAuditService(options = {}) {
       return remember(audit, expectedGeneration);
     },
 
+    async prepareRepair(auditId, findingId, source = "human") {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      if (typeof findingId !== "string" || !findingId || findingId.length > 160) {
+        throw new AuditError("INVALID_INPUT", "findingId must contain 1 to 160 characters.");
+      }
+      const expectedGeneration = generation;
+      const result = await transport.prepareRepair(
+        auditId,
+        findingId,
+        source === "agent" ? "agent" : "human",
+      );
+      if (result.audit) remember(result.audit, expectedGeneration);
+      return result;
+    },
+
     async startSiteExploration(auditId, paths, source = "human") {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
@@ -616,6 +649,29 @@ export function createAuditService(options = {}) {
 
     getActiveAudit() {
       return activeAuditId ? jobs.get(activeAuditId) ?? null : null;
+    },
+
+    getAuditMissionState(auditId) {
+      const audit = jobs.get(auditId);
+      if (!audit?.mission) return null;
+      return deriveAuditMissionState({
+        report: audit.report,
+        mission: audit.mission,
+        diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+        repairs: repairs.get(auditId) ?? [],
+      });
+    },
+
+    getActiveAuditMissionState() {
+      if (!activeAuditId) return null;
+      const audit = jobs.get(activeAuditId);
+      if (!audit?.mission) return null;
+      return deriveAuditMissionState({
+        report: audit.report,
+        mission: audit.mission,
+        diagnosticMissions: diagnosticMissions.get(activeAuditId) ?? [],
+        repairs: repairs.get(activeAuditId) ?? [],
+      });
     },
 
     beginAgentActivity({ tool, title }) {

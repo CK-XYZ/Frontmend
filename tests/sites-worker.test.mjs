@@ -230,6 +230,36 @@ test("uses semantic audit missions in production admission identity", async () =
   assert.equal(JSON.stringify(admissions).includes("accessibility"), false);
 });
 
+test("proxies the bounded repair-intent transition to the authoritative audit job", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const calls = [];
+  const response = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/mission/prepare-repair`,
+    {
+      method: "POST",
+      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      body: JSON.stringify({ findingId: "document-description", source: "human" }),
+    },
+  ), {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init) => {
+          calls.push({ url: new URL(url), input: JSON.parse(init.body) });
+          return Response.json({ ok: true, data: { mission: { intent: "prepare-fix" } } });
+        },
+      }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url.pathname, "/mission/prepare-repair");
+  assert.deepEqual(calls[0].input, {
+    findingId: "document-description",
+    source: "human",
+  });
+});
+
 test("starts a related audit only from the parent job's authoritative route input", async () => {
   const parentId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
   const childId = "232d593c-6c81-48c3-b137-a3df269454ff";
@@ -513,6 +543,88 @@ test("failed Durable Object jobs restart under the same stable audit ID", async 
   assert.equal(restartedState.attempt, 2);
 });
 
+test("Durable Object freezes repair intent without creating or approving a repair", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["seo"],
+    maxPriorities: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const policy = { mode: "delegated-auto", remainingAllowance: 1, updatedAt: 5 };
+  const values = new Map([
+    ["state", {
+      id: auditId,
+      attempt: 1,
+      url: "https://example.com/",
+      source: "agent",
+      mission,
+      status: "complete",
+      phase: "complete",
+      progress: 100,
+      report: {
+        auditId,
+        findings: [{
+          id: "document-description",
+          title: "The document has no description",
+          severity: "medium",
+          focusAreas: ["seo"],
+          source: { provider: "Frontmend document audit", auditId: "description" },
+        }, {
+          id: "document-title",
+          title: "The document title is missing",
+          severity: "high",
+          focusAreas: ["seo"],
+          source: { provider: "Frontmend document audit", auditId: "title" },
+        }],
+      },
+    }],
+    ["repairPolicy", policy],
+  ]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const prepare = (findingId, source = "human") => job.fetch(new Request(
+    "https://frontmend.internal/mission/prepare-repair",
+    {
+      method: "POST",
+      body: JSON.stringify({ findingId, source }),
+    },
+  ));
+
+  const completedState = values.get("state");
+  values.set("state", { ...completedState, status: "running", report: null });
+  const premature = await prepare("document-description");
+  assert.equal((await premature.json()).error.code, "AUDIT_NOT_READY");
+  values.set("state", completedState);
+
+  const unknown = await prepare("not-retained");
+  assert.equal((await unknown.json()).error.code, "FINDING_NOT_FOUND");
+
+  const first = await prepare("document-description");
+  const firstPayload = await first.json();
+  assert.equal(first.status, 200);
+  assert.equal(firstPayload.data.mission.intent, "prepare-fix");
+  assert.equal(firstPayload.data.missionState.nextAction.tool, "stage_site_repair");
+  assert.equal(values.has("repairs"), false);
+  assert.deepEqual(values.get("repairPolicy"), policy);
+
+  const repeated = await prepare("document-description", "agent");
+  assert.equal(repeated.status, 200);
+  assert.deepEqual((await repeated.json()).data.mission, firstPayload.data.mission);
+
+  const conflict = await prepare("document-title", "agent");
+  const conflictPayload = await conflict.json();
+  assert.equal(conflictPayload.error.code, "REPAIR_INTENT_CONFLICT");
+  assert.equal(values.has("repairs"), false);
+});
+
 test("proxies a completed audit report through the stable public route", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const calls = [];
@@ -760,6 +872,70 @@ test("local development runs and exports a recurring cross-page exploration", as
   assert.equal(report.status, 200);
   assert.match(report.body, /# Frontmend site exploration/);
   assert.match(report.body, /Observed on: 2 selected pages/);
+});
+
+test("local development shares the bounded repair-intent transition without consuming policy", async () => {
+  const middleware = createLocalAuditRuntime({
+    fetchImpl: async (input) => {
+      const url = new URL(input);
+      if (url.hostname === "pagespeedonline.googleapis.com") {
+        return Response.json({ error: { message: "rate limited" } }, { status: 429 });
+      }
+      return new Response(
+        '<!doctype html><html lang="en"><head><title>Intent</title><meta name="viewport" content="width=device-width"></head><body><main><h1>Intent</h1><button style="color:#aaa;background:#fff">Continue</button></main></body></html>',
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    },
+  });
+  const writeHeaders = { host: "localhost:3434", origin: "http://localhost:3434" };
+  const started = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: "/api/audits",
+    headers: writeHeaders,
+    body: JSON.stringify({
+      url: "https://example.com/",
+      source: "agent",
+      mission: { focusAreas: ["seo", "accessibility"] },
+    }),
+  });
+  const auditId = JSON.parse(started.body).data.id;
+  let completed;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    completed = JSON.parse((await callLocalRuntime(middleware, { url: `/api/audits/${auditId}` })).body).data;
+    if (completed.status === "complete") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(completed.status, "complete");
+  assert.ok(completed.report.findings.length >= 1);
+  const findingId = completed.report.findings[0].id;
+  const policyBefore = JSON.parse((await callLocalRuntime(
+    middleware,
+    { url: `/api/audits/${auditId}/repair-policy` },
+  )).body).data;
+
+  const prepare = () => callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/mission/prepare-repair`,
+    headers: writeHeaders,
+    body: JSON.stringify({ findingId, source: "human" }),
+  });
+  const first = await prepare();
+  const firstPayload = JSON.parse(first.body).data;
+  assert.equal(first.status, 200);
+  assert.equal(firstPayload.mission.repairPreparation.findingId, findingId);
+  assert.equal(firstPayload.audit.mission.intent, "prepare-fix");
+  assert.equal((await prepare()).status, 200);
+
+  const repairs = JSON.parse((await callLocalRuntime(
+    middleware,
+    { url: `/api/audits/${auditId}/repairs` },
+  )).body).data;
+  const policyAfter = JSON.parse((await callLocalRuntime(
+    middleware,
+    { url: `/api/audits/${auditId}/repair-policy` },
+  )).body).data;
+  assert.deepEqual(repairs.repairs, []);
+  assert.deepEqual(policyAfter, policyBefore);
 });
 
 test("local development retries a failed audit as a fresh stable attempt", async () => {

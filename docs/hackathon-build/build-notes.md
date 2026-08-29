@@ -63,3 +63,12 @@
 - Retry preserves the original mission attribution and timestamp instead of silently rewriting it.
 - PageSpeed requests receive no mission, focus, maximum, or intent parameters.
 - Verification: `bun test tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/audit-mission-contract.test.mjs` — 51 passed, 0 failed.
+
+## 2026-08-29 — Build item 3
+
+- Added the shared `prepareRepair` transport/service operation and production/local `POST /api/audits/:auditId/mission/prepare-repair` route.
+- The authoritative job requires a completed retained report, an exact finding, bounded source attribution, and one immutable selection.
+- Responses contain the updated audit snapshot, persisted mission, and derived next action; application state remembers the result for UI and WebMCP subscribers.
+- Repeated same-finding calls are idempotent; incomplete jobs, unknown findings, unknown fields, and attempts to swap findings fail closed.
+- Tests prove the transition creates no repair, grants no approval, leaves deployment authority false, and does not consume or rewrite repair policy allowance.
+- Verification: `bun test tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/repair-contract.test.mjs tests/audit-mission-contract.test.mjs` — 77 passed, 0 failed.

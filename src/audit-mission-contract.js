@@ -295,10 +295,19 @@ export function deriveAuditMissionState({
     const selected = projection.priorities.find(
       (priority) => priority.findingId === mission.repairPreparation.findingId,
     );
+    const selectedFinding = (report?.findings ?? []).find(
+      (finding) => finding.id === mission.repairPreparation.findingId,
+    );
+    const selectedEvidence = selectedFinding
+      ? priorityEvidence(selectedFinding, diagnosticMissions)
+      : { evidenceState: "unsupported-continuation", diagnosticMissionId: null };
     const repair = repairs.find((item) => item?.findingId === mission.repairPreparation.findingId);
     status = "action-available";
     nextActor = "agent";
-    nextAction = repair
+    nextAction = diagnosticNextAction({
+      findingId: mission.repairPreparation.findingId,
+      ...selectedEvidence,
+    }) ?? (repair
       ? {
           tool: "get_repair_workspace",
           input: { repairId: repair.id },
@@ -308,7 +317,7 @@ export function deriveAuditMissionState({
           tool: "stage_site_repair",
           input: { findingId: selected?.findingId ?? mission.repairPreparation.findingId },
           reason: "Prepare a bounded repair draft for the explicitly selected finding.",
-        };
+        });
   }
 
   return {

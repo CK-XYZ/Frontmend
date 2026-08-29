@@ -29,7 +29,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Same URL plus same mission retains existing deduplication; a materially different goal does not overwrite the first mission; progress/reload/completed snapshots retain the exact bounded goal; human URL-only starts remain broad Assess missions; PageSpeed receives no mission metadata.
   Verify: `bun test tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/audit-mission-contract.test.mjs`
 
-- [ ] **3. Add the explicit repair-preparation transition**
+- [x] **3. Add the explicit repair-preparation transition**
   Spec ref: `spec.md > HTTP Contract > Prepare repair intent`; `spec.md > Application Service`
   What to build: Implement the production and local `POST /api/audits/:auditId/mission/prepare-repair` route plus shared transport/service method. Validate completed state and exact retained finding; return the updated mission projection without creating or approving a repair.
   Acceptance: Same-finding repetition is idempotent; different-finding replacement fails closed; incomplete/unknown audits and findings return actionable errors; no delegated allowance is consumed; repair policy, source, implementation, deployment, and verification state remain unchanged.

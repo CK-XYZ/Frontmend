@@ -126,6 +126,88 @@ test("validates mission goals before transport and sends only bounded semantic f
   assert.equal(calls[0].init.body.includes("prompt"), false);
 });
 
+test("prepares one retained finding through the service and derives the remembered mission", async () => {
+  const calls = [];
+  let audit;
+  const service = createAuditService({
+    now: () => 10,
+    transport: {
+      start: async ({ url, source, mission }) => {
+        audit = {
+          id: AUDIT_ID,
+          url,
+          source,
+          mission,
+          status: "complete",
+          progress: 100,
+          report: {
+            auditId: AUDIT_ID,
+            findings: [{
+              id: "document-description",
+              title: "The document has no description",
+              severity: "medium",
+              focusAreas: ["seo"],
+              source: { provider: "Frontmend document audit", auditId: "description" },
+            }],
+          },
+        };
+        return audit;
+      },
+      prepareRepair: async (auditId, findingId, source) => {
+        calls.push({ auditId, findingId, source });
+        const mission = {
+          ...audit.mission,
+          intent: "prepare-fix",
+          repairPreparation: { findingId, requestedBy: source, requestedAt: 20 },
+        };
+        audit = { ...audit, mission };
+        return {
+          audit,
+          mission,
+          missionState: { status: "action-available", nextAction: { tool: "stage_site_repair" } },
+        };
+      },
+    },
+  });
+
+  await service.startAudit({ url: "example.com", mission: { focusAreas: ["seo"] } });
+  assert.equal(service.getAuditMissionState(AUDIT_ID).assessmentComplete, true);
+  const prepared = await service.prepareRepair(AUDIT_ID, "document-description", "agent");
+  assert.equal(prepared.mission.intent, "prepare-fix");
+  assert.equal(service.getActiveAudit().mission.repairPreparation.findingId, "document-description");
+  assert.equal(service.getActiveAuditMissionState().nextAction.tool, "stage_site_repair");
+  assert.deepEqual(calls, [{
+    auditId: AUDIT_ID,
+    findingId: "document-description",
+    source: "agent",
+  }]);
+  await assert.rejects(
+    () => service.prepareRepair("", "document-description"),
+    (error) => error.code === "INVALID_INPUT",
+  );
+});
+
+test("HTTP transport posts only finding and source to the repair-intent route", async () => {
+  const calls = [];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { mission: { intent: "prepare-fix" } } });
+    },
+  });
+  await transport.prepareRepair(AUDIT_ID, "document-description", "agent");
+  assert.equal(
+    calls[0].url,
+    `https://frontmend.test/api/audits/${AUDIT_ID}/mission/prepare-repair`,
+  );
+  assert.equal(calls[0].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    findingId: "document-description",
+    source: "agent",
+  });
+});
+
 test("reset prevents a late remote response from reviving the audit", async () => {
   let resolveStart;
   const service = createAuditService({

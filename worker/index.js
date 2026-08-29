@@ -2,6 +2,8 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import {
   auditMissionSignature,
   createAuditMission,
+  deriveAuditMissionState,
+  prepareRepairIntent,
 } from "../src/audit-mission-contract.js";
 import { createRelatedAuditInput } from "../src/route-contract.js";
 import {
@@ -527,6 +529,26 @@ async function routeApi(request, env, url) {
     );
   }
 
+  const prepareRepairMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/mission\/prepare-repair$/,
+  );
+  if (prepareRepairMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(
+        new AuditError("METHOD_NOT_ALLOWED", "That audit mission operation is not supported."),
+      );
+    }
+    assertSameOrigin(request);
+    const body = await readJsonBody(request);
+    const response = await proxyJobRequest(
+      jobFromId(env, prepareRepairMatch[1]),
+      "/mission/prepare-repair",
+      request,
+      body,
+    );
+    return new Response(response.body, response);
+  }
+
   const repairPolicyMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
   if (repairPolicyMatch) {
     if (!["GET", "POST"].includes(request.method)) {
@@ -808,6 +830,55 @@ export class FrontmendAuditJob {
       await this.ctx.storage.put("state", cancelled);
       await this.scheduleRetention();
       return json({ ok: true, data: auditSnapshot(cancelled) });
+    }
+    if (request.method === "POST" && url.pathname === "/mission/prepare-repair") {
+      if (state.status !== "complete" || !state.report) {
+        return errorResponse(
+          new AuditError("AUDIT_NOT_READY", "Finish the audit before preparing a finding for repair."),
+        );
+      }
+      const input = await readJsonBody(request);
+      if (!input || typeof input !== "object" || Array.isArray(input)) {
+        return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
+      }
+      const extra = Object.keys(input).find((key) => !["findingId", "source"].includes(key));
+      if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown mission field: ${extra}.`));
+      if (input.source !== "human" && input.source !== "agent") {
+        return errorResponse(new AuditError("INVALID_INPUT", "source must be human or agent."));
+      }
+      const finding = state.report.findings.find((item) => item.id === input.findingId);
+      if (!finding) {
+        return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
+      }
+      try {
+        const currentMission = state.mission ?? createAuditMission(
+          {},
+          state.source === "agent" ? "agent" : "human",
+          Number.isInteger(state.startedAt) ? state.startedAt : Date.now(),
+        );
+        const mission = prepareRepairIntent(currentMission, finding.id, input.source);
+        const updated = { ...state, mission };
+        await this.ctx.storage.put("state", updated);
+        const [diagnosticMissions, repairs] = await Promise.all([
+          this.ctx.storage.get("diagnosticMissions"),
+          this.ctx.storage.get("repairs"),
+        ]);
+        return json({
+          ok: true,
+          data: {
+            audit: auditSnapshot(updated),
+            mission,
+            missionState: deriveAuditMissionState({
+              report: updated.report,
+              mission,
+              diagnosticMissions: diagnosticMissions ?? [],
+              repairs: repairs ?? [],
+            }),
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
     }
     if (url.pathname === "/repair-policy") {
       if (state.status !== "complete" || !state.report) {
