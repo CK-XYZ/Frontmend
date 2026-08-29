@@ -10,7 +10,7 @@
   },
   "participant": {
     "name": "",
-    "display_name": ""
+    "display_name": "CK-XYZ Knight"
   },
   "project": {
     "name": "Frontmend",
@@ -26,8 +26,8 @@
   ],
   "rules_acknowledged": true,
   "learning": {
-    "status": "not-started",
-    "current_step": "",
+    "status": "active",
+    "current_step": "onboard",
     "completed_steps": [],
     "plan_file": "",
     "checklist_file": ""
@@ -36,5 +36,5 @@
     "draft_file": "devpost-submission.md",
     "status": "not-started"
   },
-  "next_command": "prepare-submission"
+  "next_command": "build-scope"
 }
