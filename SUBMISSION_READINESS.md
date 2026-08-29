@@ -112,7 +112,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 
 ## Release blockers
 
-1. The deployed source is committed locally, but the public remote, push, and challenge-period history are not yet prepared.
+1. `origin/main` exists at `49f7733` and the local candidate includes receipt commit `199cec0` plus this unpushed documentation correction, but an unauthenticated request to `https://github.com/CK-XYZ/Frontmend` returns 404. The repository must be made judge-public and the reviewed candidate pushed before submission.
 2. Gated candidate content `7fa65b1` (application source through `c39882d`) adds the persisted agent browser review, browser-observed findings, contextual tools, visible evidence card, and judge runbook on top of the Assess/Prepare-fix mission; it is newer than deployed application commit `a20e1ff` and has no live proof.
 3. Temporary app-scoped Access bypass `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` currently makes the hostname public while preserving reusable **Only CK** for rollback. Keep the bypass active through testing and judging, or replace it only with another verified public-access arrangement.
 4. The current deployment needs a fresh Chrome console smoke on its asset hashes.

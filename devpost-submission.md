@@ -136,9 +136,9 @@ Status: **TODO before final submission.** The hostname currently serves an older
 
 ## Public Repository Link
 
-`TODO_PUBLIC_REPOSITORY_URL`
+Planned: `https://github.com/CK-XYZ/Frontmend`
 
-Status: no Git remote is currently configured. The standalone repository has Apache-2.0 `LICENSE`, `THIRD_PARTY_NOTICES.md`, reproducible instructions, and challenge-period commit history, but it has not been published or pushed.
+Status: `origin/main` exists at commit `49f7733`, while the local candidate includes receipt commit `199cec0` plus this unpushed documentation correction. An unauthenticated request to the planned GitHub URL returns 404, so the repository is not yet judge-public and nothing from this candidate was pushed during this work. The repository already has Apache-2.0 `LICENSE`, `THIRD_PARTY_NOTICES.md`, reproducible instructions, and challenge-period history.
 
 ## Demo Video
 
