@@ -1,4 +1,9 @@
 import { diagnosticMissionState, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
+import {
+  browserReviewFindings,
+  browserReviewRequired,
+  browserReviewState,
+} from "./browser-review-contract.js";
 import { AuditError } from "./url-policy.js";
 
 export const AUDIT_FOCUS_AREAS = Object.freeze([
@@ -180,9 +185,21 @@ function priorityEvidence(finding, diagnosticMissions) {
   };
 }
 
-export function focusedAuditPriorities(report, missionValue, diagnosticMissions = []) {
+export function assessmentFindings(report, browserReview = null) {
+  return [
+    ...(Array.isArray(report?.findings) ? report.findings : []),
+    ...browserReviewFindings(browserReview),
+  ];
+}
+
+export function focusedAuditPriorities(
+  report,
+  missionValue,
+  diagnosticMissions = [],
+  browserReview = null,
+) {
   const mission = auditMissionSnapshot(missionValue);
-  const findings = Array.isArray(report?.findings) ? report.findings : [];
+  const findings = assessmentFindings(report, browserReview);
   const candidates = mission.focusAreas.length
     ? findings.filter((finding) => mission.focusAreas.some((area) => finding.focusAreas?.includes(area)))
     : findings;
@@ -209,6 +226,11 @@ export function focusedAuditPriorities(report, missionValue, diagnosticMissions 
       suggestedRepair: finding.repair,
       occurrenceCount: 1,
       affectedStrategies: finding.source?.strategy ? [finding.source.strategy] : [],
+      evidenceProvenance: finding.browserReviewEvidence?.provenance ?? "measured-provider",
+      source: {
+        provider: finding.source?.provider ?? "unknown",
+        auditId: finding.source?.auditId ?? finding.id,
+      },
       diagnosticMissionRequired: findingRequiresDiagnosticMission(finding),
       ...priorityEvidence(finding, diagnosticMissions),
     });
@@ -268,9 +290,13 @@ export function deriveAuditMissionState({
   mission: missionValue,
   diagnosticMissions = [],
   repairs = [],
+  browserReview = null,
 }) {
   const mission = auditMissionSnapshot(missionValue);
-  const projection = focusedAuditPriorities(report, mission, diagnosticMissions);
+  const projection = focusedAuditPriorities(report, mission, diagnosticMissions, browserReview);
+  const reviewRequired = browserReviewRequired(mission);
+  const reviewState = browserReview ? browserReviewState(browserReview) : null;
+  const reviewOutstanding = reviewRequired && !reviewState?.complete;
   const unresolved = projection.priorities.find((priority) => diagnosticNextAction(priority));
   const blocked = projection.priorities.find(
     (priority) => priority.evidenceState === "diagnosis-blocked",
@@ -286,30 +312,55 @@ export function deriveAuditMissionState({
         reason: "The measurement job has not produced a completed report yet.",
       };
 
-  if (auditComplete && unresolved) {
+  if (auditComplete && reviewOutstanding) {
+    status = reviewState?.status === "blocked"
+      ? "blocked"
+      : browserReview
+        ? "in-progress"
+        : "action-available";
+    nextActor = "agent";
+    nextAction = browserReview
+      ? {
+          tool: "record_browser_review_check",
+          input: {
+            reviewId: browserReview.id,
+            checkId: reviewState?.nextCheck?.id,
+          },
+          reason: reviewState?.status === "blocked"
+            ? "Retry the blocked browser check when the named capability or target is available; do not invent evidence."
+            : "Inspect the exact rendered-browser check and contribute only observations you actually obtain.",
+        }
+      : {
+          tool: "open_browser_review",
+          input: {},
+          reason: "The agent-started accessibility or SEO assessment requires structured rendered-browser evidence beyond provider measurement.",
+        };
+  }
+
+  if (auditComplete && !reviewOutstanding && unresolved) {
     status = unresolved.evidenceState === "diagnosis-recommended" ? "action-available" : "in-progress";
     nextActor = "agent";
     nextAction = diagnosticNextAction(unresolved);
   }
 
-  if (auditComplete && !unresolved && blocked) {
+  if (auditComplete && !reviewOutstanding && !unresolved && blocked) {
     status = "blocked";
     nextActor = null;
     nextAction = null;
   }
 
-  const assessmentComplete = auditComplete && !unresolved && !blocked;
-  if (auditComplete && mission.intent === "prepare-fix" && !mission.repairPreparation) {
+  const assessmentComplete = auditComplete && !reviewOutstanding && !unresolved && !blocked;
+  if (auditComplete && !reviewOutstanding && mission.intent === "prepare-fix" && !mission.repairPreparation) {
     status = "awaiting-repair-preparation";
     nextActor = "person";
     nextAction = null;
   }
 
-  if (auditComplete && mission.repairPreparation && !unresolved && !blocked) {
+  if (auditComplete && mission.repairPreparation && !reviewOutstanding && !unresolved && !blocked) {
     const selected = projection.priorities.find(
       (priority) => priority.findingId === mission.repairPreparation.findingId,
     );
-    const selectedFinding = (report?.findings ?? []).find(
+    const selectedFinding = assessmentFindings(report, browserReview).find(
       (finding) => finding.id === mission.repairPreparation.findingId,
     );
     const selectedEvidence = selectedFinding
@@ -344,6 +395,17 @@ export function deriveAuditMissionState({
     matchingFindingCount: projection.matchingFindingCount,
     categoryScores: projection.categoryScores,
     priorities: projection.priorities,
+    browserReview: {
+      required: reviewRequired,
+      status: reviewRequired ? reviewState?.status ?? "not-opened" : "not-required",
+      reviewId: browserReview?.id ?? null,
+      requestedCheckCount: reviewState?.requestedCheckCount ?? 0,
+      completedCheckCount: reviewState?.completedCheckCount ?? 0,
+      issueCount: reviewState?.issueCount ?? 0,
+      blockedCheckCount: reviewState?.blockedCheckCount ?? 0,
+      nextCheck: reviewState?.nextCheck ?? null,
+      provenance: browserReview ? "agent-reported-browser" : null,
+    },
     nextActor,
     nextAction,
     authority: {

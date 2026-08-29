@@ -1,4 +1,5 @@
 import { auditMissionSnapshot, deriveAuditMissionState } from "./audit-mission-contract.js";
+import { browserReviewSnapshot } from "./browser-review-contract.js";
 import { diagnosticEvidenceChain, diagnosticMissionSnapshot } from "./diagnostic-contract.js";
 import { AuditError } from "./url-policy.js";
 
@@ -58,7 +59,12 @@ function findingSource(report, findingId) {
   };
 }
 
-export function createAssessmentReceipt({ report, mission: missionValue, diagnosticMissions = [] }) {
+export function createAssessmentReceipt({
+  report,
+  mission: missionValue,
+  diagnosticMissions = [],
+  browserReview: browserReviewValue = null,
+}) {
   if (!report?.auditId || !report?.engine?.provider) {
     throw new AuditError(
       "ASSESSMENT_RECEIPT_UNAVAILABLE",
@@ -69,7 +75,13 @@ export function createAssessmentReceipt({ report, mission: missionValue, diagnos
   const diagnostics = (Array.isArray(diagnosticMissions) ? diagnosticMissions : [])
     .slice(0, 10)
     .map(diagnosticMissionSnapshot);
-  const state = deriveAuditMissionState({ report, mission, diagnosticMissions: diagnostics });
+  const browserReview = browserReviewValue ? browserReviewSnapshot(browserReviewValue) : null;
+  const state = deriveAuditMissionState({
+    report,
+    mission,
+    diagnosticMissions: diagnostics,
+    browserReview,
+  });
   if (!state.assessmentComplete) {
     const action = state.nextAction?.tool
       ? ` Complete ${state.nextAction.tool} first.`
@@ -92,7 +104,13 @@ export function createAssessmentReceipt({ report, mission: missionValue, diagnos
       evidence: text(priority.evidence, 600),
       occurrenceCount: Math.max(1, Math.min(8, priority.occurrenceCount ?? 1)),
       affectedStrategies: (priority.affectedStrategies ?? []).slice(0, 8).map((strategy) => text(strategy, 40)),
-      measuredSource: findingSource(report, priority.findingId),
+      measuredSource: priority.source?.provider
+        ? {
+            provider: text(priority.source.provider, 120),
+            auditId: text(priority.source.auditId ?? priority.findingId, 160),
+          }
+        : findingSource(report, priority.findingId),
+      evidenceProvenance: text(priority.evidenceProvenance, 80),
       evidenceState: text(priority.evidenceState, 60),
       diagnosticMissionId: diagnostic?.id ?? null,
       evidenceChain: diagnostic
@@ -128,6 +146,28 @@ export function createAssessmentReceipt({ report, mission: missionValue, diagnos
       priorityCount: priorities.length,
       categoryScores: { ...state.categoryScores },
     },
+    browserReview: browserReview
+      ? {
+          id: browserReview.id,
+          provenance: "agent-reported-browser",
+          status: browserReview.state.status,
+          requestedFocusAreas: [...browserReview.requestedFocusAreas],
+          requestedCheckCount: browserReview.state.requestedCheckCount,
+          completedCheckCount: browserReview.state.completedCheckCount,
+          issueCount: browserReview.state.issueCount,
+          checks: browserReview.results.map((result) => ({
+            checkId: text(result.checkId, 80),
+            label: text(
+              browserReview.requestedChecks.find((check) => check.id === result.checkId)?.label,
+              120,
+            ),
+            outcome: text(result.outcome, 40),
+            summary: text(result.summary, 300),
+            observations: result.observations.slice(0, 4).map((item) => text(item, 400)),
+            reportedAt: Number.isFinite(result.reportedAt) ? result.reportedAt : null,
+          })),
+        }
+      : null,
     priorities,
     authority: {
       sourceContentsReceived: false,
@@ -135,7 +175,7 @@ export function createAssessmentReceipt({ report, mission: missionValue, diagnos
       implementationProved: false,
       deploymentProved: false,
       resolutionProved: false,
-      boundary: "This receipt proves a completed bounded assessment, not repair approval, implementation, deployment, or resolution.",
+      boundary: "This receipt proves a completed bounded assessment with separately attributed provider and browser evidence, not repair approval, implementation, deployment, or resolution.",
     },
   };
 }
@@ -168,6 +208,28 @@ export function assessmentReceiptMarkdown(receipt) {
     `- Matching findings: ${Number.isFinite(receipt.assessment?.matchingFindingCount) ? receipt.assessment.matchingFindingCount : "—"}`,
     `- Ranked priorities: ${receipt.priorities?.length ?? 0}`,
   ];
+  if (receipt.browserReview) {
+    lines.push(
+      "",
+      "## Agent-contributed browser review",
+      "",
+      `- Provenance: ${markdownText(receipt.browserReview.provenance, 80)}`,
+      `- Status: ${markdownText(receipt.browserReview.status, 40)}`,
+      `- Coverage: ${receipt.browserReview.completedCheckCount} of ${receipt.browserReview.requestedCheckCount} requested checks`,
+      `- Browser-observed issues: ${receipt.browserReview.issueCount}`,
+    );
+    for (const check of receipt.browserReview.checks ?? []) {
+      lines.push(
+        "",
+        `### ${markdownText(check.label, 120)}`,
+        "",
+        `- Outcome: ${markdownText(check.outcome, 40)}`,
+        `- Summary: ${markdownText(check.summary, 300)}`,
+        `- Reported: ${timestamp(check.reportedAt)}`,
+        ...check.observations.map((observation) => `- Observed: ${markdownText(observation, 400)}`),
+      );
+    }
+  }
   for (const priority of receipt.priorities ?? []) {
     lines.push(
       "",
@@ -175,7 +237,8 @@ export function assessmentReceiptMarkdown(receipt) {
       "",
       `- Severity: ${markdownText(priority.severity, 40)}`,
       `- Category: ${markdownText(priority.category, 80)}`,
-      `- Provider source: ${markdownText(priority.measuredSource?.provider, 120)} · ${markdownText(priority.measuredSource?.auditId, 160)}`,
+      `- Evidence source: ${markdownText(priority.measuredSource?.provider, 120)} · ${markdownText(priority.measuredSource?.auditId, 160)}`,
+      `- Evidence provenance: ${markdownText(priority.evidenceProvenance, 80)}`,
       `- Strategies: ${priority.affectedStrategies?.length ? priority.affectedStrategies.map((strategy) => markdownText(strategy, 40)).join(", ") : "document"}`,
       `- Occurrences: ${priority.occurrenceCount}`,
       `- Measured evidence: ${markdownText(priority.evidence, 600)}`,

@@ -2,6 +2,7 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import {
   auditMissionSignature,
+  assessmentFindings,
   createAuditMission,
   deriveAuditMissionState,
   prepareRepairIntent,
@@ -40,6 +41,11 @@ import {
   recordDiagnosticBlocker,
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
+import {
+  browserReviewSnapshot,
+  createBrowserReviewMission,
+  recordBrowserReviewCheck,
+} from "../src/browser-review-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -66,6 +72,7 @@ function publicError(error) {
       "FINDING_NOT_FOUND",
       "EXPLORATION_NOT_FOUND",
       "DIAGNOSTIC_NOT_FOUND",
+      "BROWSER_REVIEW_NOT_FOUND",
     ].includes(error.code)
       ? 404
       : error.code === "METHOD_NOT_ALLOWED"
@@ -79,6 +86,9 @@ function publicError(error) {
             "REVISION_NOT_REQUESTED",
             "DIAGNOSTIC_MISSION_REQUIRED",
             "ASSESSMENT_INCOMPLETE",
+            "BROWSER_REVIEW_SEQUENCE",
+            "BROWSER_REVIEW_COMPLETE",
+            "BROWSER_REVIEW_CHECK_COMPLETE",
           ].includes(error.code)
           ? 409
           : 400;
@@ -591,6 +601,26 @@ async function routeApi(request, env, url) {
     return new Response(response.body, response);
   }
 
+  const browserReviewMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/browser-review(?:\/([^/]+)\/(checks))?$/,
+  );
+  if (browserReviewMatch) {
+    const [, auditId, reviewId, action] = browserReviewMatch;
+    if (!["GET", "POST"].includes(request.method)) {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That browser review operation is not supported."));
+    }
+    let body;
+    if (request.method === "POST") {
+      assertSameOrigin(request);
+      body = await readJsonBody(request);
+    }
+    const suffix = reviewId
+      ? `/browser-review/${encodeURIComponent(reviewId)}/${action}`
+      : "/browser-review";
+    const response = await proxyJobRequest(jobFromId(env, auditId), suffix, request, body);
+    return new Response(response.body, response);
+  }
+
   const repairMatch = url.pathname.match(
     /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
   );
@@ -809,6 +839,9 @@ export class FrontmendAuditJob {
         startedAt: Date.now(),
       };
       await this.ctx.storage.put("state", state);
+      if (typeof this.ctx.storage.delete === "function") {
+        await this.ctx.storage.delete("browserReview");
+      }
       this.abortController = new AbortController();
       this.ctx.waitUntil(this.run(state));
       return json({ ok: true, data: auditSnapshot(state) }, { status: 202 });
@@ -851,7 +884,8 @@ export class FrontmendAuditJob {
       if (input.source !== "human" && input.source !== "agent") {
         return errorResponse(new AuditError("INVALID_INPUT", "source must be human or agent."));
       }
-      const finding = state.report.findings.find((item) => item.id === input.findingId);
+      const browserReview = await this.ctx.storage.get("browserReview");
+      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input.findingId);
       if (!finding) {
         return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       }
@@ -864,9 +898,10 @@ export class FrontmendAuditJob {
         const mission = prepareRepairIntent(currentMission, finding.id, input.source);
         const updated = { ...state, mission };
         await this.ctx.storage.put("state", updated);
-        const [diagnosticMissions, repairs] = await Promise.all([
+        const [diagnosticMissions, repairs, browserReview] = await Promise.all([
           this.ctx.storage.get("diagnosticMissions"),
           this.ctx.storage.get("repairs"),
+          this.ctx.storage.get("browserReview"),
         ]);
         return json({
           ok: true,
@@ -878,6 +913,7 @@ export class FrontmendAuditJob {
               mission,
               diagnosticMissions: diagnosticMissions ?? [],
               repairs: repairs ?? [],
+              browserReview: browserReview ?? null,
             }),
           },
         });
@@ -903,6 +939,9 @@ export class FrontmendAuditJob {
     }
     if (url.pathname.startsWith("/diagnostics")) {
       return this.handleDiagnostics(request, url, state);
+    }
+    if (url.pathname.startsWith("/browser-review")) {
+      return this.handleBrowserReview(request, url, state);
     }
     if (request.method === "POST" && url.pathname === "/exploration-inputs") {
       if (state.status !== "complete" || !state.report) {
@@ -1033,11 +1072,15 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
       }
       try {
-        const diagnosticMissions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
+        const [diagnosticMissions, browserReview] = await Promise.all([
+          this.ctx.storage.get("diagnosticMissions"),
+          this.ctx.storage.get("browserReview"),
+        ]);
         const receipt = createAssessmentReceipt({
           report: state.report,
           mission: state.mission,
           diagnosticMissions,
+          browserReview: browserReview ?? null,
         });
         return new Response(assessmentReceiptMarkdown(receipt), {
           headers: {
@@ -1096,7 +1139,8 @@ export class FrontmendAuditJob {
       if (!input || typeof input !== "object" || Array.isArray(input)) {
         return errorResponse(new AuditError("INVALID_REPAIR", "The repair proposal must be an object."));
       }
-      const finding = state.report.findings.find((item) => item.id === input.findingId);
+      const browserReview = await this.ctx.storage.get("browserReview");
+      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input.findingId);
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       const existing = repairs.find((repair) => repair.findingId === finding.id);
       if (existing) return json({ ok: true, data: repairWithMission(existing) });
@@ -1255,7 +1299,8 @@ export class FrontmendAuditJob {
       const input = await readJsonBody(request);
       const extra = Object.keys(input ?? {}).find((key) => key !== "findingId");
       if (extra) return errorResponse(new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
-      const finding = state.report.findings.find((item) => item.id === input?.findingId);
+      const browserReview = await this.ctx.storage.get("browserReview");
+      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input?.findingId);
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       const existing = missions.find((mission) => mission.findingId === finding.id);
       if (existing) return json({ ok: true, data: diagnosticMissionSnapshot(existing) });
@@ -1302,6 +1347,57 @@ export class FrontmendAuditJob {
       }
     }
     return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."));
+  }
+
+  async handleBrowserReview(request, url, state) {
+    if (state.status !== "complete" || !state.report || !state.mission) {
+      return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the assessment measurement before opening its browser review."));
+    }
+    const match = url.pathname.match(/^\/browser-review(?:\/([^/]+)\/(checks))?$/);
+    if (!match) return errorResponse(new AuditError("NOT_FOUND", "That browser review route does not exist."));
+    const [, rawReviewId, action] = match;
+    const stored = await this.ctx.storage.get("browserReview");
+    if (!rawReviewId && request.method === "GET") {
+      return json({
+        ok: true,
+        data: { auditId: state.id, review: stored ? browserReviewSnapshot(stored) : null },
+      });
+    }
+    if (!rawReviewId && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const extra = Object.keys(input ?? {})[0];
+      if (extra) return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
+      if (stored) return json({ ok: true, data: browserReviewSnapshot(stored) });
+      try {
+        const review = createBrowserReviewMission({
+          auditId: state.id,
+          mission: state.mission,
+          target: state.report.finalUrl ?? state.report.url ?? state.url,
+        });
+        await this.ctx.storage.put("browserReview", review);
+        return json({ ok: true, data: review }, { status: 201 });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (action === "checks" && request.method === "POST") {
+      if (!stored || stored.id !== decodeURIComponent(rawReviewId ?? "")) {
+        return errorResponse(new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist."));
+      }
+      const input = await readJsonBody(request);
+      const { source, ...check } = input ?? {};
+      if (source !== "agent" && source !== "person") {
+        return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", "Browser review evidence must identify an agent or person source."));
+      }
+      try {
+        const review = recordBrowserReviewCheck(stored, check, source);
+        await this.ctx.storage.put("browserReview", review);
+        return json({ ok: true, data: review });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That browser review operation is not supported."));
   }
 
   async run(initialState) {

@@ -168,7 +168,8 @@ test("retains mission goals through partial polling and fresh restoration", asyn
   assert.deepEqual(polled.mission, started.mission);
   await service.getResults(AUDIT_ID);
   assert.deepEqual(service.getActiveAudit().mission, started.mission);
-  assert.equal(service.getActiveAuditMissionState().assessmentComplete, true);
+  assert.equal(service.getActiveAuditMissionState().assessmentComplete, false);
+  assert.equal(service.getActiveAuditMissionState().nextAction.tool, "open_browser_review");
 
   const restored = createAuditService({
     transport: {
@@ -186,7 +187,80 @@ test("retains mission goals through partial polling and fresh restoration", asyn
   });
   await restored.getAudit(AUDIT_ID);
   assert.deepEqual(restored.getActiveAudit().mission.focusAreas, ["accessibility", "seo"]);
-  assert.equal(restored.getActiveAuditMissionState().assessmentComplete, true);
+  assert.equal(restored.getActiveAuditMissionState().assessmentComplete, false);
+  assert.equal(restored.getActiveAuditMissionState().nextAction.tool, "open_browser_review");
+});
+
+test("synchronizes a browser review and records only bounded agent evidence", async () => {
+  const calls = [];
+  const opened = {
+    schemaVersion: 1,
+    id: "browser-review-1",
+    auditId: AUDIT_ID,
+    state: { status: "in-progress", nextCheck: { id: "rendered-structure" } },
+  };
+  const completed = {
+    ...opened,
+    state: { status: "complete", nextCheck: null },
+  };
+  const service = createAuditService({
+    transport: {
+      getBrowserReview: async () => ({ auditId: AUDIT_ID, review: opened }),
+      openBrowserReview: async () => opened,
+      recordBrowserReviewCheck: async (auditId, reviewId, input, source) => {
+        calls.push({ auditId, reviewId, input, source });
+        return completed;
+      },
+    },
+  });
+  await service.loadBrowserReview(AUDIT_ID);
+  assert.equal(service.getBrowserReview(AUDIT_ID).id, opened.id);
+  await service.openBrowserReview(AUDIT_ID);
+  await service.recordBrowserReviewCheck(AUDIT_ID, opened.id, {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "Rendered structure checked.",
+    observations: ["One primary heading is rendered."],
+  }, "agent");
+  assert.equal(service.getBrowserReview(AUDIT_ID).state.status, "complete");
+  assert.deepEqual(calls[0], {
+    auditId: AUDIT_ID,
+    reviewId: opened.id,
+    input: {
+      checkId: "rendered-structure",
+      outcome: "passed",
+      summary: "Rendered structure checked.",
+      observations: ["One primary heading is rendered."],
+    },
+    source: "agent",
+  });
+});
+
+test("HTTP transport uses the browser-review singleton and sequenced check routes", async () => {
+  const calls = [];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: url.endsWith("/browser-review")
+        ? init.method === "POST"
+          ? { id: "browser-review-1", auditId: AUDIT_ID }
+          : { auditId: AUDIT_ID, review: null }
+        : { id: "browser-review-1", auditId: AUDIT_ID } });
+    },
+  });
+  await transport.getBrowserReview(AUDIT_ID);
+  await transport.openBrowserReview(AUDIT_ID);
+  await transport.recordBrowserReviewCheck(AUDIT_ID, "browser-review-1", {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "Rendered structure checked.",
+    observations: ["One primary heading is rendered."],
+  }, "agent");
+  assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review`);
+  assert.equal(calls[1].init.method, "POST");
+  assert.equal(calls[2].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review/browser-review-1/checks`);
+  assert.equal(JSON.parse(calls[2].init.body).source, "agent");
 });
 
 test("prepares one retained finding through the service and derives the remembered mission", async () => {

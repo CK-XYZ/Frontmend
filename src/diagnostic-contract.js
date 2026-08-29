@@ -4,6 +4,7 @@ const DIAGNOSTIC_KINDS = Object.freeze([
   "console-errors",
   "contrast-nodes",
   "main-thread-blocking",
+  "browser-observation",
 ]);
 const OBSERVATION_KINDS = Object.freeze([
   "console",
@@ -102,6 +103,11 @@ function requiredInvestigations(kind) {
       "Map the bundled runtime source to repository ownership",
       "Name checks for the local build and fresh performance measurement",
     ],
+    "browser-observation": [
+      "Reconfirm the contributed browser observation on the retained target",
+      "Map the rendered element or journey to repository ownership",
+      "Name local and fresh-browser checks that will prove the repair",
+    ],
   };
   return byKind[kind] ?? [];
 }
@@ -114,10 +120,14 @@ function measuredEvidenceSummary(finding) {
       ? evidence.nodes?.length ?? 0
       : evidence?.kind === "main-thread-blocking"
         ? evidence.longTasks?.length ?? 0
+        : evidence?.kind === "browser-observation"
+          ? evidence.items?.length ?? 0
         : 0;
   return {
     kind: diagnosticKind(finding),
-    provenance: "measured-lighthouse",
+    provenance: evidence?.kind === "browser-observation"
+      ? "agent-reported-browser"
+      : "measured-lighthouse",
     completeness: evidence?.completeness === "actionable" ? "actionable" : "partial",
     itemCount: Math.max(0, Math.min(5, itemCount)),
     missing: Array.isArray(evidence?.missing)

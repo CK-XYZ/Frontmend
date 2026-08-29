@@ -2,6 +2,7 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import {
   auditMissionSignature,
+  assessmentFindings,
   createAuditMission,
   deriveAuditMissionState,
   prepareRepairIntent,
@@ -39,6 +40,11 @@ import {
   recordDiagnosticBlocker,
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
+import {
+  browserReviewSnapshot,
+  createBrowserReviewMission,
+  recordBrowserReviewCheck,
+} from "../src/browser-review-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_LIMIT = 5;
@@ -259,6 +265,7 @@ export function createLocalAuditRuntime(options = {}) {
         screenshots: {},
         repairs: [],
         diagnosticMissions: [],
+        browserReview: null,
         repairPolicy: repairPolicySnapshot(),
         error: null,
         abortController: new AbortController(),
@@ -286,6 +293,7 @@ export function createLocalAuditRuntime(options = {}) {
       screenshots: {},
       repairs: [],
       diagnosticMissions: [],
+      browserReview: null,
       repairPolicy: repairPolicySnapshot(),
       error: null,
       abortController: new AbortController(),
@@ -550,7 +558,7 @@ export function createLocalAuditRuntime(options = {}) {
         if (input?.source !== "human" && input?.source !== "agent") {
           return sendError(response, new AuditError("INVALID_INPUT", "source must be human or agent."));
         }
-        const finding = baseline.report.findings.find((item) => item.id === input.findingId);
+        const finding = assessmentFindings(baseline.report, baseline.browserReview).find((item) => item.id === input.findingId);
         if (!finding) {
           return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
         }
@@ -574,6 +582,7 @@ export function createLocalAuditRuntime(options = {}) {
                 mission: baseline.mission,
                 diagnosticMissions: baseline.diagnosticMissions ?? [],
                 repairs: baseline.repairs ?? [],
+                browserReview: baseline.browserReview ?? null,
               }),
             },
           });
@@ -624,7 +633,7 @@ export function createLocalAuditRuntime(options = {}) {
           const input = await readBody(request);
           const extra = Object.keys(input ?? {}).find((key) => key !== "findingId");
           if (extra) return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
-          const finding = baseline.report.findings.find((item) => item.id === input?.findingId);
+          const finding = assessmentFindings(baseline.report, baseline.browserReview).find((item) => item.id === input?.findingId);
           if (!finding) return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
           const existing = baseline.diagnosticMissions.find((mission) => mission.findingId === finding.id);
           if (existing) return sendJson(response, 200, { ok: true, data: diagnosticMissionSnapshot(existing) });
@@ -660,6 +669,62 @@ export function createLocalAuditRuntime(options = {}) {
         return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."), 405);
       }
 
+      const browserReviewMatch = requestUrl.pathname.match(
+        /^\/api\/audits\/([^/]+)\/browser-review(?:\/([^/]+)\/(checks))?$/,
+      );
+      if (browserReviewMatch) {
+        const [, auditId, rawReviewId, action] = browserReviewMatch;
+        const baseline = jobs.get(auditId);
+        if (!baseline) return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        if (baseline.status !== "complete" || !baseline.report || !baseline.mission) {
+          return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the assessment measurement before opening its browser review."), 409);
+        }
+        if (!rawReviewId && request.method === "GET") {
+          return sendJson(response, 200, {
+            ok: true,
+            data: {
+              auditId,
+              review: baseline.browserReview ? browserReviewSnapshot(baseline.browserReview) : null,
+            },
+          });
+        }
+        if (!rawReviewId && request.method === "POST") {
+          assertSameOrigin(request);
+          const input = await readBody(request);
+          const extra = Object.keys(input ?? {})[0];
+          if (extra) return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
+          if (baseline.browserReview) return sendJson(response, 200, { ok: true, data: browserReviewSnapshot(baseline.browserReview) });
+          try {
+            baseline.browserReview = createBrowserReviewMission({
+              auditId,
+              mission: baseline.mission,
+              target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
+            });
+            return sendJson(response, 201, { ok: true, data: baseline.browserReview });
+          } catch (error) {
+            return sendError(response, error);
+          }
+        }
+        if (action === "checks" && request.method === "POST") {
+          assertSameOrigin(request);
+          if (!baseline.browserReview || baseline.browserReview.id !== decodeURIComponent(rawReviewId ?? "")) {
+            return sendError(response, new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist."), 404);
+          }
+          const input = await readBody(request);
+          const { source, ...check } = input ?? {};
+          if (source !== "agent" && source !== "person") {
+            return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", "Browser review evidence must identify an agent or person source."));
+          }
+          try {
+            baseline.browserReview = recordBrowserReviewCheck(baseline.browserReview, check, source);
+            return sendJson(response, 200, { ok: true, data: baseline.browserReview });
+          } catch (error) {
+            return sendError(response, error);
+          }
+        }
+        return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That browser review operation is not supported."), 405);
+      }
+
       const repairMatch = requestUrl.pathname.match(
         /^\/api\/audits\/([^/]+)\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|verify|export))?)?$/,
       );
@@ -685,7 +750,7 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawRepairId && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const finding = baseline.report.findings.find((item) => item.id === input?.findingId);
+          const finding = assessmentFindings(baseline.report, baseline.browserReview).find((item) => item.id === input?.findingId);
           if (!finding) {
             return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
           }
@@ -933,6 +998,7 @@ export function createLocalAuditRuntime(options = {}) {
             report: job.report,
             mission: job.mission,
             diagnosticMissions: job.diagnosticMissions ?? [],
+            browserReview: job.browserReview ?? null,
           });
           response.statusCode = 200;
           response.setHeader("content-type", "text/markdown; charset=utf-8");

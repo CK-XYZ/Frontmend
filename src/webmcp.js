@@ -12,10 +12,15 @@ import {
 } from "./diagnostic-contract.js";
 import {
   AUDIT_FOCUS_AREAS,
+  assessmentFindings,
   auditMissionSnapshot,
   createAuditMission,
   deriveAuditMissionState,
 } from "./audit-mission-contract.js";
+import {
+  BROWSER_REVIEW_BLOCKER_REASONS,
+  BROWSER_REVIEW_OUTCOMES,
+} from "./browser-review-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 
@@ -113,7 +118,8 @@ export function contextualFrontmendToolNames(service) {
   }
 
   const available = new Set(["get_site_audit_results"]);
-  const findings = audit.report?.findings ?? [];
+  const browserReview = service?.getBrowserReview?.(audit.id) ?? null;
+  const findings = assessmentFindings(audit.report, browserReview);
   const routes = audit.report?.documentProfile?.routes ?? [];
   const repairs = service?.getRepairs?.(audit.id) ?? [];
   const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
@@ -124,8 +130,10 @@ export function contextualFrontmendToolNames(service) {
         mission: audit.mission,
         diagnosticMissions,
         repairs,
+        browserReview,
       })
     : null;
+  const browserReviewComplete = !missionState?.browserReview?.required || missionState.browserReview.status === "complete";
 
   if (audit.report?.verification) available.add("get_verification_receipt");
   if (
@@ -140,22 +148,32 @@ export function contextualFrontmendToolNames(service) {
     available.add("start_site_exploration");
   }
   if (explorations.length) available.add("get_site_exploration");
-  if (findings.length) {
+  if (findings.length && browserReviewComplete) {
     available.add("get_repository_fix_brief");
     available.add("prepare_site_repair");
   }
   if (repairs.length) available.add("get_repair_workspace");
+  if (missionState?.browserReview?.required && !browserReview) {
+    available.add("open_browser_review");
+  }
+  if (
+    missionState?.browserReview?.required &&
+    browserReview &&
+    missionState.browserReview.status !== "complete"
+  ) {
+    available.add("record_browser_review_check");
+  }
   const diagnosticFindings = findings.filter(findingRequiresDiagnosticMission);
   const openedDiagnosticFindingIds = new Set(
     diagnosticMissions.map((mission) => mission.findingId).filter(Boolean),
   );
-  if (diagnosticFindings.some((finding) => !openedDiagnosticFindingIds.has(finding.id))) {
+  if (browserReviewComplete && diagnosticFindings.some((finding) => !openedDiagnosticFindingIds.has(finding.id))) {
     available.add("open_diagnostic_mission");
   }
-  if (diagnosticMissions.some((mission) => ["awaiting-diagnosis", "blocked"].includes(mission.state?.state))) {
+  if (browserReviewComplete && diagnosticMissions.some((mission) => ["awaiting-diagnosis", "blocked"].includes(mission.state?.state))) {
     available.add("submit_runtime_diagnosis");
   }
-  if (diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
+  if (browserReviewComplete && diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
     available.add("record_diagnostic_blocker");
   }
   const preparedFindingId = audit.mission?.repairPreparation?.findingId ?? null;
@@ -361,6 +379,7 @@ export function createFrontmendTools(service) {
           mission: projectionMission,
           diagnosticMissions: service?.getDiagnosticMissions?.(auditId) ?? [],
           repairs: service?.getRepairs?.(auditId) ?? [],
+          browserReview: service?.getBrowserReview?.(auditId) ?? null,
         });
         const overridden = value.focusAreas !== undefined || value.maxPriorities !== undefined;
         return {
@@ -376,6 +395,7 @@ export function createFrontmendTools(service) {
               : "No supported failed rule matched this focus. Retained scores are automated evidence, not a complete manual audit.",
           },
           priorities: missionState.priorities,
+          browserReview: service?.getBrowserReview?.(auditId) ?? null,
           missionState,
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
@@ -386,6 +406,129 @@ export function createFrontmendTools(service) {
           recommendedNextAction: missionState.nextAction
             ? { tool: missionState.nextAction.tool, ...missionState.nextAction.input, reason: missionState.nextAction.reason }
             : null,
+        };
+      },
+    }),
+    tool({
+      name: "open_browser_review",
+      title: "Open agent browser review",
+      description:
+        "Open the persisted rendered-browser contribution required by an agent-started accessibility or SEO assessment. Frontmend returns one exact, non-destructive browser check at a time so the agent can inspect the target with browser controls instead of repeating Lighthouse output. This creates no site interaction by itself, accepts no findings, and does not inspect source or claim the page passed.",
+      inputSchema: {
+        ...emptySchema,
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+        },
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const review = await service.openBrowserReview(auditId);
+        return {
+          auditId,
+          browserReview: review,
+          nextAction: {
+            tool: "record_browser_review_check",
+            input: {
+              reviewId: review.id,
+              checkId: review.state.nextCheck?.id,
+            },
+            browserTask: review.state.nextCheck,
+            reason: "Use the browser to perform this exact check, then contribute only directly observed facts.",
+          },
+          authority: review.authority,
+        };
+      },
+    }),
+    tool({
+      name: "record_browser_review_check",
+      title: "Record browser review check",
+      description:
+        "Record the current exact browser-review check after using real browser controls on the retained target. Supply bounded observed facts, and structured findings only when the browser check actually exposed an issue. Use blocked with an exact reason when the browser, safe interaction, authentication, capability, or retained target prevents honest inspection. Frontmend keeps provider and browser provenance separate, advances to the next check, and never treats this contribution as repository, deployment, or resolution proof.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          reviewId: { type: "string", minLength: 1, maxLength: 160, description: "Browser review ID returned by open_browser_review." },
+          checkId: { type: "string", minLength: 1, maxLength: 80, description: "Exact current check ID returned by Frontmend." },
+          outcome: { type: "string", enum: [...BROWSER_REVIEW_OUTCOMES], description: "passed for no issue observed, issue with structured findings, or blocked when the check cannot honestly run." },
+          summary: { type: "string", minLength: 1, maxLength: 300, description: "Concise verdict grounded in the rendered browser check." },
+          observations: {
+            type: "array",
+            minItems: 1,
+            maxItems: 4,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 400 },
+            description: "One to four concrete rendered-browser facts. May be omitted only for a blocked check.",
+          },
+          findings: {
+            type: "array",
+            maxItems: 3,
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string", minLength: 1, maxLength: 240 },
+                severity: { type: "string", enum: ["high", "medium", "low"] },
+                focusArea: { type: "string", enum: ["accessibility", "seo"] },
+                evidence: { type: "string", minLength: 1, maxLength: 600 },
+                suggestedRepair: { type: "string", minLength: 1, maxLength: 600 },
+                element: { type: "string", minLength: 1, maxLength: 200 },
+              },
+              required: ["title", "severity", "focusArea", "evidence", "suggestedRepair"],
+              additionalProperties: false,
+            },
+            description: "One to three browser-observed issues, required only when outcome is issue.",
+          },
+          blockerReason: {
+            type: "string",
+            enum: [...BROWSER_REVIEW_BLOCKER_REASONS],
+            description: "Exact limitation, required only when outcome is blocked.",
+          },
+        },
+        required: ["reviewId", "checkId", "outcome", "summary"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "reviewId", "checkId", "outcome", "summary", "observations", "findings", "blockerReason"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const review = await service.recordBrowserReviewCheck(
+          auditId,
+          requiredString(value.reviewId, "reviewId", 160),
+          {
+            checkId: requiredString(value.checkId, "checkId", 80),
+            outcome: value.outcome,
+            summary: requiredString(value.summary, "summary", 300),
+            observations: value.observations,
+            findings: value.findings,
+            blockerReason: value.blockerReason,
+          },
+          "agent",
+        );
+        const nextCheck = review.state.nextCheck;
+        return {
+          auditId,
+          browserReview: review,
+          acceptedCheck: review.results.find((result) => result.checkId === value.checkId) ?? null,
+          assessmentComplete: Boolean(service?.getAuditMissionState?.(auditId)?.assessmentComplete),
+          nextAction: review.state.complete
+            ? {
+                tool: "get_site_audit_results",
+                input: { auditId },
+                reason: "Re-read the combined provider and browser evidence to continue the persisted mission.",
+              }
+            : {
+                tool: "record_browser_review_check",
+                input: { reviewId: review.id, checkId: nextCheck?.id },
+                browserTask: nextCheck,
+                reason: review.state.status === "blocked"
+                  ? "Retry this exact check only when the named blocker is resolved; do not invent observations."
+                  : "Use the browser to perform the next exact check.",
+              },
+          authority: review.authority,
         };
       },
     }),
@@ -435,7 +578,11 @@ export function createFrontmendTools(service) {
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
         const report = await service.getResults(auditId);
-        return createRepositoryFixBrief(report, findingId);
+        return createRepositoryFixBrief(
+          report,
+          findingId,
+          assessmentFindings(report, service?.getBrowserReview?.(auditId) ?? null),
+        );
       },
     }),
     tool({

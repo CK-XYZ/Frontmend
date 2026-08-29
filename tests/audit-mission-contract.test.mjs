@@ -12,6 +12,10 @@ import {
   recordDiagnosticBlocker,
   submitDiagnosticEvidence,
 } from "../src/diagnostic-contract.js";
+import {
+  createBrowserReviewMission,
+  recordBrowserReviewCheck,
+} from "../src/browser-review-contract.js";
 
 const consoleFinding = (strategy, severity = "medium") => ({
   id: `${strategy}-errors-in-console`,
@@ -140,14 +144,72 @@ test("projects a diagnostic blocker as an incomplete terminal assessment state",
   assert.equal(state.priorities[0].diagnosticBlocker.reason, "wrong-repository");
 });
 
-test("completes an honest zero-match assessment without inventing work", () => {
+test("completes an honest zero-match assessment only after its requested browser review", () => {
   const mission = createAuditMission({ focusAreas: ["seo"] }, "agent", 10);
-  const state = deriveAuditMissionState({ report, mission });
+  const providerOnly = deriveAuditMissionState({ report, mission });
+  assert.equal(providerOnly.assessmentComplete, false);
+  assert.equal(providerOnly.nextAction.tool, "open_browser_review");
+  let browserReview = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission,
+    target: "https://example.com/",
+    now: 20,
+  });
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered structure exposes the page topic.",
+    observations: ["One primary heading and a named main landmark are rendered."],
+  }, "agent", 30);
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "The primary rendered content and navigation expose the important destinations.",
+    observations: ["Descriptive same-site links are present in the primary navigation."],
+  }, "agent", 40);
+  const state = deriveAuditMissionState({ report, mission, browserReview });
   assert.equal(state.matchingFindingCount, 0);
   assert.equal(state.priorityCount, 0);
   assert.equal(state.assessmentComplete, true);
   assert.equal(state.nextAction, null);
   assert.deepEqual(state.categoryScores, { seo: null });
+  assert.equal(state.browserReview.status, "complete");
+});
+
+test("ranks browser-observed issues separately and requires repository diagnosis", () => {
+  const mission = createAuditMission({ focusAreas: ["seo"] }, "agent", 10);
+  let browserReview = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission,
+    target: "https://example.com/",
+    now: 20,
+  });
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered structure exposes the page topic.",
+    observations: ["One primary heading is rendered."],
+  }, "agent", 30);
+  browserReview = recordBrowserReviewCheck(browserReview, {
+    checkId: "search-discovery",
+    outcome: "issue",
+    summary: "The rendered page does not expose a path to important guidance.",
+    observations: ["No descriptive same-site link reaches the product guide."],
+    findings: [{
+      title: "Important guidance is absent from rendered navigation",
+      severity: "medium",
+      focusArea: "seo",
+      evidence: "The header and footer contain no link to the product guide.",
+      suggestedRepair: "Add a descriptive same-site link to the guide.",
+      element: "header nav, footer nav",
+    }],
+  }, "agent", 40);
+  const state = deriveAuditMissionState({ report, mission, browserReview });
+  assert.equal(state.priorityCount, 1);
+  assert.equal(state.priorities[0].evidenceProvenance, "agent-reported-browser");
+  assert.equal(state.priorities[0].source.provider, "Frontmend browser review");
+  assert.equal(state.nextAction.tool, "open_diagnostic_mission");
+  assert.equal(state.nextAction.input.findingId, "browser:search-discovery:01");
 });
 
 test("freezes explicit repair intent idempotently and rejects replacement", () => {

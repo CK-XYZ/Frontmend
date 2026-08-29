@@ -308,6 +308,41 @@ test("proxies a bounded diagnostic blocker to the authoritative audit job", asyn
   });
 });
 
+test("proxies a sequenced browser-review contribution to the authoritative audit job", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const reviewId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  const calls = [];
+  const body = {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered structure was inspected.",
+    observations: ["One primary heading is rendered."],
+    source: "agent",
+  };
+  const response = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/browser-review/${reviewId}/checks`,
+    {
+      method: "POST",
+      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      body: JSON.stringify(body),
+    },
+  ), {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init) => {
+          calls.push({ url: new URL(url), input: JSON.parse(init.body) });
+          return Response.json({ ok: true, data: { id: reviewId, state: { status: "in-progress" } } });
+        },
+      }),
+    },
+  });
+
+  assert.equal(response.status, 200);
+  assert.equal(calls[0].url.pathname, `/browser-review/${reviewId}/checks`);
+  assert.deepEqual(calls[0].input, body);
+});
+
 test("starts a related audit only from the parent job's authoritative route input", async () => {
   const parentId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
   const childId = "232d593c-6c81-48c3-b137-a3df269454ff";
@@ -659,7 +694,7 @@ test("Durable Object freezes repair intent without creating or approving a repai
   const firstPayload = await first.json();
   assert.equal(first.status, 200);
   assert.equal(firstPayload.data.mission.intent, "prepare-fix");
-  assert.equal(firstPayload.data.missionState.nextAction.tool, "stage_site_repair");
+  assert.equal(firstPayload.data.missionState.nextAction.tool, "open_browser_review");
   assert.equal(values.has("repairs"), false);
   assert.deepEqual(values.get("repairPolicy"), policy);
 
@@ -671,6 +706,92 @@ test("Durable Object freezes repair intent without creating or approving a repai
   const conflictPayload = await conflict.json();
   assert.equal(conflictPayload.error.code, "REPAIR_INTENT_CONFLICT");
   assert.equal(values.has("repairs"), false);
+});
+
+test("Durable Object persists sequential browser review evidence before completing assessment", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["seo"],
+    maxPriorities: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const values = new Map([["state", {
+    id: auditId,
+    url: "https://example.com/",
+    source: "agent",
+    mission,
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      completedAt: 100,
+      engine: { mode: "live-lighthouse", provider: "PageSpeed Insights / Lighthouse" },
+      findings: [],
+      viewports: [],
+    },
+  }]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const post = (path, body = {}) => job.fetch(new Request(`https://frontmend.internal${path}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }));
+
+  const earlyAssessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(earlyAssessment.status, 409);
+
+  const openedResponse = await post("/browser-review");
+  assert.equal(openedResponse.status, 201);
+  const opened = (await openedResponse.json()).data;
+  assert.equal(opened.state.nextCheck.id, "rendered-structure");
+
+  const skipped = await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "Skipped ahead.",
+    observations: ["A fact."],
+  });
+  assert.equal(skipped.status, 409);
+  assert.equal((await skipped.json()).error.code, "BROWSER_REVIEW_SEQUENCE");
+
+  const structure = await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered structure exposes the page topic.",
+    observations: ["One primary heading and a named main landmark are rendered."],
+  });
+  assert.equal(structure.status, 200);
+  assert.equal((await structure.json()).data.state.nextCheck.id, "search-discovery");
+
+  const discovery = await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "The rendered navigation exposes important same-site destinations.",
+    observations: ["Descriptive links connect the primary content to supporting guidance."],
+  });
+  const completed = (await discovery.json()).data;
+  assert.equal(completed.state.status, "complete");
+  assert.equal(completed.state.completedCheckCount, 2);
+
+  const assessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(assessment.status, 200);
+  const markdown = await assessment.text();
+  assert.match(markdown, /Agent-contributed browser review/);
+  assert.match(markdown, /Coverage: 2 of 2 requested checks/);
 });
 
 test("proxies a completed audit report through the stable public route", async () => {

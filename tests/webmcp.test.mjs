@@ -6,6 +6,10 @@ import {
   createFrontmendTools,
   registerFrontmendTools,
 } from "../src/webmcp.js";
+import {
+  createBrowserReviewMission,
+  recordBrowserReviewCheck,
+} from "../src/browser-review-contract.js";
 
 function findTool(tools, name) {
   const tool = tools.find((item) => item.name === name);
@@ -18,6 +22,8 @@ const TOOL_NAMES = [
   "check_site_audit_progress",
   "cancel_site_audit",
   "get_site_audit_results",
+  "open_browser_review",
+  "record_browser_review_check",
   "get_assessment_receipt",
   "get_repository_fix_brief",
   "start_related_page_audit",
@@ -34,6 +40,22 @@ const TOOL_NAMES = [
   "record_repository_implementation",
   "start_repair_verification",
 ];
+
+function completedBrowserReview({ auditId, mission, target = "https://example.com/" }) {
+  let review = createBrowserReviewMission({ auditId, mission, target, now: 20 });
+  let now = 30;
+  while (review.state.nextCheck) {
+    const check = review.state.nextCheck;
+    review = recordBrowserReviewCheck(review, {
+      checkId: check.id,
+      outcome: "passed",
+      summary: `${check.label} was inspected in the rendered browser.`,
+      observations: [`The ${check.id} browser check produced a directly observed fact.`],
+    }, "agent", now);
+    now += 10;
+  }
+  return review;
+}
 
 test("repository fix brief gives a coding agent bounded evidence without claiming source access", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
@@ -222,7 +244,8 @@ test("agent tools use the same audit service as the human interface", async () =
   const results = await findTool(tools, "get_site_audit_results").execute({});
   assert.equal(results.ok, true);
   assert.equal(results.data.auditId, started.data.id);
-  assert.equal(results.data.missionState.assessmentComplete, true);
+  assert.equal(results.data.missionState.assessmentComplete, false);
+  assert.equal(results.data.recommendedNextAction.tool, "open_browser_review");
   assert.equal(results.data.resultProjection.mode, "persisted-mission");
   const activities = service.getAgentActivities();
   assert.deepEqual(
@@ -517,10 +540,12 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
     repairPreparation: null,
   };
   let diagnosticMissions = [];
+  let browserReview = null;
   const service = {
     getActiveAudit: () => ({ id: auditId, status: "complete", report, mission }),
     getResults: async () => report,
     getDiagnosticMissions: () => diagnosticMissions,
+    getBrowserReview: () => browserReview,
     getRepairs: () => [],
   };
   const tool = findTool(createFrontmendTools(service), "get_site_audit_results");
@@ -533,17 +558,23 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.deepEqual(result.data.priorities[0].affectedStrategies, ["mobile", "desktop"]);
   assert.equal(result.data.priorities[0].diagnosticMissionRequired, true);
   assert.deepEqual(result.data.recommendedNextAction, {
-    tool: "open_diagnostic_mission",
-    findingId: "mobile-color-contrast",
-    reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
+    tool: "open_browser_review",
+    reason: "The agent-started accessibility or SEO assessment requires structured rendered-browser evidence beyond provider measurement.",
   });
   assert.deepEqual(result.data.focusSummary.categoryScores, { accessibility: 94, seo: 94 });
   assert.equal(result.data.missionState.auditComplete, true);
   assert.equal(result.data.missionState.assessmentComplete, false);
-  assert.deepEqual(result.data.missionState.nextAction.input, {
-    findingId: "mobile-color-contrast",
-  });
+  assert.deepEqual(result.data.missionState.nextAction.input, {});
   assert.equal(result.data.resultProjection.mode, "persisted-mission");
+
+  browserReview = completedBrowserReview({ auditId, mission });
+  const browserContributed = await tool.execute({});
+  assert.equal(browserContributed.data.browserReview.state.status, "complete");
+  assert.deepEqual(browserContributed.data.recommendedNextAction, {
+    tool: "open_diagnostic_mission",
+    findingId: "mobile-color-contrast",
+    reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
+  });
 
   diagnosticMissions = [{
     id: "diagnostic-1",
@@ -577,6 +608,78 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.equal(override.data.resultProjection.changedPersistedMission, false);
   assert.deepEqual(override.data.requestedFocusAreas, ["seo"]);
   assert.deepEqual(mission.focusAreas, ["accessibility", "seo"]);
+});
+
+test("browser review tools turn one exact browser task at a time into attributed evidence", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["seo"],
+    maxPriorities: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  let review = null;
+  const calls = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", mission }),
+    openBrowserReview: async (id) => {
+      calls.push(["open", id]);
+      review ??= createBrowserReviewMission({
+        auditId,
+        mission,
+        target: "https://example.com/",
+        now: 20,
+      });
+      return review;
+    },
+    recordBrowserReviewCheck: async (id, reviewId, input, source) => {
+      calls.push(["record", id, reviewId, input.checkId, source]);
+      review = recordBrowserReviewCheck(review, input, source, 30 + review.results.length);
+      return review;
+    },
+    getAuditMissionState: () => ({ assessmentComplete: review?.state.complete ?? false }),
+  };
+  const tools = createFrontmendTools(service);
+  const opened = await findTool(tools, "open_browser_review").execute({});
+  assert.equal(opened.ok, true);
+  assert.equal(opened.data.nextAction.browserTask.id, "rendered-structure");
+  assert.match(opened.data.nextAction.browserTask.boundary, /Do not repeat the provider score/);
+
+  const first = await findTool(tools, "record_browser_review_check").execute({
+    reviewId: review.id,
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered page exposes a coherent structure.",
+    observations: ["One primary heading and a named main landmark are rendered."],
+  });
+  assert.equal(first.ok, true);
+  assert.equal(first.data.acceptedCheck.agentReported, true);
+  assert.equal(first.data.nextAction.browserTask.id, "search-discovery");
+
+  const final = await findTool(tools, "record_browser_review_check").execute({
+    reviewId: review.id,
+    checkId: "search-discovery",
+    outcome: "issue",
+    summary: "Important supporting guidance is not discoverable from rendered navigation.",
+    observations: ["No same-site link reaches the product guide."],
+    findings: [{
+      title: "Product guidance has no rendered discovery path",
+      severity: "medium",
+      focusArea: "seo",
+      evidence: "The header and footer expose no link to the product guide.",
+      suggestedRepair: "Add a descriptive, crawlable link to the guide.",
+      element: "header nav, footer nav",
+    }],
+  });
+  assert.equal(final.ok, true);
+  assert.equal(final.data.browserReview.state.status, "complete");
+  assert.equal(final.data.browserReview.findings[0].source.provider, "Frontmend browser review");
+  assert.equal(final.data.browserReview.findings[0].browserReviewEvidence.provenance, "agent-reported-browser");
+  assert.equal(final.data.nextAction.tool, "get_site_audit_results");
+  assert.deepEqual(calls.map((call) => call[0]), ["open", "record", "record"]);
 });
 
 test("prepare repair tool records only explicit finding intent", async () => {
@@ -676,7 +779,7 @@ test("repair preparation updates contextual tools without exposing person-only a
   service.subscribe(() => {
     notifications += 1;
   });
-  await service.startAudit({ url: "example.com", source: "agent", mission: { focusAreas: ["seo"] } });
+  await service.startAudit({ url: "example.com", source: "human", mission: { focusAreas: ["seo"] } });
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_repository_fix_brief",
@@ -1200,7 +1303,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 19);
+  assert.equal(snapshots.at(-1).totalTools, 21);
   dispose();
 });
 
@@ -1268,7 +1371,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 19);
+  assert.equal(snapshots.at(-1).totalTools, 21);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

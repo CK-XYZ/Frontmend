@@ -274,7 +274,7 @@ function browserFinding({ review, check, input, finding, index, now }) {
     repair: boundedString(finding.suggestedRepair, "finding.suggestedRepair", 600),
     source: {
       provider: "Frontmend browser review",
-      auditId: check.id,
+      auditId: `${check.id}:${String(index + 1).padStart(2, "0")}`,
       strategy: check.viewport,
     },
     browserReviewEvidence: {

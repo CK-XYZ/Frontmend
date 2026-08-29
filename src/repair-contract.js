@@ -433,12 +433,13 @@ function repositorySourceHints(patchType) {
   return hints[patchType] ?? hints.guidance;
 }
 
-export function createRepositoryFixBrief(report, findingId) {
+export function createRepositoryFixBrief(report, findingId, findingCandidates = report?.findings) {
   if (!report || typeof report !== "object") {
     throw new AuditError("AUDIT_REPORT_UNAVAILABLE", "A completed audit report is required.");
   }
-  const finding = Array.isArray(report.findings)
-    ? report.findings.find((candidate) => candidate?.id === findingId)
+  const retainedFindings = Array.isArray(findingCandidates) ? findingCandidates : [];
+  const finding = retainedFindings.length
+    ? retainedFindings.find((candidate) => candidate?.id === findingId)
     : null;
   if (!finding) throw new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist.");
   const template = templateForFinding(finding);
@@ -447,7 +448,7 @@ export function createRepositoryFixBrief(report, findingId) {
   const sameRule = (candidate) =>
     candidate?.source?.provider === source.provider &&
     candidate?.source?.auditId === source.auditId;
-  const matchingFindings = report.findings.filter(sameRule);
+  const matchingFindings = retainedFindings.filter(sameRule);
   const occurrences = matchingFindings.slice(0, 4).map((candidate) => ({
     findingId: briefText(candidate.id, 160),
     strategy: briefText(candidate.source?.strategy, 40),

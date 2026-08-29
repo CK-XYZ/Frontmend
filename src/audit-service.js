@@ -144,6 +144,37 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
+    async getBrowserReview(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async openBrowserReview(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: "{}",
+        }),
+      );
+    },
+
+    async recordBrowserReviewCheck(auditId, reviewId, input, source = "agent") {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review/${encodeURIComponent(reviewId)}/checks`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent" }),
+          },
+        ),
+      );
+    },
+
     async openDiagnosticMission(auditId, findingId) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics`, {
@@ -314,6 +345,7 @@ export function createAuditService(options = {}) {
   const jobs = new Map();
   const repairs = new Map();
   const diagnosticMissions = new Map();
+  const browserReviews = new Map();
   const repairPolicies = new Map();
   const explorations = new Map();
   const listeners = new Set();
@@ -355,6 +387,13 @@ export function createAuditService(options = {}) {
     ]);
     emit();
     return mission;
+  };
+
+  const rememberBrowserReview = (review, expectedGeneration = generation) => {
+    if (!review?.id || expectedGeneration !== generation) return review;
+    browserReviews.set(review.auditId, review);
+    emit();
+    return review;
   };
 
   const rememberExploration = (exploration, expectedGeneration = generation) => {
@@ -535,6 +574,38 @@ export function createAuditService(options = {}) {
       );
     },
 
+    async loadBrowserReview(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const workspace = await transport.getBrowserReview(auditId);
+      if (workspace.review) rememberBrowserReview(workspace.review, expectedGeneration);
+      return workspace;
+    },
+
+    async openBrowserReview(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      return rememberBrowserReview(
+        await transport.openBrowserReview(auditId),
+        expectedGeneration,
+      );
+    },
+
+    async recordBrowserReviewCheck(auditId, reviewId, input, source = "agent") {
+      if (typeof auditId !== "string" || !auditId || typeof reviewId !== "string" || !reviewId) {
+        throw new AuditError("INVALID_INPUT", "auditId and reviewId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberBrowserReview(
+        await transport.recordBrowserReviewCheck(auditId, reviewId, input, source),
+        expectedGeneration,
+      );
+    },
+
     async submitDiagnosticEvidence(auditId, missionId, input, source = "agent") {
       if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
         throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
@@ -646,6 +717,10 @@ export function createAuditService(options = {}) {
       return diagnosticMissions.get(auditId) ?? [];
     },
 
+    getBrowserReview(auditId) {
+      return browserReviews.get(auditId) ?? null;
+    },
+
     getRepairPolicy(auditId) {
       return repairPolicies.get(auditId) ?? {
         version: 1,
@@ -681,6 +756,7 @@ export function createAuditService(options = {}) {
         report: audit?.report ?? null,
         mission: audit?.mission,
         diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+        browserReview: browserReviews.get(auditId) ?? null,
       });
     },
 
@@ -708,6 +784,7 @@ export function createAuditService(options = {}) {
         mission: audit.mission,
         diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
         repairs: repairs.get(auditId) ?? [],
+        browserReview: browserReviews.get(auditId) ?? null,
       });
     },
 
@@ -720,6 +797,7 @@ export function createAuditService(options = {}) {
         mission: audit.mission,
         diagnosticMissions: diagnosticMissions.get(activeAuditId) ?? [],
         repairs: repairs.get(activeAuditId) ?? [],
+        browserReview: browserReviews.get(activeAuditId) ?? null,
       });
     },
 
@@ -772,6 +850,7 @@ export function createAuditService(options = {}) {
       activeAuditId = null;
       repairs.clear();
       diagnosticMissions.clear();
+      browserReviews.clear();
       repairPolicies.clear();
       explorations.clear();
       emit();
