@@ -3039,6 +3039,7 @@ export function App() {
     missionState: inspectorMissionState,
     repairs: inspectorRepairs,
     browserReview: inspectorBrowserReview,
+    checkpoint: audit?.id ? auditService.getMissionCheckpoint(audit.id) : null,
     contextualToolNames: webMcp.toolNames,
     toolDetails: createFrontmendTools(auditService),
     webMcp,

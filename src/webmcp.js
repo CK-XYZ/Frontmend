@@ -23,6 +23,26 @@ import {
 } from "./browser-review-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
+const expectedMissionRevisionProperty = {
+  type: "integer",
+  minimum: 1,
+  description: "Exact mission revision from the latest checkpoint. Stale writes are rejected with the current checkpoint.",
+};
+const checkpointedMutationTools = new Set([
+  "cancel_site_audit",
+  "open_browser_review",
+  "record_browser_review_check",
+  "start_related_page_audit",
+  "open_diagnostic_mission",
+  "submit_runtime_diagnosis",
+  "record_diagnostic_blocker",
+  "start_site_exploration",
+  "prepare_site_repair",
+  "stage_site_repair",
+  "revise_site_repair",
+  "record_repository_implementation",
+  "start_repair_verification",
+]);
 
 function objectInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -65,6 +85,21 @@ function auditIdForTool(service, value) {
   );
 }
 
+function expectedMissionRevisionForTool(service, auditId, value) {
+  if (Number.isInteger(value) && value > 0) return value;
+  const checkpoint = service?.getMissionCheckpoint?.(auditId);
+  if (Number.isInteger(checkpoint?.missionRevision) && checkpoint.missionRevision > 0) {
+    return checkpoint.missionRevision;
+  }
+  const activeAudit = service?.getActiveAudit?.();
+  if (activeAudit?.id === auditId) {
+    return Number.isInteger(activeAudit.missionRevision) && activeAudit.missionRevision > 0
+      ? activeAudit.missionRevision
+      : 1;
+  }
+  throw new AuditError("MISSION_REVISION_REQUIRED", "Read the latest mission checkpoint before changing this audit.");
+}
+
 async function safely(operation) {
   try {
     return { ok: true, data: await operation() };
@@ -72,7 +107,12 @@ async function safely(operation) {
     if (error instanceof AuditError) {
       return {
         ok: false,
-        error: { code: error.code, message: error.message, recoverable: error.recoverable !== false },
+        error: {
+          code: error.code,
+          message: error.message,
+          recoverable: error.recoverable !== false,
+          ...(error.details ? { details: error.details } : {}),
+        },
       };
     }
     return {
@@ -343,19 +383,26 @@ export function createFrontmendTools(service) {
         type: "object",
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional audit ID; defaults to the visible audit." },
+          expectedMissionRevision: expectedMissionRevisionProperty,
         },
+        required: ["expectedMissionRevision"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, untrustedContentHint: false },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId"]);
-        const audit = await service.cancelAudit(auditIdForTool(service, value.auditId));
+        noExtra(value, ["auditId", "expectedMissionRevision"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const audit = await service.cancelAudit(
+          auditId,
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
         return {
           auditId: audit.id,
           attempt: Number.isFinite(audit.attempt) ? audit.attempt : 1,
           status: audit.status,
           workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
+          missionCheckpoint: audit.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           message:
             audit.status === "cancelled"
               ? "The audit is cancelled. No result was produced."
@@ -421,6 +468,7 @@ export function createFrontmendTools(service) {
           priorities: missionState.priorities,
           browserReview: service?.getBrowserReview?.(auditId) ?? null,
           missionState,
+          missionCheckpoint: report.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
             changedPersistedMission: false,
@@ -442,17 +490,23 @@ export function createFrontmendTools(service) {
         ...emptySchema,
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
+          expectedMissionRevision: expectedMissionRevisionProperty,
         },
+        required: ["expectedMissionRevision"],
       },
       annotations: { readOnlyHint: false, untrustedContentHint: false },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId"]);
+        noExtra(value, ["auditId", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
-        const review = await service.openBrowserReview(auditId);
+        const review = await service.openBrowserReview(
+          auditId,
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
         return {
           auditId,
           browserReview: review,
+          missionCheckpoint: review.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: {
             tool: "record_browser_review_check",
             input: {
@@ -510,14 +564,15 @@ export function createFrontmendTools(service) {
             enum: [...BROWSER_REVIEW_BLOCKER_REASONS],
             description: "Exact limitation, required only when outcome is blocked.",
           },
+          expectedMissionRevision: expectedMissionRevisionProperty,
         },
-        required: ["reviewId", "checkId", "outcome", "summary"],
+        required: ["reviewId", "checkId", "outcome", "summary", "expectedMissionRevision"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "reviewId", "checkId", "outcome", "summary", "observations", "findings", "blockerReason"]);
+        noExtra(value, ["auditId", "reviewId", "checkId", "outcome", "summary", "observations", "findings", "blockerReason", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const review = await service.recordBrowserReviewCheck(
           auditId,
@@ -531,11 +586,13 @@ export function createFrontmendTools(service) {
             blockerReason: value.blockerReason,
           },
           "agent",
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         const nextCheck = review.state.nextCheck;
         return {
           auditId,
           browserReview: review,
+          missionCheckpoint: review.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           acceptedCheck: review.results.find((result) => result.checkId === value.checkId) ?? null,
           assessmentComplete: Boolean(service?.getAuditMissionState?.(auditId)?.assessmentComplete),
           verificationComplete: review.purpose === "verification" && review.state.complete,
@@ -633,12 +690,13 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "path"]);
+        noExtra(value, ["auditId", "path", "expectedMissionRevision"]);
         const baselineAuditId = auditIdForTool(service, value.auditId);
         const audit = await service.startRelatedAudit(
           baselineAuditId,
           requiredString(value.path, "path", 256),
           "agent",
+          expectedMissionRevisionForTool(service, baselineAuditId, value.expectedMissionRevision),
         );
         return {
           ...audit,
@@ -669,11 +727,12 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId"]);
+        noExtra(value, ["auditId", "findingId", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const mission = await service.openDiagnosticMission(
           auditId,
           requiredString(value.findingId, "findingId", 160),
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         return {
           auditId,
@@ -683,6 +742,7 @@ export function createFrontmendTools(service) {
           evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
           requiredInvestigations: mission.requiredInvestigations,
           state: mission.state,
+          missionCheckpoint: mission.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: "Reproduce the issue in the browser, map it to repository-relative source locations, then submit the bounded diagnosis. If that evidence is genuinely unavailable or conflicts, record the exact diagnostic blocker instead. Do not include source contents or absolute paths.",
         };
       },
@@ -735,7 +795,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "missionId", "summary", "reproduction", "observations", "sourceLocations", "verificationChecks", "confidence"]);
+        noExtra(value, ["auditId", "missionId", "summary", "reproduction", "observations", "sourceLocations", "verificationChecks", "confidence", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const mission = await service.submitDiagnosticEvidence(
           auditId,
@@ -749,6 +809,7 @@ export function createFrontmendTools(service) {
             confidence: value.confidence,
           },
           "agent",
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         return {
           auditId,
@@ -758,6 +819,7 @@ export function createFrontmendTools(service) {
           evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
           diagnosis: mission.diagnosis,
           state: mission.state,
+          missionCheckpoint: mission.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: "The diagnosis is ready for a separate repository repair proposal. Human review or a previously scoped auto-mode grant still controls approval.",
         };
       },
@@ -790,7 +852,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "missionId", "reason", "summary"]);
+        noExtra(value, ["auditId", "missionId", "reason", "summary", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const mission = await service.recordDiagnosticBlocker(
           auditId,
@@ -800,6 +862,7 @@ export function createFrontmendTools(service) {
             summary: requiredString(value.summary, "summary", 300),
           },
           "agent",
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         return {
           auditId,
@@ -810,6 +873,7 @@ export function createFrontmendTools(service) {
           blocker: mission.blocker,
           state: mission.state,
           assessmentComplete: false,
+          missionCheckpoint: mission.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: "The finding remains unresolved and no repair can be staged from this blocker. When browser and repository access match the measured runtime, submit the bounded diagnosis to resume.",
         };
       },
@@ -838,12 +902,13 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "paths"]);
+        noExtra(value, ["auditId", "paths", "expectedMissionRevision"]);
         const rootAuditId = auditIdForTool(service, value.auditId);
         const exploration = await service.startSiteExploration(
           rootAuditId,
           observedPaths(value.paths),
           "agent",
+          expectedMissionRevisionForTool(service, rootAuditId, value.expectedMissionRevision),
         );
         return {
           ...exploration,
@@ -933,10 +998,15 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId"]);
+        noExtra(value, ["auditId", "findingId", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
-        const prepared = await service.prepareRepair(auditId, findingId, "agent");
+        const prepared = await service.prepareRepair(
+          auditId,
+          findingId,
+          "agent",
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
         return {
           auditId,
           findingId,
@@ -944,6 +1014,7 @@ export function createFrontmendTools(service) {
           missionState: prepared.missionState,
           workspacePath: `/audits/${encodeURIComponent(auditId)}`,
           nextAction: prepared.missionState?.nextAction ?? null,
+          missionCheckpoint: prepared.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           authority: {
             recordedIntentOnly: true,
             approved: false,
@@ -995,7 +1066,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks"]);
+        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
@@ -1006,17 +1077,21 @@ export function createFrontmendTools(service) {
         if (value.risk !== undefined && !risks.includes(value.risk)) {
           throw new AuditError("INVALID_INPUT", "risk is not supported.");
         }
-        const repair = await service.stageRepair(auditId, {
-          findingId,
-          source: "agent",
-          summary: optionalString(value.summary, "summary", 300),
-          patchType: value.patchType,
-          patch: optionalString(value.patch, "patch", 1200),
-          verificationPlan: optionalString(value.verificationPlan, "verificationPlan", 500),
-          risk: value.risk,
-          repositoryFiles: value.repositoryFiles,
-          repositoryChecks: value.repositoryChecks,
-        });
+        const repair = await service.stageRepair(
+          auditId,
+          {
+            findingId,
+            source: "agent",
+            summary: optionalString(value.summary, "summary", 300),
+            patchType: value.patchType,
+            patch: optionalString(value.patch, "patch", 1200),
+            verificationPlan: optionalString(value.verificationPlan, "verificationPlan", 500),
+            risk: value.risk,
+            repositoryFiles: value.repositoryFiles,
+            repositoryChecks: value.repositoryChecks,
+          },
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
         return {
           auditId,
           repairId: repair.id,
@@ -1033,6 +1108,7 @@ export function createFrontmendTools(service) {
           approval: repair.approval,
           automation: repair.automation,
           mission: repair.mission ?? repairMissionState(repair),
+          missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: repair.status === "approved" && repair.approval?.mode === "delegated-auto"
             ? "This low-risk mission was auto-authorised by the person's prior scoped grant. Implement the reviewed repository plan, run its checks, and record the implementation receipt."
             : "Ask the person to review and approve the visible draft in Frontmend.",
@@ -1081,7 +1157,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "repairId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks"]);
+        noExtra(value, ["auditId", "repairId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "expectedMissionRevision"]);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
         const risks = ["low", "medium", "high"];
         if (!patchTypes.includes(value.patchType)) {
@@ -1092,15 +1168,20 @@ export function createFrontmendTools(service) {
         }
         const auditId = auditIdForTool(service, value.auditId);
         const repairId = requiredString(value.repairId, "repairId", 80);
-        const repair = await service.reviseRepair(auditId, repairId, {
-          summary: requiredString(value.summary, "summary", 300),
-          patchType: value.patchType,
-          patch: requiredString(value.patch, "patch", 1200),
-          verificationPlan: requiredString(value.verificationPlan, "verificationPlan", 500),
-          risk: value.risk,
-          repositoryFiles: value.repositoryFiles,
-          repositoryChecks: value.repositoryChecks,
-        });
+        const repair = await service.reviseRepair(
+          auditId,
+          repairId,
+          {
+            summary: requiredString(value.summary, "summary", 300),
+            patchType: value.patchType,
+            patch: requiredString(value.patch, "patch", 1200),
+            verificationPlan: requiredString(value.verificationPlan, "verificationPlan", 500),
+            risk: value.risk,
+            repositoryFiles: value.repositoryFiles,
+            repositoryChecks: value.repositoryChecks,
+          },
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
         return {
           auditId,
           repairId: repair.id,
@@ -1114,6 +1195,7 @@ export function createFrontmendTools(service) {
           repositoryPlan: repair.repositoryPlan,
           requiresHumanReview: true,
           mission: repair.mission ?? repairMissionState(repair),
+          missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: "Ask the person to review the revised proposal in Frontmend.",
         };
       },
@@ -1255,7 +1337,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: false },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "repairId", "summary", "files", "checks", "commitSha"]);
+        noExtra(value, ["auditId", "repairId", "summary", "files", "checks", "commitSha", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const repair = await service.recordImplementation(
           auditId,
@@ -1266,6 +1348,7 @@ export function createFrontmendTools(service) {
             checks: value.checks,
             commitSha: optionalString(value.commitSha, "commitSha", 64),
           },
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         const mission = repair.mission ?? repairMissionState(repair);
         const nextAction = mission.implementationEvidence === "checks-passed"
@@ -1279,6 +1362,7 @@ export function createFrontmendTools(service) {
           status: repair.status,
           implementationReceipt: repair.implementationReceipt,
           mission,
+          missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction,
         };
       },
@@ -1300,19 +1384,37 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "repairId"]);
+        noExtra(value, ["auditId", "repairId", "expectedMissionRevision"]);
+        const auditId = auditIdForTool(service, value.auditId);
         const audit = await service.startVerification(
-          auditIdForTool(service, value.auditId),
+          auditId,
           requiredString(value.repairId, "repairId", 80),
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
-        return { ...audit, workspacePath: `/audits/${encodeURIComponent(audit.id)}` };
+        return {
+          ...audit,
+          missionCheckpoint: audit.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
+          workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
+        };
       },
     }),
   ];
   return tools.map((definition) => {
     const execute = definition.execute;
+    const requiresCheckpoint = checkpointedMutationTools.has(definition.name);
+    const inputSchema = requiresCheckpoint
+      ? {
+          ...definition.inputSchema,
+          properties: {
+            ...(definition.inputSchema?.properties ?? {}),
+            expectedMissionRevision: expectedMissionRevisionProperty,
+          },
+          required: [...new Set([...(definition.inputSchema?.required ?? []), "expectedMissionRevision"])],
+        }
+      : definition.inputSchema;
     return {
       ...definition,
+      inputSchema,
       async execute(input) {
         let activityId = null;
         try {

@@ -256,3 +256,13 @@
 - Preserved the existing dialog role, modal semantics, focus trap, Escape handling, close-button focus restoration, Phosphor icons, and complete Human mode. Added a single-column 390 px layout without changing the human audit workflow.
 - Inspector, mission, WebMCP, and service suites passed 62/62. The production build transformed 4,581 modules and emitted `index-DVFarWPd.css` at 87.96 kB raw / 17.64 kB gzip and `index-Cc1vt4aS.js` at 489.19 kB raw / 133.75 kB gzip.
 - Fresh visual, horizontal-overflow, keyboard, and focus-restoration proof remains intentionally unchecked because no server or deployment was authorised. No server, deployment, push, Access change, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — Fresh-session mission checkpoints
+
+- Added one pure checkpoint contract derived from the authoritative audit, mission, browser review, diagnosis, repair, and exploration records. Legacy jobs project as revision 1 without a persisted rewrite or a parallel state machine.
+- Persisted monotonic mission revisions across terminal measurement and mission-relevant browser, diagnosis, repair, policy, exploration, implementation, deployment, verification, and cancellation transitions in both the Durable Object and local runtime.
+- Added `expectedMissionRevision` to every state-changing WebMCP schema other than audit start. Human service calls attach their currently loaded revision automatically; stale non-idempotent writes return `MISSION_REVISION_STALE` with the current bounded checkpoint through HTTP, service, and WebMCP error wrappers.
+- Preserved idempotent review/diagnosis/repair reopens, repair-intent repeats, identical accepted browser contributions, terminal cancellation, deployment attestation, and existing verification restarts without consuming a second revision.
+- Added `/api/audits/:id/checkpoint`; completed results and relevant mutation responses return the same checkpoint, and the mission inspector now consumes it. The contextual library remains exactly 21 tools and Human mode remains complete.
+- Checkpoint, service, WebMCP, Durable Object, local-runtime, and Sites packaging suites passed 91/91. The production build transformed 4,582 modules and emitted `index-DVFarWPd.css` at 87.96 kB raw / 17.64 kB gzip and `index-CoPblb_Z.js` at 500.78 kB raw / 136.31 kB gzip.
+- Vite emitted its existing-style chunk-size advisory because the main JavaScript chunk crossed 500 kB. No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.

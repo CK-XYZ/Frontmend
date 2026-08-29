@@ -306,14 +306,18 @@ Make session independence a first-class product feature. A new agent should resu
   status: "action-available" | "in-progress" | "blocked" | "complete",
   nextActor: "agent" | "person" | null,
   requiredCapability: "browser" | "repository" | "human-review" | "deployment" | null,
-  nextAction: {
+  action: {
     tool: "...",
     input: { "...": "..." },
-    reason: "...",
-    completionCriteria: "..."
+    reason: "..."
   },
+  completionCriteria: ["..."],
   retainedEvidenceSummary: ["..."],
-  authorityBoundary: "..."
+  authorityBoundary: {
+    humanOnly: ["..."],
+    agentMay: "...",
+    claim: "..."
+  }
 }
 ```
 
@@ -419,7 +423,7 @@ bun run build
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
 - [x] **2. Evidence reconciliation contract** — completed and verified locally on 30 August 2026
 - [x] **3. WebMCP mission inspector** — implemented and statically verified on 30 August 2026; fresh visual/keyboard proof remains separate
-- [ ] **4. Fresh-session mission checkpoints**
+- [x] **4. Fresh-session mission checkpoints** — completed and verified locally on 30 August 2026
 - [ ] **5. Reviewed repair impact and verification matrix**
 - [ ] **6. Full command-safe regression and release gate**
 - [ ] **7. Fresh current-candidate browser proof after explicit deployment/server authority**

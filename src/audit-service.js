@@ -1,6 +1,7 @@
 import { AuditError, normalizePublicUrl } from "./url-policy.js";
 import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
 import { createAssessmentReceipt } from "./assessment-receipt.js";
+import { auditMissionRevision, createMissionCheckpoint } from "./mission-checkpoint-contract.js";
 
 export { AuditError, normalizePublicUrl } from "./url-policy.js";
 
@@ -19,6 +20,7 @@ async function responsePayload(response) {
         ? detail.message
         : "The live audit service could not complete the request.",
       detail?.recoverable !== false,
+      detail?.details && typeof detail.details === "object" ? detail.details : null,
     );
   }
   if (!payload?.data || typeof payload.data !== "object") {
@@ -50,17 +52,17 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async startRelated(auditId, path, source) {
+    async startRelated(auditId, path, source, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/routes`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ path, source }),
+          body: JSON.stringify({ path, source, expectedMissionRevision }),
         }),
       );
     },
 
-    async prepareRepair(auditId, findingId, source) {
+    async prepareRepair(auditId, findingId, source, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/mission/prepare-repair`,
@@ -70,18 +72,19 @@ export function createHttpAuditTransport(options = {}) {
             body: JSON.stringify({
               findingId,
               source: source === "agent" ? "agent" : "human",
+              expectedMissionRevision,
             }),
           },
         ),
       );
     },
 
-    async startExploration(auditId, paths, source) {
+    async startExploration(auditId, paths, source, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ paths, source }),
+          body: JSON.stringify({ paths, source, expectedMissionRevision }),
         }),
       );
     },
@@ -111,11 +114,20 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async cancel(auditId) {
+    async checkpoint(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/checkpoint`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async cancel(auditId, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}`, {
           method: "DELETE",
-          headers: { accept: "application/json" },
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ expectedMissionRevision }),
         }),
       );
     },
@@ -152,60 +164,60 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async openBrowserReview(auditId) {
+    async openBrowserReview(auditId, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: "{}",
+          body: JSON.stringify({ expectedMissionRevision }),
         }),
       );
     },
 
-    async recordBrowserReviewCheck(auditId, reviewId, input, source = "agent") {
+    async recordBrowserReviewCheck(auditId, reviewId, input, source = "agent", expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/browser-review/${encodeURIComponent(reviewId)}/checks`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent" }),
+            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent", expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async openDiagnosticMission(auditId, findingId) {
+    async openDiagnosticMission(auditId, findingId, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ findingId }),
+          body: JSON.stringify({ findingId, expectedMissionRevision }),
         }),
       );
     },
 
-    async submitDiagnosticEvidence(auditId, missionId, input, source = "agent") {
+    async submitDiagnosticEvidence(auditId, missionId, input, source = "agent", expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics/${encodeURIComponent(missionId)}/evidence`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent" }),
+            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent", expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async recordDiagnosticBlocker(auditId, missionId, input, source = "agent") {
+    async recordDiagnosticBlocker(auditId, missionId, input, source = "agent", expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/diagnostics/${encodeURIComponent(missionId)}/blocker`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent" }),
+            body: JSON.stringify({ ...input, source: source === "person" ? "person" : "agent", expectedMissionRevision }),
           },
         ),
       );
@@ -219,99 +231,99 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async setRepairPolicy(auditId, mode) {
+    async setRepairPolicy(auditId, mode, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repair-policy`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ mode }),
+          body: JSON.stringify({ mode, expectedMissionRevision }),
         }),
       );
     },
 
-    async stageRepair(auditId, input) {
+    async stageRepair(auditId, input, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify(input),
+          body: JSON.stringify({ ...input, expectedMissionRevision }),
         }),
       );
     },
 
-    async approveRepair(auditId, repairId) {
+    async approveRepair(auditId, repairId, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/approve`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: "{}",
+            body: JSON.stringify({ expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async requestRepairChanges(auditId, repairId, feedback) {
+    async requestRepairChanges(auditId, repairId, feedback, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/changes`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({ feedback }),
+            body: JSON.stringify({ feedback, expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async reviseRepair(auditId, repairId, input) {
+    async reviseRepair(auditId, repairId, input, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/revise`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({ ...input, source: "agent" }),
+            body: JSON.stringify({ ...input, source: "agent", expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async recordImplementation(auditId, repairId, input) {
+    async recordImplementation(auditId, repairId, input, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/implementation`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: JSON.stringify({ ...input, source: "agent" }),
+            body: JSON.stringify({ ...input, source: "agent", expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async attestDeployment(auditId, repairId) {
+    async attestDeployment(auditId, repairId, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/deployment`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: "{}",
+            body: JSON.stringify({ expectedMissionRevision }),
           },
         ),
       );
     },
 
-    async startVerification(auditId, repairId) {
+    async startVerification(auditId, repairId, expectedMissionRevision) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verify`,
           {
             method: "POST",
             headers: { accept: "application/json", "content-type": "application/json" },
-            body: "{}",
+            body: JSON.stringify({ expectedMissionRevision }),
           },
         ),
       );
@@ -358,6 +370,48 @@ export function createAuditService(options = {}) {
     for (const listener of listeners) listener();
   };
 
+  const rememberCheckpoint = (auditId, checkpoint, expectedGeneration = generation) => {
+    if (!checkpoint || expectedGeneration !== generation) return checkpoint ?? null;
+    const previous = jobs.get(auditId);
+    if (previous) {
+      jobs.set(auditId, {
+        ...previous,
+        missionRevision: checkpoint.missionRevision,
+        missionCheckpoint: checkpoint,
+      });
+      emit();
+    }
+    return checkpoint;
+  };
+
+  const revisionFor = (auditId, expectedMissionRevision) => {
+    if (Number.isInteger(expectedMissionRevision) && expectedMissionRevision > 0) {
+      return expectedMissionRevision;
+    }
+    return auditMissionRevision(jobs.get(auditId));
+  };
+
+  const checkpointFor = (auditId) => {
+    const audit = jobs.get(auditId);
+    if (!audit) return null;
+    return createMissionCheckpoint({
+      audit,
+      missionState: audit.mission
+        ? deriveAuditMissionState({
+            report: audit.report,
+            mission: audit.mission,
+            diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+            repairs: repairs.get(auditId) ?? [],
+            browserReview: browserReviews.get(auditId) ?? null,
+          })
+        : null,
+      diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+      repairs: repairs.get(auditId) ?? [],
+      browserReview: browserReviews.get(auditId) ?? null,
+      explorations: explorations.get(auditId) ?? [],
+    });
+  };
+
   const remember = (audit, expectedGeneration = generation) => {
     if (!audit?.id || expectedGeneration !== generation) return audit;
     const previous = jobs.get(audit.id);
@@ -372,18 +426,24 @@ export function createAuditService(options = {}) {
 
   const rememberRepair = (repair, expectedGeneration = generation) => {
     if (!repair?.id || expectedGeneration !== generation) return repair;
+    rememberCheckpoint(repair.auditId, repair.missionCheckpoint, expectedGeneration);
+    const storedRepair = { ...repair };
+    delete storedRepair.missionCheckpoint;
     const current = repairs.get(repair.auditId) ?? [];
-    repairs.set(repair.auditId, [...current.filter((item) => item.id !== repair.id), repair]);
+    repairs.set(repair.auditId, [...current.filter((item) => item.id !== repair.id), storedRepair]);
     emit();
     return repair;
   };
 
   const rememberDiagnosticMission = (mission, expectedGeneration = generation) => {
     if (!mission?.id || expectedGeneration !== generation) return mission;
+    rememberCheckpoint(mission.auditId, mission.missionCheckpoint, expectedGeneration);
+    const storedMission = { ...mission };
+    delete storedMission.missionCheckpoint;
     const current = diagnosticMissions.get(mission.auditId) ?? [];
     diagnosticMissions.set(mission.auditId, [
       ...current.filter((item) => item.id !== mission.id),
-      mission,
+      storedMission,
     ]);
     emit();
     return mission;
@@ -391,7 +451,10 @@ export function createAuditService(options = {}) {
 
   const rememberBrowserReview = (review, expectedGeneration = generation) => {
     if (!review?.id || expectedGeneration !== generation) return review;
-    browserReviews.set(review.auditId, review);
+    rememberCheckpoint(review.auditId, review.missionCheckpoint, expectedGeneration);
+    const storedReview = { ...review };
+    delete storedReview.missionCheckpoint;
+    browserReviews.set(review.auditId, storedReview);
     emit();
     return review;
   };
@@ -400,9 +463,12 @@ export function createAuditService(options = {}) {
     if (!exploration?.id || expectedGeneration !== generation) return exploration;
     const rootAuditId = exploration.rootAuditId;
     if (rootAuditId) {
+      rememberCheckpoint(rootAuditId, exploration.missionCheckpoint, expectedGeneration);
+      const storedExploration = { ...exploration };
+      delete storedExploration.missionCheckpoint;
       const current = explorations.get(rootAuditId) ?? [];
       explorations.set(rootAuditId, [
-        exploration,
+        storedExploration,
         ...current.filter((item) => item.id !== exploration.id),
       ].slice(0, 10));
       emit();
@@ -420,7 +486,7 @@ export function createAuditService(options = {}) {
       return remember({ ...audit, mission: audit.mission ?? mission }, expectedGeneration);
     },
 
-    async startRelatedAudit(auditId, path, source = "human") {
+    async startRelatedAudit(auditId, path, source = "human", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
@@ -432,11 +498,16 @@ export function createAuditService(options = {}) {
         auditId,
         path,
         source === "agent" ? "agent" : "human",
+        revisionFor(auditId, expectedMissionRevision),
       );
-      return remember(audit, expectedGeneration);
+      rememberCheckpoint(auditId, audit.missionCheckpoint, expectedGeneration);
+      const childAudit = { ...audit };
+      delete childAudit.missionCheckpoint;
+      remember(childAudit, expectedGeneration);
+      return audit;
     },
 
-    async prepareRepair(auditId, findingId, source = "human") {
+    async prepareRepair(auditId, findingId, source = "human", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
@@ -448,12 +519,14 @@ export function createAuditService(options = {}) {
         auditId,
         findingId,
         source === "agent" ? "agent" : "human",
+        revisionFor(auditId, expectedMissionRevision),
       );
       if (result.audit) remember(result.audit, expectedGeneration);
+      rememberCheckpoint(auditId, result.missionCheckpoint, expectedGeneration);
       return result;
     },
 
-    async startSiteExploration(auditId, paths, source = "human") {
+    async startSiteExploration(auditId, paths, source = "human", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
@@ -466,6 +539,7 @@ export function createAuditService(options = {}) {
           auditId,
           paths,
           source === "agent" ? "agent" : "human",
+          revisionFor(auditId, expectedMissionRevision),
         ),
         expectedGeneration,
       );
@@ -514,12 +588,22 @@ export function createAuditService(options = {}) {
       return remember(audit, expectedGeneration);
     },
 
-    async cancelAudit(auditId) {
+    async loadMissionCheckpoint(auditId) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const audit = await transport.cancel(auditId);
+      const checkpoint = await transport.checkpoint(auditId);
+      rememberCheckpoint(auditId, checkpoint, expectedGeneration);
+      return checkpoint;
+    },
+
+    async cancelAudit(auditId, expectedMissionRevision) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const audit = await transport.cancel(auditId, revisionFor(auditId, expectedMissionRevision));
       return remember(audit, expectedGeneration);
     },
 
@@ -528,12 +612,21 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const report = await transport.results(auditId);
+      const result = await transport.results(auditId);
+      const report = { ...result };
+      delete report.missionCheckpoint;
       const existing = jobs.get(auditId);
       if (existing && expectedGeneration === generation) {
-        remember({ ...existing, status: "complete", progress: 100, report }, expectedGeneration);
+        remember({
+          ...existing,
+          status: "complete",
+          progress: 100,
+          report,
+          missionRevision: result.missionCheckpoint?.missionRevision ?? existing.missionRevision,
+          missionCheckpoint: result.missionCheckpoint ?? existing.missionCheckpoint,
+        }, expectedGeneration);
       }
-      return report;
+      return result;
     },
 
     async listRepairs(auditId) {
@@ -563,13 +656,13 @@ export function createAuditService(options = {}) {
       return workspace;
     },
 
-    async openDiagnosticMission(auditId, findingId) {
+    async openDiagnosticMission(auditId, findingId, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof findingId !== "string" || !findingId) {
         throw new AuditError("INVALID_INPUT", "auditId and findingId must be non-empty strings.");
       }
       const expectedGeneration = generation;
       return rememberDiagnosticMission(
-        await transport.openDiagnosticMission(auditId, findingId),
+        await transport.openDiagnosticMission(auditId, findingId, revisionFor(auditId, expectedMissionRevision)),
         expectedGeneration,
       );
     },
@@ -584,28 +677,37 @@ export function createAuditService(options = {}) {
       return workspace;
     },
 
-    async openBrowserReview(auditId) {
+    async openBrowserReview(auditId, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
       return rememberBrowserReview(
-        await transport.openBrowserReview(auditId),
+        await transport.openBrowserReview(auditId, revisionFor(auditId, expectedMissionRevision)),
         expectedGeneration,
       );
     },
 
-    async recordBrowserReviewCheck(auditId, reviewId, input, source = "agent") {
+    async recordBrowserReviewCheck(auditId, reviewId, input, source = "agent", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof reviewId !== "string" || !reviewId) {
         throw new AuditError("INVALID_INPUT", "auditId and reviewId must be non-empty strings.");
       }
       const expectedGeneration = generation;
       const review = rememberBrowserReview(
-        await transport.recordBrowserReviewCheck(auditId, reviewId, input, source),
+        await transport.recordBrowserReviewCheck(
+          auditId,
+          reviewId,
+          input,
+          source,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
         expectedGeneration,
       );
       if (review?.purpose === "verification" && expectedGeneration === generation) {
-        const report = await transport.results(auditId);
+        const result = await transport.results(auditId);
+        const report = { ...result };
+        delete report.missionCheckpoint;
+        rememberCheckpoint(auditId, result.missionCheckpoint, expectedGeneration);
         const existing = jobs.get(auditId);
         if (existing) {
           remember({ ...existing, status: "complete", progress: 100, report }, expectedGeneration);
@@ -614,37 +716,52 @@ export function createAuditService(options = {}) {
       return review;
     },
 
-    async submitDiagnosticEvidence(auditId, missionId, input, source = "agent") {
+    async submitDiagnosticEvidence(auditId, missionId, input, source = "agent", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
         throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
       }
       const expectedGeneration = generation;
       return rememberDiagnosticMission(
-        await transport.submitDiagnosticEvidence(auditId, missionId, input, source),
+        await transport.submitDiagnosticEvidence(
+          auditId,
+          missionId,
+          input,
+          source,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
         expectedGeneration,
       );
     },
 
-    async recordDiagnosticBlocker(auditId, missionId, input, source = "agent") {
+    async recordDiagnosticBlocker(auditId, missionId, input, source = "agent", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
         throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
       }
       const expectedGeneration = generation;
       return rememberDiagnosticMission(
-        await transport.recordDiagnosticBlocker(auditId, missionId, input, source),
+        await transport.recordDiagnosticBlocker(
+          auditId,
+          missionId,
+          input,
+          source,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
         expectedGeneration,
       );
     },
 
-    async stageRepair(auditId, input) {
+    async stageRepair(auditId, input, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      return rememberRepair(await transport.stageRepair(auditId, input), expectedGeneration);
+      return rememberRepair(
+        await transport.stageRepair(auditId, input, revisionFor(auditId, expectedMissionRevision)),
+        expectedGeneration,
+      );
     },
 
-    async setRepairPolicy(auditId, mode) {
+    async setRepairPolicy(auditId, mode, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
@@ -652,23 +769,33 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "mode must be review or auto-low-risk.");
       }
       const expectedGeneration = generation;
-      const policy = await transport.setRepairPolicy(auditId, mode);
+      const policy = await transport.setRepairPolicy(
+        auditId,
+        mode,
+        revisionFor(auditId, expectedMissionRevision),
+      );
+      rememberCheckpoint(auditId, policy.missionCheckpoint, expectedGeneration);
       if (expectedGeneration === generation) {
-        repairPolicies.set(auditId, policy);
+        const storedPolicy = { ...policy };
+        delete storedPolicy.missionCheckpoint;
+        repairPolicies.set(auditId, storedPolicy);
         emit();
       }
       return policy;
     },
 
-    async approveRepair(auditId, repairId) {
+    async approveRepair(auditId, repairId, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
         throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
       }
       const expectedGeneration = generation;
-      return rememberRepair(await transport.approveRepair(auditId, repairId), expectedGeneration);
+      return rememberRepair(
+        await transport.approveRepair(auditId, repairId, revisionFor(auditId, expectedMissionRevision)),
+        expectedGeneration,
+      );
     },
 
-    async requestRepairChanges(auditId, repairId, feedback) {
+    async requestRepairChanges(auditId, repairId, feedback, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
         throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
       }
@@ -677,44 +804,69 @@ export function createAuditService(options = {}) {
       }
       const expectedGeneration = generation;
       return rememberRepair(
-        await transport.requestRepairChanges(auditId, repairId, feedback),
+        await transport.requestRepairChanges(
+          auditId,
+          repairId,
+          feedback,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
         expectedGeneration,
       );
     },
 
-    async reviseRepair(auditId, repairId, input) {
-      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
-        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
-      }
-      const expectedGeneration = generation;
-      return rememberRepair(await transport.reviseRepair(auditId, repairId, input), expectedGeneration);
-    },
-
-    async recordImplementation(auditId, repairId, input) {
+    async reviseRepair(auditId, repairId, input, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
         throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
       }
       const expectedGeneration = generation;
       return rememberRepair(
-        await transport.recordImplementation(auditId, repairId, input),
+        await transport.reviseRepair(auditId, repairId, input, revisionFor(auditId, expectedMissionRevision)),
         expectedGeneration,
       );
     },
 
-    async attestDeployment(auditId, repairId) {
+    async recordImplementation(auditId, repairId, input, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
         throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
       }
       const expectedGeneration = generation;
-      return rememberRepair(await transport.attestDeployment(auditId, repairId), expectedGeneration);
+      return rememberRepair(
+        await transport.recordImplementation(
+          auditId,
+          repairId,
+          input,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
+        expectedGeneration,
+      );
     },
 
-    async startVerification(auditId, repairId) {
+    async attestDeployment(auditId, repairId, expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
         throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
       }
       const expectedGeneration = generation;
-      return remember(await transport.startVerification(auditId, repairId), expectedGeneration);
+      return rememberRepair(
+        await transport.attestDeployment(auditId, repairId, revisionFor(auditId, expectedMissionRevision)),
+        expectedGeneration,
+      );
+    },
+
+    async startVerification(auditId, repairId, expectedMissionRevision) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      const audit = await transport.startVerification(
+        auditId,
+        repairId,
+        revisionFor(auditId, expectedMissionRevision),
+      );
+      rememberCheckpoint(auditId, audit.missionCheckpoint, expectedGeneration);
+      const verificationAudit = { ...audit };
+      delete verificationAudit.missionCheckpoint;
+      remember(verificationAudit, expectedGeneration);
+      return audit;
     },
 
     getRepairs(auditId) {
@@ -783,6 +935,13 @@ export function createAuditService(options = {}) {
 
     getActiveAudit() {
       return activeAuditId ? jobs.get(activeAuditId) ?? null : null;
+    },
+
+    getMissionCheckpoint(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      return checkpointFor(auditId);
     },
 
     getAuditMissionState(auditId) {

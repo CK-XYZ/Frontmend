@@ -462,10 +462,72 @@ test("HTTP transport cancels with a bounded DELETE request", async () => {
     },
   });
 
-  await transport.cancel(AUDIT_ID);
+  await transport.cancel(AUDIT_ID, 4);
   assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}`);
   assert.equal(calls[0].init.method, "DELETE");
-  assert.equal(calls[0].init.body, undefined);
+  assert.deepEqual(JSON.parse(calls[0].init.body), { expectedMissionRevision: 4 });
+});
+
+test("restores checkpoints and automatically attaches the loaded revision to human mutations", async () => {
+  const calls = [];
+  const checkpoint = {
+    schemaVersion: 1,
+    auditId: AUDIT_ID,
+    workspacePath: `/audits/${AUDIT_ID}`,
+    missionRevision: 6,
+    status: "action-available",
+    nextActor: "agent",
+    requiredCapability: "repository",
+    action: { tool: "stage_site_repair", input: { findingId: "finding-1" }, reason: "Continue." },
+    completionCriteria: ["Return a bounded repair."],
+    retainedEvidenceSummary: ["Measurement complete."],
+    authorityBoundary: { humanOnly: ["Approve", "Deploy"] },
+  };
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        missionRevision: 5,
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [] },
+      }),
+      checkpoint: async (auditId) => ({ ...checkpoint, auditId }),
+      setRepairPolicy: async (auditId, mode, expectedMissionRevision) => {
+        calls.push({ auditId, mode, expectedMissionRevision });
+        return {
+          version: 1,
+          mode,
+          remainingAutoApprovals: 0,
+          deploymentAttestation: "person-only",
+          missionCheckpoint: checkpoint,
+        };
+      },
+    },
+  });
+  await service.startAudit({ url: "https://example.com/", source: "human" });
+  assert.equal((await service.loadMissionCheckpoint(AUDIT_ID)).missionRevision, 6);
+  await service.setRepairPolicy(AUDIT_ID, "review");
+  assert.deepEqual(calls, [{ auditId: AUDIT_ID, mode: "review", expectedMissionRevision: 6 }]);
+  assert.equal(service.getMissionCheckpoint(AUDIT_ID).missionRevision, 6);
+});
+
+test("HTTP transport reads the dedicated checkpoint endpoint", async () => {
+  const calls = [];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { auditId: AUDIT_ID, missionRevision: 3 } });
+    },
+  });
+  const checkpoint = await transport.checkpoint(AUDIT_ID);
+  assert.equal(checkpoint.missionRevision, 3);
+  assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/checkpoint`);
+  assert.equal(calls[0].init.method, undefined);
 });
 
 test("starts related audits through the authoritative route transport", async () => {
@@ -513,10 +575,14 @@ test("HTTP transport sends a bounded related-route request to its parent audit",
     },
   });
 
-  await transport.startRelated(AUDIT_ID, "/privacy", "agent");
+  await transport.startRelated(AUDIT_ID, "/privacy", "agent", 5);
   assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/routes`);
   assert.equal(calls[0].init.method, "POST");
-  assert.deepEqual(JSON.parse(calls[0].init.body), { path: "/privacy", source: "agent" });
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    path: "/privacy",
+    source: "agent",
+    expectedMissionRevision: 5,
+  });
 });
 
 test("synchronizes durable site explorations through the shared service", async () => {
@@ -572,11 +638,15 @@ test("HTTP transport uses bounded site-exploration collection and detail routes"
     },
   });
 
-  await transport.startExploration(AUDIT_ID, ["/privacy"], "human");
+  await transport.startExploration(AUDIT_ID, ["/privacy"], "human", 6);
   await transport.listExplorations(AUDIT_ID);
   await transport.getExploration(AUDIT_ID, missionId);
   assert.equal(calls[0].init.method, "POST");
-  assert.deepEqual(JSON.parse(calls[0].init.body), { paths: ["/privacy"], source: "human" });
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    paths: ["/privacy"],
+    source: "human",
+    expectedMissionRevision: 6,
+  });
   assert.equal(calls[1].url, `https://frontmend.test/api/audits/${AUDIT_ID}/explorations`);
   assert.equal(calls[2].url, `https://frontmend.test/api/audits/${AUDIT_ID}/explorations/${missionId}`);
 });
@@ -620,6 +690,7 @@ test("records and remembers a diagnostic blocker through the bounded transport r
     reason: "conflicting-runtime",
     summary: "The current route no longer emits the measured console failure.",
     source: "agent",
+    expectedMissionRevision: 1,
   });
 });
 
@@ -754,9 +825,10 @@ test("HTTP transport preserves structured actionable errors", async () => {
         {
           ok: false,
           error: {
-            code: "PROVIDER_RATE_LIMITED",
-            message: "The live audit provider is busy.",
+            code: "MISSION_REVISION_STALE",
+            message: "The mission changed.",
             recoverable: true,
+            details: { missionCheckpoint: { auditId: AUDIT_ID, missionRevision: 8 } },
           },
         },
         { status: 429 },
@@ -767,7 +839,8 @@ test("HTTP transport preserves structured actionable errors", async () => {
     () => transport.start({ url: "https://removemyexif.com/", source: "human" }),
     (error) =>
       error instanceof AuditError &&
-      error.code === "PROVIDER_RATE_LIMITED" &&
-      error.recoverable === true,
+      error.code === "MISSION_REVISION_STALE" &&
+      error.recoverable === true &&
+      error.details.missionCheckpoint.missionRevision === 8,
   );
 });

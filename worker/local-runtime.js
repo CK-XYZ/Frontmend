@@ -44,8 +44,15 @@ import {
   browserReviewSnapshot,
   createBrowserReviewMission,
   createBrowserVerificationReview,
+  isIdenticalBrowserReviewContribution,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
+import {
+  advanceMissionRevision,
+  assertExpectedMissionRevision,
+  auditMissionRevision,
+  createMissionCheckpoint,
+} from "../src/mission-checkpoint-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_LIMIT = 5;
@@ -71,6 +78,7 @@ function sendError(response, error, status = 400) {
           ? error.message.slice(0, 300)
           : "The local live-audit adapter could not complete the request.",
       recoverable: error?.recoverable !== false,
+      ...(error?.details ? { details: error.details } : {}),
     },
   });
 }
@@ -92,6 +100,57 @@ async function readBody(request) {
   }
 }
 
+async function readOptionalBody(request) {
+  if (request.headers["content-length"] === "0") return {};
+  const chunks = [];
+  let length = 0;
+  for await (const chunk of request) {
+    length += chunk.length;
+    if (length > BODY_LIMIT_BYTES) throw new AuditError("INVALID_INPUT", "The request body is too large.");
+    chunks.push(chunk);
+  }
+  if (!chunks.length || Buffer.concat(chunks).toString("utf8").trim() === "") return {};
+  try {
+    return JSON.parse(Buffer.concat(chunks).toString("utf8"));
+  } catch {
+    throw new AuditError("INVALID_INPUT", "The request body must be valid JSON.");
+  }
+}
+
+function localCheckpoint(job) {
+  const missionState = job.mission?.schemaVersion === 1
+    ? deriveAuditMissionState({
+        report: job.report,
+        mission: job.mission,
+        diagnosticMissions: job.diagnosticMissions ?? [],
+        repairs: job.repairs ?? [],
+        browserReview: job.browserReview ?? null,
+      })
+    : null;
+  return createMissionCheckpoint({
+    audit: job,
+    missionState,
+    diagnosticMissions: job.diagnosticMissions ?? [],
+    repairs: job.repairs ?? [],
+    browserReview: job.browserReview ?? null,
+    explorations: job.explorations ?? [],
+  });
+}
+
+function assertLocalRevision(job, expectedMissionRevision) {
+  if (expectedMissionRevision === undefined) return auditMissionRevision(job);
+  return assertExpectedMissionRevision(job, expectedMissionRevision, localCheckpoint(job));
+}
+
+function advanceLocalRevision(job) {
+  Object.assign(job, advanceMissionRevision(job));
+  return job;
+}
+
+function checkpointedLocal(job, data) {
+  return { ...data, missionCheckpoint: localCheckpoint(job) };
+}
+
 function snapshot(job) {
   return {
     id: job.id,
@@ -99,6 +158,8 @@ function snapshot(job) {
     url: job.url,
     source: job.source,
     mission: job.mission ?? null,
+    missionRevision: auditMissionRevision(job),
+    missionCheckpoint: localCheckpoint(job),
     status: job.status,
     phase: job.phase,
     phaseLabel: job.phaseLabel,
@@ -191,6 +252,7 @@ export function createLocalAuditRuntime(options = {}) {
         error: null,
         completedAt: Date.now(),
       });
+      advanceLocalRevision(job);
     } catch (error) {
       if (job.attempt !== attempt || job.status === "cancelled") return;
       if (error?.code === "AUDIT_CANCELLED") {
@@ -219,6 +281,7 @@ export function createLocalAuditRuntime(options = {}) {
         },
         completedAt: Date.now(),
       });
+      advanceLocalRevision(job);
     }
   };
 
@@ -272,6 +335,7 @@ export function createLocalAuditRuntime(options = {}) {
         abortController: new AbortController(),
         createdAt: now,
         completedAt: null,
+        missionRevision: auditMissionRevision(previousJob) + 1,
       });
       recentUrls.set(reuseKey, { id: previousJob.id, createdAt: now });
       void run(previousJob);
@@ -283,6 +347,7 @@ export function createLocalAuditRuntime(options = {}) {
       url,
       source,
       mission,
+      missionRevision: 1,
       verification,
       exploration,
       siteExploration,
@@ -385,7 +450,7 @@ export function createLocalAuditRuntime(options = {}) {
         if (!input || typeof input !== "object" || Array.isArray(input)) {
           return sendError(response, new AuditError("INVALID_INPUT", "The request body must be an object."));
         }
-        const extra = Object.keys(input).find((key) => !["path", "source"].includes(key));
+        const extra = Object.keys(input).find((key) => !["path", "source", "expectedMissionRevision"].includes(key));
         if (extra) {
           return sendError(response, new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
         }
@@ -404,6 +469,7 @@ export function createLocalAuditRuntime(options = {}) {
             409,
           );
         }
+        assertLocalRevision(baseline, input.expectedMissionRevision);
         const related = createRelatedAuditInput(baseline.report, input.path);
         const source = input.source === "agent" ? "agent" : "human";
         const client = request.socket.remoteAddress ?? "local-preview";
@@ -414,7 +480,8 @@ export function createLocalAuditRuntime(options = {}) {
           operationKey: `route:${routeMatch[1]}:${related.exploration.observedPath}`,
           exploration: related.exploration,
         });
-        return sendJson(response, reused ? 200 : 202, { ok: true, data: snapshot(job) }, {
+        advanceLocalRevision(baseline);
+        return sendJson(response, reused ? 200 : 202, { ok: true, data: checkpointedLocal(baseline, snapshot(job)) }, {
           location: `/api/audits/${job.id}`,
         });
       }
@@ -445,10 +512,11 @@ export function createLocalAuditRuntime(options = {}) {
           if (!input || typeof input !== "object" || Array.isArray(input)) {
             return sendError(response, new AuditError("INVALID_INPUT", "The request body must be an object."));
           }
-          const extra = Object.keys(input).find((key) => !["paths", "source"].includes(key));
+          const extra = Object.keys(input).find((key) => !["paths", "source", "expectedMissionRevision"].includes(key));
           if (extra) {
             return sendError(response, new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
           }
+          assertLocalRevision(root, input.expectedMissionRevision);
           const prepared = createSiteExplorationInputs(root.report, input.paths);
           const missionId = crypto.randomUUID();
           const source = input.source === "agent" ? "agent" : "human";
@@ -472,7 +540,8 @@ export function createLocalAuditRuntime(options = {}) {
             ...(root.explorations ?? []).filter((item) => item.id !== mission.id),
             mission,
           ].slice(-10);
-          return sendJson(response, 202, { ok: true, data: aggregateMission(mission) }, {
+          advanceLocalRevision(root);
+          return sendJson(response, 202, { ok: true, data: checkpointedLocal(root, aggregateMission(mission)) }, {
             location: `/api/audits/${rootAuditId}/explorations/${missionId}`,
           });
         }
@@ -554,7 +623,7 @@ export function createLocalAuditRuntime(options = {}) {
           );
         }
         const input = await readBody(request);
-        const extra = Object.keys(input ?? {}).find((key) => !["findingId", "source"].includes(key));
+        const extra = Object.keys(input ?? {}).find((key) => !["findingId", "source", "expectedMissionRevision"].includes(key));
         if (extra) return sendError(response, new AuditError("INVALID_INPUT", `Unknown mission field: ${extra}.`));
         if (input?.source !== "human" && input?.source !== "agent") {
           return sendError(response, new AuditError("INVALID_INPUT", "source must be human or agent."));
@@ -563,19 +632,10 @@ export function createLocalAuditRuntime(options = {}) {
         if (!finding) {
           return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
         }
-        try {
-          baseline.mission = prepareRepairIntent(
-            baseline.mission ?? createAuditMission(
-              {},
-              baseline.source === "agent" ? "agent" : "human",
-              Number.isInteger(baseline.createdAt) ? baseline.createdAt : Date.now(),
-            ),
-            finding.id,
-            input.source,
-          );
+        if (baseline.mission?.repairPreparation?.findingId === finding.id) {
           return sendJson(response, 200, {
             ok: true,
-            data: {
+            data: checkpointedLocal(baseline, {
               audit: snapshot(baseline),
               mission: baseline.mission,
               missionState: deriveAuditMissionState({
@@ -585,7 +645,34 @@ export function createLocalAuditRuntime(options = {}) {
                 repairs: baseline.repairs ?? [],
                 browserReview: baseline.browserReview ?? null,
               }),
-            },
+            }),
+          });
+        }
+        try {
+          assertLocalRevision(baseline, input.expectedMissionRevision);
+          baseline.mission = prepareRepairIntent(
+            baseline.mission ?? createAuditMission(
+              {},
+              baseline.source === "agent" ? "agent" : "human",
+              Number.isInteger(baseline.createdAt) ? baseline.createdAt : Date.now(),
+            ),
+            finding.id,
+            input.source,
+          );
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, {
+            ok: true,
+            data: checkpointedLocal(baseline, {
+              audit: snapshot(baseline),
+              mission: baseline.mission,
+              missionState: deriveAuditMissionState({
+                report: baseline.report,
+                mission: baseline.mission,
+                diagnosticMissions: baseline.diagnosticMissions ?? [],
+                repairs: baseline.repairs ?? [],
+                browserReview: baseline.browserReview ?? null,
+              }),
+            }),
           });
         } catch (error) {
           return sendError(response, error, error?.code === "REPAIR_INTENT_CONFLICT" ? 409 : 400);
@@ -605,8 +692,17 @@ export function createLocalAuditRuntime(options = {}) {
         }
         if (request.method === "POST") {
           assertSameOrigin(request);
-          baseline.repairPolicy = createRepairPolicy(await readBody(request));
-          return sendJson(response, 200, { ok: true, data: baseline.repairPolicy });
+          const input = await readBody(request);
+          const { expectedMissionRevision, ...policyInput } = input ?? {};
+          const nextPolicy = createRepairPolicy(policyInput);
+          const currentPolicy = repairPolicySnapshot(baseline.repairPolicy);
+          if (currentPolicy.mode === nextPolicy.mode) {
+            return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, currentPolicy) });
+          }
+          assertLocalRevision(baseline, expectedMissionRevision);
+          baseline.repairPolicy = nextPolicy;
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, baseline.repairPolicy) });
         }
         return sendError(
           response,
@@ -632,13 +728,14 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawMissionId && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const extra = Object.keys(input ?? {}).find((key) => key !== "findingId");
+          const extra = Object.keys(input ?? {}).find((key) => !["findingId", "expectedMissionRevision"].includes(key));
           if (extra) return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
           const finding = assessmentFindings(baseline.report, baseline.browserReview).find((item) => item.id === input?.findingId);
           if (!finding) return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
           const existing = baseline.diagnosticMissions.find((mission) => mission.findingId === finding.id);
-          if (existing) return sendJson(response, 200, { ok: true, data: diagnosticMissionSnapshot(existing) });
+          if (existing) return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, diagnosticMissionSnapshot(existing)) });
           if (baseline.diagnosticMissions.length >= 10) return sendError(response, new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
+          assertLocalRevision(baseline, input.expectedMissionRevision);
           const priority = baseline.mission
             ? deriveAuditMissionState({
                 report: baseline.report,
@@ -654,7 +751,8 @@ export function createLocalAuditRuntime(options = {}) {
             relationship: priority?.relationship ?? null,
           });
           baseline.diagnosticMissions.push(mission);
-          return sendJson(response, 201, { ok: true, data: mission });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 201, { ok: true, data: checkpointedLocal(baseline, mission) });
         }
         const missionId = decodeURIComponent(rawMissionId ?? "");
         const mission = baseline.diagnosticMissions.find((item) => item.id === missionId);
@@ -663,22 +761,26 @@ export function createLocalAuditRuntime(options = {}) {
         if (action === "evidence" && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const { source, ...evidence } = input ?? {};
+          const { source, expectedMissionRevision, ...evidence } = input ?? {};
           if (source !== "agent" && source !== "person") {
             return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", "Diagnostic evidence must identify an agent or person source."));
           }
+          assertLocalRevision(baseline, expectedMissionRevision);
           Object.assign(mission, submitDiagnosticEvidence(mission, evidence, source));
-          return sendJson(response, 200, { ok: true, data: mission });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, mission) });
         }
         if (action === "blocker" && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const { source, ...blocker } = input ?? {};
+          const { source, expectedMissionRevision, ...blocker } = input ?? {};
           if (source !== "agent" && source !== "person") {
             return sendError(response, new AuditError("INVALID_DIAGNOSTIC_BLOCKER", "A diagnostic blocker must identify an agent or person source."));
           }
+          assertLocalRevision(baseline, expectedMissionRevision);
           Object.assign(mission, recordDiagnosticBlocker(mission, blocker, source));
-          return sendJson(response, 200, { ok: true, data: mission });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, mission) });
         }
         return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That diagnostic operation is not supported."), 405);
       }
@@ -706,10 +808,11 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawReviewId && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const extra = Object.keys(input ?? {})[0];
+          const extra = Object.keys(input ?? {}).find((key) => key !== "expectedMissionRevision");
           if (extra) return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
-          if (baseline.browserReview) return sendJson(response, 200, { ok: true, data: browserReviewSnapshot(baseline.browserReview) });
+          if (baseline.browserReview) return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, browserReviewSnapshot(baseline.browserReview)) });
           try {
+            assertLocalRevision(baseline, input?.expectedMissionRevision);
             baseline.browserReview = verificationReplay
               ? createBrowserVerificationReview({
                   auditId,
@@ -723,7 +826,8 @@ export function createLocalAuditRuntime(options = {}) {
                   documentProfile: baseline.report.documentProfile,
                   target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
                 });
-            return sendJson(response, 201, { ok: true, data: baseline.browserReview });
+            advanceLocalRevision(baseline);
+            return sendJson(response, 201, { ok: true, data: checkpointedLocal(baseline, baseline.browserReview) });
           } catch (error) {
             return sendError(response, error);
           }
@@ -734,11 +838,18 @@ export function createLocalAuditRuntime(options = {}) {
             return sendError(response, new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist."), 404);
           }
           const input = await readBody(request);
-          const { source, ...check } = input ?? {};
+          const { source, expectedMissionRevision, ...check } = input ?? {};
           if (source !== "agent" && source !== "person") {
             return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", "Browser review evidence must identify an agent or person source."));
           }
           try {
+            if (isIdenticalBrowserReviewContribution(baseline.browserReview, check, source)) {
+              return sendJson(response, 200, {
+                ok: true,
+                data: checkpointedLocal(baseline, browserReviewSnapshot(baseline.browserReview)),
+              });
+            }
+            assertLocalRevision(baseline, expectedMissionRevision);
             baseline.browserReview = recordBrowserReviewCheck(baseline.browserReview, check, source);
             if (verificationReplay) {
               baseline.report.verification = compareVerification(
@@ -748,7 +859,8 @@ export function createLocalAuditRuntime(options = {}) {
                 baseline.browserReview,
               );
             }
-            return sendJson(response, 200, { ok: true, data: baseline.browserReview });
+            advanceLocalRevision(baseline);
+            return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, baseline.browserReview) });
           } catch (error) {
             return sendError(response, error);
           }
@@ -787,7 +899,7 @@ export function createLocalAuditRuntime(options = {}) {
           }
           const existing = baseline.repairs.find((repair) => repair.findingId === finding.id);
           if (existing) {
-            return sendJson(response, 200, { ok: true, data: repairWithMission(existing) });
+            return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWithMission(existing)) });
           }
           if (baseline.mission?.repairPreparation?.findingId !== finding.id) {
             return sendError(
@@ -802,7 +914,8 @@ export function createLocalAuditRuntime(options = {}) {
           if (baseline.repairs.length >= 10) {
             return sendError(response, new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
           }
-          const { source, ...proposal } = input;
+          const { source, expectedMissionRevision, ...proposal } = input;
+          assertLocalRevision(baseline, expectedMissionRevision);
           let diagnosticMission = null;
           const priority = baseline.mission
             ? deriveAuditMissionState({
@@ -834,7 +947,8 @@ export function createLocalAuditRuntime(options = {}) {
           repair = policyResult.repair;
           baseline.repairPolicy = policyResult.policy;
           baseline.repairs.push(repair);
-          return sendJson(response, 201, { ok: true, data: repairWithMission(repair) });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 201, { ok: true, data: checkpointedLocal(baseline, repairWithMission(repair)) });
         }
 
         const repairId = validateRepairId(decodeURIComponent(rawRepairId ?? ""));
@@ -847,7 +961,7 @@ export function createLocalAuditRuntime(options = {}) {
         }
         if (action === "approve" && request.method === "POST") {
           assertSameOrigin(request);
-          await readBody(request);
+          const input = await readBody(request);
           if (repair.status === "changes-requested") {
             return sendError(
               response,
@@ -856,6 +970,7 @@ export function createLocalAuditRuntime(options = {}) {
             );
           }
           if (repair.status !== "approved") {
+            assertLocalRevision(baseline, input?.expectedMissionRevision);
             const approvedAt = Date.now();
             Object.assign(repair, {
               status: "approved",
@@ -863,48 +978,55 @@ export function createLocalAuditRuntime(options = {}) {
               reviewedAt: approvedAt,
               approval: { mode: "explicit-review", grantedBy: "person", approvedAt },
             });
+            advanceLocalRevision(baseline);
           }
-          return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWithMission(repair)) });
         }
         if (action === "changes" && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const extra = Object.keys(input ?? {}).find((key) => key !== "feedback");
+          const extra = Object.keys(input ?? {}).find((key) => !["feedback", "expectedMissionRevision"].includes(key));
           if (extra) {
             return sendError(response, new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`));
           }
+          assertLocalRevision(baseline, input?.expectedMissionRevision);
           Object.assign(repair, requestRepairChanges(repair, input?.feedback));
-          return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWithMission(repair)) });
         }
         if (action === "revise" && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const { source, ...proposal } = input ?? {};
+          const { source, expectedMissionRevision, ...proposal } = input ?? {};
           if (source !== undefined && source !== "agent") {
             return sendError(
               response,
               new AuditError("INVALID_REPAIR", "Repair revisions must be agent-authored."),
             );
           }
+          assertLocalRevision(baseline, expectedMissionRevision);
           Object.assign(repair, reviseRepairDraft(repair, proposal, "agent"));
-          return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWithMission(repair)) });
         }
         if (action === "implementation" && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
-          const { source, ...receipt } = input ?? {};
+          const { source, expectedMissionRevision, ...receipt } = input ?? {};
           if (source !== "agent") {
             return sendError(
               response,
               new AuditError("INVALID_IMPLEMENTATION_RECEIPT", "Repository implementation receipts must be agent-reported."),
             );
           }
+          assertLocalRevision(baseline, expectedMissionRevision);
           Object.assign(repair, recordRepositoryImplementation(repair, receipt));
-          return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWithMission(repair)) });
         }
         if (action === "deployment" && request.method === "POST") {
           assertSameOrigin(request);
-          await readBody(request);
+          const input = await readBody(request);
           if (repair.status !== "approved") {
             return sendError(
               response,
@@ -913,13 +1035,15 @@ export function createLocalAuditRuntime(options = {}) {
             );
           }
           if (!Number.isFinite(repair.deploymentAttestedAt)) {
+            assertLocalRevision(baseline, input?.expectedMissionRevision);
             repair.deploymentAttestedAt = Date.now();
+            advanceLocalRevision(baseline);
           }
-          return sendJson(response, 200, { ok: true, data: repairWithMission(repair) });
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWithMission(repair)) });
         }
         if (action === "verify" && request.method === "POST") {
           assertSameOrigin(request);
-          await readBody(request);
+          const input = await readBody(request);
           if (repair.status !== "approved") {
             return sendError(response, new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before verification."), 409);
           }
@@ -934,6 +1058,17 @@ export function createLocalAuditRuntime(options = {}) {
             );
           }
           const verification = createVerificationContext(baseline.report, repair);
+          const reuseKey = `${verification.url}\nrepair:${repair.id}`;
+          const previous = recentUrls.get(reuseKey);
+          const previousJob = previous && previous.createdAt > Date.now() - RATE_WINDOW_MS
+            ? jobs.get(previous.id)
+            : null;
+          if (previousJob && !["failed", "cancelled"].includes(previousJob.status)) {
+            return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, snapshot(previousJob)) }, {
+              location: `/api/audits/${previousJob.id}`,
+            });
+          }
+          assertLocalRevision(baseline, input?.expectedMissionRevision);
           const client = request.socket.remoteAddress ?? "local-preview";
           const { job, reused } = startJob({
             url: verification.url,
@@ -942,7 +1077,8 @@ export function createLocalAuditRuntime(options = {}) {
             operationKey: `repair:${repair.id}`,
             verification,
           });
-          return sendJson(response, reused ? 200 : 202, { ok: true, data: snapshot(job) }, {
+          advanceLocalRevision(baseline);
+          return sendJson(response, reused ? 200 : 202, { ok: true, data: checkpointedLocal(baseline, snapshot(job)) }, {
             location: `/api/audits/${job.id}`,
           });
         }
@@ -959,7 +1095,7 @@ export function createLocalAuditRuntime(options = {}) {
       }
 
       const match = requestUrl.pathname.match(
-        /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|assessment|evidence)(?:\/([^/]+))?)?$/,
+        /^\/api\/audits\/([^/]+)(?:\/(results|checkpoint|report|receipt|assessment|evidence)(?:\/([^/]+))?)?$/,
       );
       if (!match) {
         return sendError(response, new AuditError("NOT_FOUND", "That API route does not exist."), 404);
@@ -970,6 +1106,8 @@ export function createLocalAuditRuntime(options = {}) {
       if (request.method === "DELETE" && !resource) {
         assertSameOrigin(request);
         if (!["complete", "failed", "cancelled"].includes(job.status)) {
+          const input = await readOptionalBody(request);
+          assertLocalRevision(job, input?.expectedMissionRevision);
           job.abortController?.abort("cancelled");
           Object.assign(job, {
             status: "cancelled",
@@ -979,6 +1117,7 @@ export function createLocalAuditRuntime(options = {}) {
             error: null,
             completedAt: Date.now(),
           });
+          advanceLocalRevision(job);
         }
         return sendJson(response, 200, { ok: true, data: snapshot(job) });
       }
@@ -997,7 +1136,10 @@ export function createLocalAuditRuntime(options = {}) {
         if (job.status !== "complete") {
           return sendError(response, new AuditError("AUDIT_NOT_READY", "The audit is still running."), 409);
         }
-        return sendJson(response, 200, { ok: true, data: job.report });
+        return sendJson(response, 200, { ok: true, data: checkpointedLocal(job, job.report) });
+      }
+      if (resource === "checkpoint") {
+        return sendJson(response, 200, { ok: true, data: localCheckpoint(job) });
       }
       if (resource === "receipt") {
         if (job.status !== "complete" || !job.report) {
@@ -1080,7 +1222,11 @@ export function createLocalAuditRuntime(options = {}) {
       }
       return sendJson(response, 200, { ok: true, data: snapshot(job) });
     } catch (error) {
-      return sendError(response, error, error?.code === "RATE_LIMITED" ? 429 : 400);
+      return sendError(
+        response,
+        error,
+        error?.code === "RATE_LIMITED" ? 429 : error?.code === "MISSION_REVISION_STALE" ? 409 : 400,
+      );
     }
   };
 }

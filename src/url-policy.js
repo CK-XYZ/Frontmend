@@ -1,9 +1,10 @@
 export class AuditError extends Error {
-  constructor(code, message, recoverable = true) {
+  constructor(code, message, recoverable = true, details = null) {
     super(message);
     this.name = "AuditError";
     this.code = code;
     this.recoverable = recoverable;
+    this.details = details && typeof details === "object" ? details : null;
   }
 }
 

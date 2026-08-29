@@ -479,6 +479,36 @@ function browserFinding({ review, check, input, finding, index, now }) {
   };
 }
 
+export function isIdenticalBrowserReviewContribution(reviewValue, input = {}, source = "agent") {
+  const review = browserReviewSnapshot(reviewValue);
+  const result = review.results.find((item) => item.checkId === input?.checkId);
+  if (!result || result.source !== (source === "person" ? "person" : "agent")) return false;
+  const normalizeText = (value) => String(value ?? "").trim();
+  const submittedFindings = Array.isArray(input.findings)
+    ? input.findings.map((finding) => ({
+        title: normalizeText(finding?.title),
+        severity: finding?.severity,
+        focusArea: finding?.focusArea,
+        evidence: normalizeText(finding?.evidence),
+        suggestedRepair: normalizeText(finding?.suggestedRepair),
+        element: normalizeText(finding?.element ?? "Rendered page"),
+      }))
+    : [];
+  const retainedFindings = result.findings.map((finding) => ({
+    title: finding.title,
+    severity: finding.severity,
+    focusArea: finding.focusAreas[0],
+    evidence: finding.evidence,
+    suggestedRepair: finding.repair,
+    element: finding.selector,
+  }));
+  return result.outcome === input.outcome
+    && result.summary === normalizeText(input.summary)
+    && JSON.stringify(result.observations) === JSON.stringify(input.observations ?? [])
+    && JSON.stringify(retainedFindings) === JSON.stringify(submittedFindings)
+    && result.blockerReason === (input.blockerReason ?? null);
+}
+
 export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agent", now = Date.now()) {
   const review = browserReviewSnapshot(reviewValue);
   if (!input || typeof input !== "object" || Array.isArray(input)) {

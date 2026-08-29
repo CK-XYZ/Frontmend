@@ -45,8 +45,15 @@ import {
   browserReviewSnapshot,
   createBrowserReviewMission,
   createBrowserVerificationReview,
+  isIdenticalBrowserReviewContribution,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
+import {
+  advanceMissionRevision,
+  assertExpectedMissionRevision,
+  auditMissionRevision,
+  createMissionCheckpoint,
+} from "../src/mission-checkpoint-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -91,10 +98,17 @@ function publicError(error) {
             "BROWSER_REVIEW_SEQUENCE",
             "BROWSER_REVIEW_COMPLETE",
             "BROWSER_REVIEW_CHECK_COMPLETE",
+            "MISSION_REVISION_STALE",
           ].includes(error.code)
           ? 409
           : 400;
-    return { status, code: error.code, message: error.message, recoverable: true };
+    return {
+      status,
+      code: error.code,
+      message: error.message,
+      recoverable: error.recoverable !== false,
+      details: error.details ?? null,
+    };
   }
   if (error?.code === "RATE_LIMITED") {
     return { status: 429, code: error.code, message: error.message, recoverable: true };
@@ -112,7 +126,12 @@ function errorResponse(error, headers) {
   return json(
     {
       ok: false,
-      error: { code: detail.code, message: detail.message, recoverable: detail.recoverable },
+      error: {
+        code: detail.code,
+        message: detail.message,
+        recoverable: detail.recoverable,
+        ...(detail.details ? { details: detail.details } : {}),
+      },
     },
     { status: detail.status, headers },
   );
@@ -162,13 +181,15 @@ function assertSameOrigin(request) {
   }
 }
 
-function auditSnapshot(state) {
+function auditSnapshot(state, missionCheckpoint = state.missionCheckpoint ?? null) {
   return {
     id: state.id,
     attempt: Number.isFinite(state.attempt) ? state.attempt : 1,
     url: state.url,
     source: state.source,
     mission: state.mission ?? null,
+    missionRevision: auditMissionRevision(state),
+    missionCheckpoint,
     status: state.status,
     phase: state.phase,
     phaseLabel: state.phaseLabel,
@@ -178,6 +199,51 @@ function auditSnapshot(state) {
     report: state.status === "complete" ? state.report : null,
     error: state.error ?? null,
   };
+}
+
+async function auditJobCheckpoint(ctx, state) {
+  const [diagnosticMissions, repairs, browserReview, explorations] = await Promise.all([
+    ctx.storage.get("diagnosticMissions"),
+    ctx.storage.get("repairs"),
+    ctx.storage.get("browserReview"),
+    ctx.storage.get("explorations"),
+  ]);
+  const missionState = state.mission?.schemaVersion === 1
+    ? deriveAuditMissionState({
+        report: state.report,
+        mission: state.mission,
+        diagnosticMissions: diagnosticMissions ?? [],
+        repairs: repairs ?? [],
+        browserReview: browserReview ?? null,
+      })
+    : null;
+  return createMissionCheckpoint({
+    audit: state,
+    missionState,
+    diagnosticMissions: diagnosticMissions ?? [],
+    repairs: repairs ?? [],
+    browserReview: browserReview ?? null,
+    explorations: explorations ?? [],
+  });
+}
+
+async function assertJobRevision(ctx, state, expectedMissionRevision) {
+  if (expectedMissionRevision === undefined) return auditMissionRevision(state);
+  const checkpoint = await auditJobCheckpoint(ctx, state);
+  return assertExpectedMissionRevision(state, expectedMissionRevision, checkpoint);
+}
+
+async function advanceJobRevision(ctx, state, updates = {}) {
+  const updated = advanceMissionRevision({ ...state, ...updates });
+  await ctx.storage.put("state", updated);
+  return updated;
+}
+
+async function checkpointedJobData(ctx, state, data) {
+  const missionCheckpoint = await auditJobCheckpoint(ctx, state);
+  return data && typeof data === "object"
+    ? { ...data, missionCheckpoint }
+    : { value: data, missionCheckpoint };
 }
 
 async function gateAdmissions(request, env, routes, missionId) {
@@ -256,13 +322,13 @@ async function startSiteExploration(request, env, rootAuditId) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new AuditError("INVALID_INPUT", "The request body must be an object.");
   }
-  const extra = Object.keys(input).find((key) => !["paths", "source"].includes(key));
+  const extra = Object.keys(input).find((key) => !["paths", "source", "expectedMissionRevision"].includes(key));
   if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
   const rootJob = jobFromId(env, rootAuditId);
   const inputResponse = await rootJob.fetch("https://frontmend.internal/exploration-inputs", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ paths: input.paths }),
+    body: JSON.stringify({ paths: input.paths, expectedMissionRevision: input.expectedMissionRevision }),
   });
   const inputPayload = await inputResponse.json();
   if (!inputResponse.ok || inputPayload?.ok === false) {
@@ -375,14 +441,14 @@ async function startRelatedAudit(request, env, baselineAuditId) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new AuditError("INVALID_INPUT", "The request body must be an object.");
   }
-  const extra = Object.keys(input).find((key) => !["path", "source"].includes(key));
+  const extra = Object.keys(input).find((key) => !["path", "source", "expectedMissionRevision"].includes(key));
   if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
 
   const baselineJob = jobFromId(env, baselineAuditId);
   const inputResponse = await baselineJob.fetch("https://frontmend.internal/route-input", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ path: input.path }),
+    body: JSON.stringify({ path: input.path, expectedMissionRevision: input.expectedMissionRevision }),
   });
   const inputPayload = await inputResponse.json();
   if (!inputResponse.ok || inputPayload?.ok === false) {
@@ -485,6 +551,9 @@ async function proxyJobRequest(job, path, request, body) {
 async function startRepairVerification(request, env, baselineAuditId, repairId) {
   assertSameOrigin(request);
   validateRepairId(repairId);
+  const input = await readJsonBody(request);
+  const extra = Object.keys(input ?? {}).find((key) => key !== "expectedMissionRevision");
+  if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
   const baselineJob = jobFromId(env, baselineAuditId);
   const inputResponse = await baselineJob.fetch(
     `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-input`,
@@ -495,6 +564,20 @@ async function startRepairVerification(request, env, baselineAuditId, repairId) 
   }
   const verification = inputPayload.data;
   const admission = await gateAdmission(request, env, verification.url, `repair:${repairId}`);
+  if (!admission.reused) {
+    const revisionResponse = await baselineJob.fetch(
+      `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/verification-input`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expectedMissionRevision: input.expectedMissionRevision }),
+      },
+    );
+    const revisionPayload = await revisionResponse.json();
+    if (!revisionResponse.ok || revisionPayload?.ok === false) {
+      return json(revisionPayload, { status: revisionResponse.status });
+    }
+  }
   const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
   const response = await job.fetch("https://frontmend.internal/start", {
     method: "POST",
@@ -648,7 +731,7 @@ async function routeApi(request, env, url) {
   }
 
   const match = url.pathname.match(
-    /^\/api\/audits\/([^/]+)(?:\/(results|report|receipt|assessment|evidence)(?:\/([^/]+))?)?$/,
+    /^\/api\/audits\/([^/]+)(?:\/(results|checkpoint|report|receipt|assessment|evidence)(?:\/([^/]+))?)?$/,
   );
   if (!match) {
     return errorResponse(new AuditError("NOT_FOUND", "That API route does not exist."));
@@ -657,7 +740,12 @@ async function routeApi(request, env, url) {
   const job = jobFromId(env, auditId);
   if (request.method === "DELETE" && !resource) {
     assertSameOrigin(request);
-    const response = await job.fetch("https://frontmend.internal/", { method: "DELETE" });
+    const body = await readJsonBody(request);
+    const response = await job.fetch("https://frontmend.internal/", {
+      method: "DELETE",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
     return new Response(response.body, response);
   }
   if (request.method !== "GET") {
@@ -668,6 +756,8 @@ async function routeApi(request, env, url) {
   const suffix =
     resource === "results"
       ? "/results"
+      : resource === "checkpoint"
+        ? "/checkpoint"
       : resource === "report"
         ? "/report"
       : resource === "receipt"
@@ -819,7 +909,10 @@ export class FrontmendAuditJob {
       const input = await readJsonBody(request);
       const existing = await this.ctx.storage.get("state");
       if (existing && !["failed", "cancelled"].includes(existing.status)) {
-        return json({ ok: true, data: auditSnapshot(existing) });
+        return json({
+          ok: true,
+          data: auditSnapshot(existing, await auditJobCheckpoint(this.ctx, existing)),
+        });
       }
       const state = {
         id: input.id,
@@ -829,6 +922,7 @@ export class FrontmendAuditJob {
         url: input.url,
         source: input.source,
         mission: existing?.mission ?? input.mission ?? null,
+        missionRevision: existing ? auditMissionRevision(existing) + 1 : 1,
         verification: input.verification ?? null,
         exploration: input.exploration ?? null,
         siteExploration: input.siteExploration ?? null,
@@ -846,7 +940,10 @@ export class FrontmendAuditJob {
       }
       this.abortController = new AbortController();
       this.ctx.waitUntil(this.run(state));
-      return json({ ok: true, data: auditSnapshot(state) }, { status: 202 });
+      return json({
+        ok: true,
+        data: auditSnapshot(state, await auditJobCheckpoint(this.ctx, state)),
+      }, { status: 202 });
     }
 
     const state = await this.ctx.storage.get("state");
@@ -855,21 +952,21 @@ export class FrontmendAuditJob {
     }
     if (request.method === "DELETE" && url.pathname === "/") {
       if (["complete", "failed", "cancelled"].includes(state.status)) {
-        return json({ ok: true, data: auditSnapshot(state) });
+        return json({ ok: true, data: auditSnapshot(state, await auditJobCheckpoint(this.ctx, state)) });
       }
+      const input = await readJsonBody(request);
+      await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
       this.abortController?.abort("cancelled");
-      const cancelled = {
-        ...state,
+      const cancelled = await advanceJobRevision(this.ctx, state, {
         status: "cancelled",
         phase: "cancelled",
         phaseLabel: "Audit cancelled",
         report: null,
         error: null,
         completedAt: Date.now(),
-      };
-      await this.ctx.storage.put("state", cancelled);
+      });
       await this.scheduleRetention();
-      return json({ ok: true, data: auditSnapshot(cancelled) });
+      return json({ ok: true, data: auditSnapshot(cancelled, await auditJobCheckpoint(this.ctx, cancelled)) });
     }
     if (request.method === "POST" && url.pathname === "/mission/prepare-repair") {
       if (state.status !== "complete" || !state.report) {
@@ -881,7 +978,7 @@ export class FrontmendAuditJob {
       if (!input || typeof input !== "object" || Array.isArray(input)) {
         return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
       }
-      const extra = Object.keys(input).find((key) => !["findingId", "source"].includes(key));
+      const extra = Object.keys(input).find((key) => !["findingId", "source", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown mission field: ${extra}.`));
       if (input.source !== "human" && input.source !== "agent") {
         return errorResponse(new AuditError("INVALID_INPUT", "source must be human or agent."));
@@ -897,26 +994,46 @@ export class FrontmendAuditJob {
           state.source === "agent" ? "agent" : "human",
           Number.isInteger(state.startedAt) ? state.startedAt : Date.now(),
         );
+        if (currentMission.repairPreparation?.findingId === finding.id) {
+          const missionCheckpoint = await auditJobCheckpoint(this.ctx, state);
+          return json({
+            ok: true,
+            data: {
+              audit: auditSnapshot(state, missionCheckpoint),
+              mission: currentMission,
+              missionState: deriveAuditMissionState({
+                report: state.report,
+                mission: currentMission,
+                diagnosticMissions: (await this.ctx.storage.get("diagnosticMissions")) ?? [],
+                repairs: (await this.ctx.storage.get("repairs")) ?? [],
+                browserReview,
+              }),
+              missionCheckpoint,
+            },
+          });
+        }
+        await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
         const mission = prepareRepairIntent(currentMission, finding.id, input.source);
-        const updated = { ...state, mission };
-        await this.ctx.storage.put("state", updated);
-        const [diagnosticMissions, repairs, browserReview] = await Promise.all([
+        const updated = await advanceJobRevision(this.ctx, state, { mission });
+        const [diagnosticMissions, repairs, retainedBrowserReview] = await Promise.all([
           this.ctx.storage.get("diagnosticMissions"),
           this.ctx.storage.get("repairs"),
           this.ctx.storage.get("browserReview"),
         ]);
+        const missionCheckpoint = await auditJobCheckpoint(this.ctx, updated);
         return json({
           ok: true,
           data: {
-            audit: auditSnapshot(updated),
+            audit: auditSnapshot(updated, missionCheckpoint),
             mission,
             missionState: deriveAuditMissionState({
               report: updated.report,
               mission,
               diagnosticMissions: diagnosticMissions ?? [],
               repairs: repairs ?? [],
-              browserReview: browserReview ?? null,
+              browserReview: retainedBrowserReview ?? null,
             }),
+            missionCheckpoint,
           },
         });
       } catch (error) {
@@ -930,9 +1047,16 @@ export class FrontmendAuditJob {
       const current = repairPolicySnapshot(await this.ctx.storage.get("repairPolicy"));
       if (request.method === "GET") return json({ ok: true, data: current });
       if (request.method === "POST") {
-        const policy = createRepairPolicy(await readJsonBody(request));
+        const input = await readJsonBody(request);
+        if (input?.mode === current.mode) {
+          return json({ ok: true, data: await checkpointedJobData(this.ctx, state, current) });
+        }
+        await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
+        const { expectedMissionRevision: _expectedMissionRevision, ...policyInput } = input ?? {};
+        const policy = createRepairPolicy(policyInput);
         await this.ctx.storage.put("repairPolicy", policy);
-        return json({ ok: true, data: policy });
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, policy) });
       }
       return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That repair policy operation is not supported."));
     }
@@ -955,10 +1079,13 @@ export class FrontmendAuditJob {
       if (!input || typeof input !== "object" || Array.isArray(input)) {
         return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
       }
-      const extra = Object.keys(input).find((key) => key !== "paths");
+      const extra = Object.keys(input).find((key) => !["paths", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
       try {
-        return json({ ok: true, data: createSiteExplorationInputs(state.report, input.paths) });
+        await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
+        const data = createSiteExplorationInputs(state.report, input.paths);
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, data) });
       } catch (error) {
         return errorResponse(error);
       }
@@ -1010,10 +1137,13 @@ export class FrontmendAuditJob {
       if (!input || typeof input !== "object" || Array.isArray(input)) {
         return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
       }
-      const extra = Object.keys(input).find((key) => key !== "path");
+      const extra = Object.keys(input).find((key) => !["path", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
       try {
-        return json({ ok: true, data: createRelatedAuditInput(state.report, input.path) });
+        await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
+        const data = createRelatedAuditInput(state.report, input.path);
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, data) });
       } catch (error) {
         return errorResponse(error);
       }
@@ -1033,7 +1163,16 @@ export class FrontmendAuditJob {
       if (state.status !== "complete") {
         return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
       }
-      return json({ ok: true, data: state.report });
+      return json({
+        ok: true,
+        data: {
+          ...state.report,
+          missionCheckpoint: await auditJobCheckpoint(this.ctx, state),
+        },
+      });
+    }
+    if (url.pathname === "/checkpoint") {
+      return json({ ok: true, data: await auditJobCheckpoint(this.ctx, state) });
     }
     if (url.pathname === "/receipt") {
       if (state.status !== "complete" || !state.report) {
@@ -1119,7 +1258,7 @@ export class FrontmendAuditJob {
         },
       });
     }
-    return json({ ok: true, data: auditSnapshot(state) });
+    return json({ ok: true, data: auditSnapshot(state, await auditJobCheckpoint(this.ctx, state)) });
   }
 
   async handleRepairs(request, url, state) {
@@ -1147,7 +1286,9 @@ export class FrontmendAuditJob {
       const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input.findingId);
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       const existing = repairs.find((repair) => repair.findingId === finding.id);
-      if (existing) return json({ ok: true, data: repairWithMission(existing) });
+      if (existing) {
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, repairWithMission(existing)) });
+      }
       if (state.mission?.repairPreparation?.findingId !== finding.id) {
         return errorResponse(new AuditError(
           "REPAIR_INTENT_REQUIRED",
@@ -1157,7 +1298,8 @@ export class FrontmendAuditJob {
       if (repairs.length >= 10) {
         return errorResponse(new AuditError("REPAIR_LIMIT", "This audit already has the maximum number of repair drafts."));
       }
-      const { source, ...proposal } = input;
+      const { source, expectedMissionRevision, ...proposal } = input;
+      await assertJobRevision(this.ctx, state, expectedMissionRevision);
       let diagnosticMission = null;
       const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
       const priority = state.mission
@@ -1192,7 +1334,8 @@ export class FrontmendAuditJob {
       repairs.push(repair);
       await this.ctx.storage.put("repairs", repairs);
       await this.ctx.storage.put("repairPolicy", repairPolicy);
-      return json({ ok: true, data: repairWithMission(repair) }, { status: 201 });
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repair)) }, { status: 201 });
     }
 
     const repairId = validateRepairId(decodeURIComponent(rawRepairId ?? ""));
@@ -1211,6 +1354,11 @@ export class FrontmendAuditJob {
           new AuditError("CHANGES_REQUESTED", "Revise this repair before it can be approved."),
         );
       }
+      if (repair.status === "approved") {
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, repairWithMission(repair)) });
+      }
+      const input = await readJsonBody(request);
+      await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
       if (repair.status !== "approved") {
         const approvedAt = Date.now();
         repairs[repairIndex] = {
@@ -1222,37 +1370,44 @@ export class FrontmendAuditJob {
         };
         await this.ctx.storage.put("repairs", repairs);
       }
-      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
     }
     if (action === "changes" && request.method === "POST") {
       const input = await readJsonBody(request);
-      const extra = Object.keys(input ?? {}).find((key) => key !== "feedback");
+      const extra = Object.keys(input ?? {}).find((key) => !["feedback", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`));
+      await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
       repairs[repairIndex] = requestRepairChanges(repair, input?.feedback);
       await this.ctx.storage.put("repairs", repairs);
-      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
     }
     if (action === "revise" && request.method === "POST") {
       const input = await readJsonBody(request);
-      const { source, ...proposal } = input ?? {};
+      const { source, expectedMissionRevision, ...proposal } = input ?? {};
       if (source !== undefined && source !== "agent") {
         return errorResponse(new AuditError("INVALID_REPAIR", "Repair revisions must be agent-authored."));
       }
+      await assertJobRevision(this.ctx, state, expectedMissionRevision);
       repairs[repairIndex] = reviseRepairDraft(repair, proposal, "agent");
       await this.ctx.storage.put("repairs", repairs);
-      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
     }
     if (action === "implementation" && request.method === "POST") {
       const input = await readJsonBody(request);
-      const { source, ...receipt } = input ?? {};
+      const { source, expectedMissionRevision, ...receipt } = input ?? {};
       if (source !== "agent") {
         return errorResponse(
           new AuditError("INVALID_IMPLEMENTATION_RECEIPT", "Repository implementation receipts must be agent-reported."),
         );
       }
+      await assertJobRevision(this.ctx, state, expectedMissionRevision);
       repairs[repairIndex] = recordRepositoryImplementation(repair, receipt);
       await this.ctx.storage.put("repairs", repairs);
-      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
     }
     if (action === "deployment" && request.method === "POST") {
       if (repair.status !== "approved") {
@@ -1261,12 +1416,16 @@ export class FrontmendAuditJob {
         );
       }
       if (!Number.isFinite(repair.deploymentAttestedAt)) {
+        const input = await readJsonBody(request);
+        await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
         repairs[repairIndex] = { ...repair, deploymentAttestedAt: Date.now() };
         await this.ctx.storage.put("repairs", repairs);
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, repairWithMission(repairs[repairIndex])) });
       }
-      return json({ ok: true, data: repairWithMission(repairs[repairIndex]) });
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, state, repairWithMission(repairs[repairIndex])) });
     }
-    if (action === "verification-input" && request.method === "GET") {
+    if (action === "verification-input" && ["GET", "POST"].includes(request.method)) {
       if (repair.status !== "approved") {
         return errorResponse(new AuditError("REPAIR_NOT_APPROVED", "Approve this repair draft before verification."));
       }
@@ -1278,7 +1437,12 @@ export class FrontmendAuditJob {
           ),
         );
       }
-      return json({ ok: true, data: createVerificationContext(state.report, repair) });
+      const verification = createVerificationContext(state.report, repair);
+      if (request.method === "GET") return json({ ok: true, data: verification });
+      const input = await readJsonBody(request);
+      await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
+      const updated = await advanceJobRevision(this.ctx, state);
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, verification) });
     }
     if (action === "export" && request.method === "GET") {
       try {
@@ -1310,15 +1474,18 @@ export class FrontmendAuditJob {
     }
     if (!rawMissionId && request.method === "POST") {
       const input = await readJsonBody(request);
-      const extra = Object.keys(input ?? {}).find((key) => key !== "findingId");
+      const extra = Object.keys(input ?? {}).find((key) => !["findingId", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
       const browserReview = await this.ctx.storage.get("browserReview");
       const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input?.findingId);
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
       const existing = missions.find((mission) => mission.findingId === finding.id);
-      if (existing) return json({ ok: true, data: diagnosticMissionSnapshot(existing) });
+      if (existing) {
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, diagnosticMissionSnapshot(existing)) });
+      }
       if (missions.length >= 10) return errorResponse(new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
       try {
+        await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
         const repairs = (await this.ctx.storage.get("repairs")) ?? [];
         const priority = state.mission
           ? deriveAuditMissionState({
@@ -1336,7 +1503,8 @@ export class FrontmendAuditJob {
         });
         missions.push(mission);
         await this.ctx.storage.put("diagnosticMissions", missions);
-        return json({ ok: true, data: mission }, { status: 201 });
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, mission) }, { status: 201 });
       } catch (error) {
         return errorResponse(error);
       }
@@ -1347,28 +1515,32 @@ export class FrontmendAuditJob {
     if (!action && request.method === "GET") return json({ ok: true, data: diagnosticMissionSnapshot(missions[missionIndex]) });
     if (action === "evidence" && request.method === "POST") {
       const input = await readJsonBody(request);
-      const { source, ...evidence } = input ?? {};
+      const { source, expectedMissionRevision, ...evidence } = input ?? {};
       if (source !== "agent" && source !== "person") {
         return errorResponse(new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", "Diagnostic evidence must identify an agent or person source."));
       }
       try {
+        await assertJobRevision(this.ctx, state, expectedMissionRevision);
         missions[missionIndex] = submitDiagnosticEvidence(missions[missionIndex], evidence, source);
         await this.ctx.storage.put("diagnosticMissions", missions);
-        return json({ ok: true, data: missions[missionIndex] });
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, missions[missionIndex]) });
       } catch (error) {
         return errorResponse(error);
       }
     }
     if (action === "blocker" && request.method === "POST") {
       const input = await readJsonBody(request);
-      const { source, ...blocker } = input ?? {};
+      const { source, expectedMissionRevision, ...blocker } = input ?? {};
       if (source !== "agent" && source !== "person") {
         return errorResponse(new AuditError("INVALID_DIAGNOSTIC_BLOCKER", "A diagnostic blocker must identify an agent or person source."));
       }
       try {
+        await assertJobRevision(this.ctx, state, expectedMissionRevision);
         missions[missionIndex] = recordDiagnosticBlocker(missions[missionIndex], blocker, source);
         await this.ctx.storage.put("diagnosticMissions", missions);
-        return json({ ok: true, data: missions[missionIndex] });
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, missions[missionIndex]) });
       } catch (error) {
         return errorResponse(error);
       }
@@ -1393,10 +1565,13 @@ export class FrontmendAuditJob {
     }
     if (!rawReviewId && request.method === "POST") {
       const input = await readJsonBody(request);
-      const extra = Object.keys(input ?? {})[0];
+      const extra = Object.keys(input ?? {}).find((key) => key !== "expectedMissionRevision");
       if (extra) return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
-      if (stored) return json({ ok: true, data: browserReviewSnapshot(stored) });
+      if (stored) {
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, state, browserReviewSnapshot(stored)) });
+      }
       try {
+        await assertJobRevision(this.ctx, state, input?.expectedMissionRevision);
         const review = verificationReplay
           ? createBrowserVerificationReview({
               auditId: state.id,
@@ -1411,7 +1586,8 @@ export class FrontmendAuditJob {
               target: state.report.finalUrl ?? state.report.url ?? state.url,
             });
         await this.ctx.storage.put("browserReview", review);
-        return json({ ok: true, data: review }, { status: 201 });
+        const updatedState = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updatedState, review) }, { status: 201 });
       } catch (error) {
         return errorResponse(error);
       }
@@ -1421,16 +1597,22 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("BROWSER_REVIEW_NOT_FOUND", "That browser review does not exist."));
       }
       const input = await readJsonBody(request);
-      const { source, ...check } = input ?? {};
+      const { source, expectedMissionRevision, ...check } = input ?? {};
       if (source !== "agent" && source !== "person") {
         return errorResponse(new AuditError("INVALID_BROWSER_REVIEW", "Browser review evidence must identify an agent or person source."));
       }
       try {
+        if (isIdenticalBrowserReviewContribution(stored, check, source)) {
+          return json({
+            ok: true,
+            data: await checkpointedJobData(this.ctx, state, browserReviewSnapshot(stored)),
+          });
+        }
+        await assertJobRevision(this.ctx, state, expectedMissionRevision);
         const review = recordBrowserReviewCheck(stored, check, source);
         await this.ctx.storage.put("browserReview", review);
         if (verificationReplay) {
-          const updated = {
-            ...state,
+          const updated = await advanceJobRevision(this.ctx, state, {
             report: {
               ...state.report,
               verification: compareVerification(
@@ -1440,10 +1622,11 @@ export class FrontmendAuditJob {
                 review,
               ),
             },
-          };
-          await this.ctx.storage.put("state", updated);
+          });
+          return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
         }
-        return json({ ok: true, data: review });
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
       } catch (error) {
         return errorResponse(error);
       }
@@ -1495,8 +1678,7 @@ export class FrontmendAuditJob {
         current.attempt !== initialState.attempt ||
         current.status === "cancelled"
       ) return;
-      await this.ctx.storage.put("state", {
-        ...current,
+      await advanceJobRevision(this.ctx, current, {
         status: "complete",
         phase: "complete",
         phaseLabel: "Live audit complete",
@@ -1512,8 +1694,7 @@ export class FrontmendAuditJob {
         current.status === "cancelled"
       ) return;
       if (error?.code === "AUDIT_CANCELLED") {
-        await this.ctx.storage.put("state", {
-          ...current,
+        await advanceJobRevision(this.ctx, current, {
           status: "cancelled",
           phase: "cancelled",
           phaseLabel: "Audit cancelled",
@@ -1524,8 +1705,7 @@ export class FrontmendAuditJob {
         await this.scheduleRetention();
         return;
       }
-      await this.ctx.storage.put("state", {
-        ...current,
+      await advanceJobRevision(this.ctx, current, {
         status: "failed",
         phase: "failed",
         phaseLabel: "Live audit failed",

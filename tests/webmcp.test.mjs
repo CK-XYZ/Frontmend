@@ -41,6 +41,21 @@ const TOOL_NAMES = [
   "record_repository_implementation",
   "start_repair_verification",
 ];
+const CHECKPOINTED_MUTATION_TOOLS = [
+  "cancel_site_audit",
+  "open_browser_review",
+  "record_browser_review_check",
+  "start_related_page_audit",
+  "open_diagnostic_mission",
+  "submit_runtime_diagnosis",
+  "record_diagnostic_blocker",
+  "start_site_exploration",
+  "prepare_site_repair",
+  "stage_site_repair",
+  "revise_site_repair",
+  "record_repository_implementation",
+  "start_repair_verification",
+];
 
 function completedBrowserReview({ auditId, mission, target = "https://example.com/" }) {
   let review = createBrowserReviewMission({ auditId, mission, target, now: 20 });
@@ -814,7 +829,7 @@ test("prepare repair tool records only explicit finding intent", async () => {
   const tool = findTool(createFrontmendTools(service), "prepare_site_repair");
   const prepared = await tool.execute({ findingId: "mobile-color-contrast" });
   assert.equal(prepared.ok, true);
-  assert.deepEqual(calls, [[auditId, "mobile-color-contrast", "agent"]]);
+  assert.deepEqual(calls, [[auditId, "mobile-color-contrast", "agent", 1]]);
   assert.equal(prepared.data.authority.recordedIntentOnly, true);
   assert.equal(prepared.data.authority.approved, false);
   assert.equal(prepared.data.authority.deployed, false);
@@ -1095,10 +1110,37 @@ test("audit-scoped schemas make only the current audit ID optional", async () =>
     assert.equal(definition.inputSchema.properties.auditId.description.includes("visible audit"), true, name);
   }
 
+  for (const name of CHECKPOINTED_MUTATION_TOOLS) {
+    const definition = findTool(tools, name);
+    assert.equal(definition.inputSchema.required.includes("expectedMissionRevision"), true, name);
+    assert.equal(definition.inputSchema.properties.expectedMissionRevision.minimum, 1, name);
+  }
+
   const withoutContext = await findTool(tools, "get_site_audit_results").execute({});
   assert.equal(withoutContext.ok, false);
   assert.equal(withoutContext.error.code, "AUDIT_CONTEXT_REQUIRED");
   assert.match(withoutContext.error.message, /Provide auditId or open the audit workspace/);
+});
+
+test("WebMCP preserves the current checkpoint in a safe stale-write error", async () => {
+  const checkpoint = { auditId: "audit-1", missionRevision: 5 };
+  const service = {
+    getActiveAudit: () => ({ id: "audit-1", status: "running", missionRevision: 5 }),
+    cancelAudit: async () => {
+      throw new AuditError(
+        "MISSION_REVISION_STALE",
+        "The mission changed.",
+        true,
+        { missionCheckpoint: checkpoint },
+      );
+    },
+  };
+  const result = await findTool(createFrontmendTools(service), "cancel_site_audit").execute({
+    expectedMissionRevision: 4,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "MISSION_REVISION_STALE");
+  assert.deepEqual(result.error.details, { missionCheckpoint: checkpoint });
 });
 
 test("diagnostic tools keep measured evidence separate from agent-reported repository diagnosis", async () => {

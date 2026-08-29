@@ -427,6 +427,7 @@ test("audit jobs derive route lineage from completed retained evidence", async (
   const job = new FrontmendAuditJob({
     storage: {
       get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
     },
   }, {});
 
@@ -674,11 +675,11 @@ test("Durable Object freezes repair intent without creating or approving a repai
       put: async (key, value) => values.set(key, structuredClone(value)),
     },
   }, {});
-  const prepare = (findingId, source = "human") => job.fetch(new Request(
+  const prepare = (findingId, source = "human", expectedMissionRevision) => job.fetch(new Request(
     "https://frontmend.internal/mission/prepare-repair",
     {
       method: "POST",
-      body: JSON.stringify({ findingId, source }),
+      body: JSON.stringify({ findingId, source, expectedMissionRevision }),
     },
   ));
 
@@ -695,13 +696,23 @@ test("Durable Object freezes repair intent without creating or approving a repai
   const firstPayload = await first.json();
   assert.equal(first.status, 200);
   assert.equal(firstPayload.data.mission.intent, "prepare-fix");
+  assert.equal(firstPayload.data.audit.missionRevision, 2);
+  assert.equal(firstPayload.data.missionCheckpoint.missionRevision, 2);
   assert.equal(firstPayload.data.missionState.nextAction.tool, "open_browser_review");
   assert.equal(values.has("repairs"), false);
   assert.deepEqual(values.get("repairPolicy"), policy);
 
-  const repeated = await prepare("document-description", "agent");
+  const repeated = await prepare("document-description", "agent", 1);
   assert.equal(repeated.status, 200);
-  assert.deepEqual((await repeated.json()).data.mission, firstPayload.data.mission);
+  const repeatedPayload = await repeated.json();
+  assert.deepEqual(repeatedPayload.data.mission, firstPayload.data.mission);
+  assert.equal(repeatedPayload.data.missionCheckpoint.missionRevision, 2);
+
+  const stale = await prepare("document-title", "agent", 1);
+  const stalePayload = await stale.json();
+  assert.equal(stale.status, 409);
+  assert.equal(stalePayload.error.code, "MISSION_REVISION_STALE");
+  assert.equal(stalePayload.error.details.missionCheckpoint.missionRevision, 2);
 
   const conflict = await prepare("document-title", "agent");
   const conflictPayload = await conflict.json();
@@ -756,6 +767,7 @@ test("Durable Object persists sequential browser review evidence before completi
   assert.equal(openedResponse.status, 201);
   const opened = (await openedResponse.json()).data;
   assert.equal(opened.state.nextCheck.id, "rendered-structure");
+  assert.equal(opened.missionCheckpoint.missionRevision, 2);
 
   const skipped = await post(`/browser-review/${opened.id}/checks`, {
     source: "agent",
@@ -775,7 +787,22 @@ test("Durable Object persists sequential browser review evidence before completi
     observations: ["One primary heading and a named main landmark are rendered."],
   });
   assert.equal(structure.status, 200);
-  assert.equal((await structure.json()).data.state.nextCheck.id, "search-discovery");
+  const structurePayload = (await structure.json()).data;
+  assert.equal(structurePayload.state.nextCheck.id, "search-discovery");
+  assert.equal(structurePayload.missionCheckpoint.missionRevision, 3);
+
+  const identicalRetry = await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    expectedMissionRevision: 2,
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered structure exposes the page topic.",
+    observations: ["One primary heading and a named main landmark are rendered."],
+  });
+  const identicalPayload = (await identicalRetry.json()).data;
+  assert.equal(identicalRetry.status, 200);
+  assert.equal(identicalPayload.missionCheckpoint.missionRevision, 3);
+  assert.equal(identicalPayload.results.length, 1);
 
   const discovery = await post(`/browser-review/${opened.id}/checks`, {
     source: "agent",
@@ -818,6 +845,31 @@ test("proxies a completed audit report through the stable public route", async (
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type"), /text\/markdown/);
   assert.deepEqual(calls, [{ id: auditId, pathname: "/report" }]);
+});
+
+test("proxies a fresh-session checkpoint through the stable public route", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const calls = [];
+  const response = await worker.fetch(
+    new Request(`https://frontmend.test/api/audits/${auditId}/checkpoint`),
+    {
+      AUDIT_JOBS: {
+        idFromName: (name) => name,
+        get: (id) => ({
+          fetch: async (url) => {
+            calls.push({ id, pathname: new URL(url).pathname });
+            return Response.json({
+              ok: true,
+              data: { schemaVersion: 1, auditId: id, missionRevision: 4 },
+            });
+          },
+        }),
+      },
+    },
+  );
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).data.missionRevision, 4);
+  assert.deepEqual(calls, [{ id: auditId, pathname: "/checkpoint" }]);
 });
 
 test("proxies a completed assessment receipt through the stable public route", async () => {
@@ -967,6 +1019,19 @@ test("local development exports the same completed audit report contract", async
   assert.equal(assessment.headers.get("cache-control"), "no-store");
   assert.match(assessment.body, /^# Frontmend assessment receipt/m);
   assert.match(assessment.body, /does not prove a repair, deployment, or resolution/);
+
+  const checkpoint = await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/checkpoint`,
+  });
+  const checkpointPayload = JSON.parse(checkpoint.body).data;
+  assert.equal(checkpoint.status, 200);
+  assert.equal(checkpointPayload.auditId, auditId);
+  assert.equal(checkpointPayload.missionRevision, 2);
+
+  const results = await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/results`,
+  });
+  assert.equal(JSON.parse(results.body).data.missionCheckpoint.missionRevision, 2);
 });
 
 test("local development persists related-route lineage into snapshots and reports", async () => {
