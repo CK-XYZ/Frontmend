@@ -247,3 +247,12 @@
 - Reconciliation, mission, receipt, and diagnostic suites passed 27/27. Shared service, WebMCP, Worker, and local-runtime suites passed 83/83, including the packaging test.
 - The production build transformed 4,580 modules and emitted `index-BtoHKy_Q.css` at 84.63 kB raw / 17.07 kB gzip and `index-CP_3yMRn.js` at 480.44 kB raw / 131.42 kB gzip.
 - No server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — WebMCP mission inspector
+
+- Added a pure mission-inspector projection for landing, measurement, rendered investigation, repository diagnosis, human review, site-owner deployment, exact replay, and terminal evidence states.
+- Rebuilt the existing WebMCP dialog around five plain-language questions: what happens now, why now, what must return, what it unlocks, and what remains human-only.
+- The inspector consumes the authoritative audit/mission/repair/replay state and the actually registered contextual subset. Active tool names, descriptions, and input schemas remain discoverable in secondary native disclosure controls.
+- Preserved the existing dialog role, modal semantics, focus trap, Escape handling, close-button focus restoration, Phosphor icons, and complete Human mode. Added a single-column 390 px layout without changing the human audit workflow.
+- Inspector, mission, WebMCP, and service suites passed 62/62. The production build transformed 4,581 modules and emitted `index-DVFarWPd.css` at 87.96 kB raw / 17.64 kB gzip and `index-Cc1vt4aS.js` at 489.19 kB raw / 133.75 kB gzip.
+- Fresh visual, horizontal-overflow, keyboard, and focus-restoration proof remains intentionally unchecked because no server or deployment was authorised. No server, deployment, push, Access change, browser proof, or Devpost write occurred.

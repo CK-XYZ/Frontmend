@@ -34,7 +34,12 @@ import {
 } from "./audit-mission-contract.js";
 import { diagnosticEvidenceChain, findingRequiresDiagnosticMission } from "./diagnostic-contract.js";
 import { repairMissionState } from "./repair-contract.js";
-import { contextualFrontmendToolNames, registerFrontmendTools } from "./webmcp.js";
+import { createMissionInspector } from "./mission-inspector-contract.js";
+import {
+  contextualFrontmendToolNames,
+  createFrontmendTools,
+  registerFrontmendTools,
+} from "./webmcp.js";
 
 const VIEWPORTS = [
   { id: "desktop", label: "Desktop", detail: "1440 px", icon: Desktop },
@@ -48,29 +53,6 @@ const LANDING_SIGNALS = [
   { label: "Fresh proof", detail: "Before + after", state: "good", icon: CheckCircle },
 ];
 const WEBMCP_TOOL_COUNT = 21;
-const WEBMCP_TOOL_COPY = {
-  start_site_audit: ["Start a site audit", "Open a real asynchronous audit for a public URL."],
-  check_site_audit_progress: ["Check audit progress", "Read the live phase and completion percentage."],
-  cancel_site_audit: ["Cancel a site audit", "Stop the live job and persist a truthful terminal state."],
-  get_site_audit_results: ["Read focused audit evidence", "Return up to three deduplicated priorities for requested areas such as accessibility and SEO."],
-  open_browser_review: ["Open rendered-browser review", "Turn an agent-started accessibility or SEO audit into exact browser checks beyond Lighthouse."],
-  record_browser_review_check: ["Contribute one browser check", "Retain directly observed facts, issues, or an honest blocker with separate provenance."],
-  get_assessment_receipt: ["Export completed assessment", "Carry measured and contributed evidence forward in one bounded portable receipt."],
-  get_repository_fix_brief: ["Prepare a repository fix brief", "Turn one live finding into source-safe evidence and acceptance criteria for a coding agent."],
-  open_diagnostic_mission: ["Open a diagnostic mission", "Turn a measured symptom into a visible browser, repository, and verification evidence chain."],
-  submit_runtime_diagnosis: ["Contribute runtime diagnosis", "Complete the labelled evidence chain with browser observations, repository ownership, and planned checks."],
-  record_diagnostic_blocker: ["Record an honest blocker", "Preserve why browser or repository diagnosis cannot proceed without dismissing the measured finding."],
-  record_repository_implementation: ["Record repository implementation", "Attach bounded file and check evidence after an approved repair is implemented by a coding agent."],
-  start_related_page_audit: ["Audit an observed route", "Start a new audit from a same-site path found in this evidence."],
-  start_site_exploration: ["Explore selected routes", "Run one to three observed pages as a durable cross-page mission."],
-  get_site_exploration: ["Read site exploration", "Inspect mission progress and recurring evidence across selected pages."],
-  get_verification_receipt: ["Read verification proof", "Retrieve the portable before-and-after receipt."],
-  prepare_site_repair: ["Prepare one finding for repair", "Record explicit intent without approving, implementing, or deploying anything."],
-  stage_site_repair: ["Submit a repository mission", "Share a bounded plan with the person or use their scoped auto grant."],
-  revise_site_repair: ["Revise a repair", "Respond to the specific change request left by a person."],
-  get_repair_workspace: ["Inspect repair state", "Read proposal versions, ownership, and allowed next actions."],
-  start_repair_verification: ["Verify a deployed repair", "Run fresh evidence after recorded authorisation and human deployment attestation."],
-};
 
 function auditIdFromPathname(pathname) {
   const match = pathname.match(
@@ -177,20 +159,12 @@ function WebMcpStatus({ status, expanded, onClick }) {
   );
 }
 
-function WebMcpCapabilitySheet({ status, onClose }) {
+function WebMcpCapabilitySheet({ status, inspector, onClose }) {
   const dialogRef = useDialogFocus(onClose);
   const supported = status.supported;
-  const activeTools = status.toolNames ?? [];
-  const syncing = status.status === "registering";
-  const lead = !supported
-    ? "This browser has not exposed document.modelContext. The complete human workflow remains available."
-    : syncing
-      ? "Frontmend is synchronizing the agent capabilities for this visible state."
-      : activeTools.includes("check_site_audit_progress")
-        ? "A live audit is running, so progress is the only valid agent action right now."
-        : activeTools.includes("start_site_audit")
-          ? "No audit is active. An agent can start the same workflow as the URL form; accessibility and SEO missions then unlock exact rendered-browser checks after measurement."
-          : "The audit is complete. Only actions supported by its evidence and review state are active.";
+  const questions = inspector.questions;
+  const activeTools = inspector.activeTools;
+  const syncing = inspector.registration.status === "registering";
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -211,44 +185,87 @@ function WebMcpCapabilitySheet({ status, onClose }) {
           </span>
           <div>
             <p className="kicker">Contextual WebMCP</p>
-            <h2 id="webmcp-sheet-title">What agents can do now</h2>
+            <h2 id="webmcp-sheet-title">Mission inspector</h2>
           </div>
         </div>
-        <p className="webmcp-sheet-lead">{lead}</p>
-
-        {activeTools.length ? (
-          <ol className="webmcp-capability-list">
-            {activeTools.map((name) => {
-              const [title, description] = WEBMCP_TOOL_COPY[name] ?? [name, "Available in the current state."];
-              return (
-                <li key={name}>
-                  <CheckCircle size={18} weight="fill" aria-hidden="true" />
-                  <div>
-                    <strong>{title}</strong>
-                    <p>{description}</p>
-                    <code>{name}</code>
-                  </div>
-                </li>
-              );
-            })}
-          </ol>
-        ) : (
-          <div className="webmcp-capability-empty">
-            <Pulse size={20} weight="duotone" aria-hidden="true" />
-            <span>{syncing ? "Capability sync in progress" : "No agent capabilities are active"}</span>
+        <div className="mission-inspector-stage">
+          <span>{inspector.stage.replaceAll("-", " ")}</span>
+          <strong>{questions.whatHappensNow.actor}</strong>
+        </div>
+        <section className="mission-inspector-now" aria-labelledby="mission-inspector-now-title">
+          <span aria-hidden="true"><Pulse size={20} weight="duotone" /></span>
+          <div>
+            <p className="kicker">What happens now</p>
+            <h3 id="mission-inspector-now-title">{questions.whatHappensNow.title}</h3>
+            <p>{questions.whatHappensNow.summary}</p>
+            {questions.whatHappensNow.requiredCapability ? (
+              <small>Required capability · {questions.whatHappensNow.requiredCapability}</small>
+            ) : null}
           </div>
-        )}
+        </section>
+
+        <div className="mission-inspector-why">
+          <strong>Why now</strong>
+          <p>{questions.whyNow}</p>
+        </div>
+
+        <div className="mission-inspector-columns">
+          <section>
+            <ClipboardText size={18} weight="duotone" aria-hidden="true" />
+            <div>
+              <strong>What must return</strong>
+              {questions.whatMustReturn.length ? (
+                <ul>{questions.whatMustReturn.map((item) => <li key={item}>{item}</li>)}</ul>
+              ) : <p>No further evidence is required.</p>}
+            </div>
+          </section>
+          <section>
+            <ArrowRight size={18} weight="bold" aria-hidden="true" />
+            <div>
+              <strong>What it unlocks</strong>
+              <ul>{questions.whatItUnlocks.map((item) => <li key={item}>{item}</li>)}</ul>
+            </div>
+          </section>
+        </div>
 
         <div className="webmcp-human-boundary">
           <Stamp size={20} weight="duotone" aria-hidden="true" />
           <div>
-            <strong>Human authority stays visible</strong>
-            <p>Agents cannot grant themselves approval or attest deployment. A person may review each plan or visibly delegate a bounded low-risk policy; Frontmend records which authority advanced the mission.</p>
+            <strong>What remains human-only</strong>
+            <ul>{questions.whatRemainsHumanOnly.map((item) => <li key={item}>{item}</li>)}</ul>
           </div>
         </div>
-        <p className="webmcp-library-note">
-          {activeTools.length} active now · {status.totalTools ?? WEBMCP_TOOL_COUNT} in the bounded library
-        </p>
+
+        <details className="webmcp-tool-disclosure">
+          <summary>
+            Tool contracts
+            <span>{activeTools.length} active · {inspector.registration.totalToolCount} bounded</span>
+          </summary>
+          {activeTools.length ? (
+            <ol className="webmcp-capability-list">
+              {activeTools.map((tool) => (
+                <li key={tool.name}>
+                  <CheckCircle size={18} weight="fill" aria-hidden="true" />
+                  <div>
+                    <strong>{tool.title}</strong>
+                    <p>{tool.description}</p>
+                    <code>{tool.name}</code>
+                    <details className="webmcp-schema-disclosure">
+                      <summary>Input schema</summary>
+                      <pre>{JSON.stringify(tool.inputSchema, null, 2)}</pre>
+                    </details>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : (
+            <div className="webmcp-capability-empty">
+              <Pulse size={20} weight="duotone" aria-hidden="true" />
+              <span>{syncing ? "Capability sync in progress" : "No agent tool contracts are active"}</span>
+            </div>
+          )}
+        </details>
+        <p className="webmcp-library-note">{inspector.humanFallback.message}</p>
       </section>
     </div>
   );
@@ -3006,6 +3023,26 @@ export function App() {
   const inputRef = useRef(null);
   const webMcpToolNames = contextualFrontmendToolNames(auditService);
   const webMcpContextKey = webMcpToolNames.join("|");
+  const inspectorRepairs = audit?.id ? auditService.getRepairs(audit.id) : [];
+  const inspectorBrowserReview = audit?.id ? auditService.getBrowserReview(audit.id) : null;
+  const inspectorMissionState = audit?.status === "complete" && audit.report && audit.mission
+    ? deriveAuditMissionState({
+        report: audit.report,
+        mission: audit.mission,
+        diagnosticMissions: auditService.getDiagnosticMissions(audit.id),
+        repairs: inspectorRepairs,
+        browserReview: inspectorBrowserReview,
+      })
+    : null;
+  const missionInspector = createMissionInspector({
+    audit,
+    missionState: inspectorMissionState,
+    repairs: inspectorRepairs,
+    browserReview: inspectorBrowserReview,
+    contextualToolNames: webMcp.toolNames,
+    toolDetails: createFrontmendTools(auditService),
+    webMcp,
+  });
 
   useEffect(() => {
     const dispose = registerFrontmendTools({
@@ -3272,7 +3309,11 @@ export function App() {
 
       {showHow ? <HowItWorks onClose={() => setShowHow(false)} /> : null}
       {showWebMcp ? (
-        <WebMcpCapabilitySheet status={webMcp} onClose={() => setShowWebMcp(false)} />
+        <WebMcpCapabilitySheet
+          status={webMcp}
+          inspector={missionInspector}
+          onClose={() => setShowWebMcp(false)}
+        />
       ) : null}
       {showAgentActivity ? (
         <AgentActivityDrawer

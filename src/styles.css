@@ -5264,6 +5264,134 @@ input:focus-visible,
   line-height: 1.6;
 }
 
+.mission-inspector-stage {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 22px 0 10px;
+  color: #66705f;
+  font-size: 9px;
+}
+
+.mission-inspector-stage span {
+  padding: 5px 8px;
+  border-radius: 999px;
+  background: #eaf4d8;
+  color: #5e7c31;
+  font-weight: 760;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.mission-inspector-stage strong {
+  font-size: 9px;
+  font-weight: 650;
+}
+
+.mission-inspector-now {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  padding: 19px;
+  border: 1px solid #d9e3c7;
+  border-radius: 17px;
+  background: #f6faef;
+}
+
+.mission-inspector-now > span {
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  background: #dfeaC7;
+  color: #608135;
+}
+
+.mission-inspector-now h3 {
+  margin: 3px 0 5px;
+  color: #35402e;
+  font-size: 18px;
+  font-weight: 580;
+  letter-spacing: -0.025em;
+}
+
+.mission-inspector-now p:not(.kicker),
+.mission-inspector-why p {
+  margin: 0;
+  color: #70796a;
+  font-size: 10px;
+  line-height: 1.55;
+}
+
+.mission-inspector-now small {
+  display: block;
+  margin-top: 9px;
+  color: #668043;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mission-inspector-why {
+  margin: 10px 0;
+  padding: 12px 14px;
+  border-left: 3px solid #a6c56d;
+  background: #fafbf7;
+}
+
+.mission-inspector-why strong {
+  display: block;
+  margin-bottom: 3px;
+  color: #4b5841;
+  font-size: 9px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mission-inspector-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.mission-inspector-columns > section {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  padding: 14px;
+  border: 1px solid #e2e5dc;
+  border-radius: 14px;
+  background: #fff;
+  color: #71815c;
+}
+
+.mission-inspector-columns strong {
+  display: block;
+  color: #46503f;
+  font-size: 10px;
+}
+
+.mission-inspector-columns ul,
+.webmcp-human-boundary ul {
+  display: grid;
+  gap: 5px;
+  margin: 7px 0 0;
+  padding-left: 15px;
+  color: #6d7667;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
+.mission-inspector-columns p {
+  margin: 7px 0 0;
+  color: #7b8377;
+  font-size: 9px;
+}
+
 .webmcp-capability-list {
   display: grid;
   gap: 7px;
@@ -5341,11 +5469,116 @@ input:focus-visible,
   line-height: 1.5;
 }
 
+.webmcp-human-boundary ul {
+  color: #66735d;
+}
+
+.webmcp-tool-disclosure {
+  margin-top: 12px;
+  border: 1px solid #e1e4da;
+  border-radius: 14px;
+  background: #fff;
+}
+
+.webmcp-tool-disclosure > summary,
+.webmcp-schema-disclosure > summary {
+  cursor: pointer;
+  list-style-position: inside;
+}
+
+.webmcp-tool-disclosure > summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 13px 14px;
+  color: #475143;
+  font-size: 10px;
+  font-weight: 730;
+}
+
+.webmcp-tool-disclosure > summary span {
+  color: #8a9288;
+  font-size: 8px;
+  font-weight: 600;
+}
+
+.webmcp-tool-disclosure[open] > summary {
+  border-bottom: 1px solid #e7e9e2;
+}
+
+.webmcp-tool-disclosure .webmcp-capability-list,
+.webmcp-tool-disclosure .webmcp-capability-empty {
+  margin: 10px;
+}
+
+.webmcp-schema-disclosure {
+  margin-top: 8px;
+}
+
+.webmcp-schema-disclosure > summary {
+  color: #6f796e;
+  font-size: 8px;
+}
+
+.webmcp-schema-disclosure pre {
+  max-height: 220px;
+  margin: 8px 0 0;
+  overflow: auto;
+  padding: 10px;
+  border-radius: 8px;
+  background: #252b27;
+  color: #dfe9d7;
+  font-size: 8px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+}
+
 .webmcp-library-note {
   margin: 14px 0 0;
   color: #8a928b;
   font-size: 9px;
   text-align: right;
+}
+
+@media (max-width: 420px) {
+  .webmcp-sheet {
+    max-height: calc(100vh - 20px);
+    padding: 25px 18px 20px;
+    border-radius: 20px;
+  }
+
+  .webmcp-sheet-heading {
+    gap: 10px;
+    padding-right: 34px;
+  }
+
+  .webmcp-sheet-heading h2 {
+    font-size: 29px;
+  }
+
+  .webmcp-sheet-signal {
+    width: 38px;
+    height: 38px;
+  }
+
+  .mission-inspector-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .mission-inspector-now {
+    grid-template-columns: 1fr;
+    padding: 15px;
+  }
+
+  .mission-inspector-stage {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .webmcp-tool-disclosure > summary {
+    align-items: flex-start;
+    flex-direction: column;
+  }
 }
 
 .how-sheet h2 {
