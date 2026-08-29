@@ -47,7 +47,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: The transition tool accepts only audit/finding IDs; it cannot accept plan/code/policy/deployment data; `stage_site_repair` is absent before and present after a valid transition; verification audits retain receipt access; unsupported WebMCP still leaves the human UI complete.
   Verify: `bun test tests/webmcp.test.mjs tests/diagnostic-contract.test.mjs tests/repair-contract.test.mjs`
 
-- [ ] **6. Add a judge-legible mission summary to progress and results**
+- [x] **6. Add a judge-legible mission summary to progress and results**
   Spec ref: `spec.md > Human UI > Mission summary`; `prd.md > Epic 8: Make the WebMCP differentiation immediately legible`
   What to build: Render one semantic mission summary showing Assessment/Preparing a fix, focus, audit-versus-assessment status, next actor/action, and authority boundary. Reuse the pure derived contract; do not create browser-only state or replace the existing repair rail.
   Acceptance: Agent-started focus is visible during progress and after reload; broad human audits say Full frontend audit; the completed page shows when measurement is done but diagnosis remains; copy states that the agent investigates the repository while the person controls deployment; layout remains accessible and responsive.

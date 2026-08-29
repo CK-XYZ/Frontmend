@@ -90,3 +90,12 @@
 - Existing repair revision, implementation, verification, and verification-receipt tools continue to follow their authoritative retained states.
 - Visible capability copy reports a contextual subset from a seventeen-tool library, including the new intent boundary.
 - Verification: `bun test tests/webmcp.test.mjs tests/diagnostic-contract.test.mjs tests/repair-contract.test.mjs` — 44 passed, 0 failed.
+
+## 2026-08-29 — Build item 6
+
+- Added a single responsive `AuditMissionSummary` to running and completed workspaces; it derives from the persisted audit plus existing diagnostic/repair caches rather than adding browser-only mission state.
+- The summary makes Assessment versus Preparing a fix, retained focus, job-versus-assessment completion, next actor/action, and agent/person attribution immediately visible.
+- Authority copy states that the agent investigates browser/repository evidence while the person controls repair intent, approval, deployment, and deployment attestation.
+- Broad human audits display Full frontend audit; legacy retained audits receive a display-only broad fallback without rewriting server state.
+- React best-practices guidance influenced the pure prop-derived component and reuse of the existing subscription rather than a second subscription/state machine.
+- Verification: `bun test tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs` — 69 passed, 0 failed; `bun run build` succeeded with the Sites package prepared.

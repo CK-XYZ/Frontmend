@@ -27,6 +27,7 @@ import {
 } from "@phosphor-icons/react";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "./audit-service.js";
+import { createAuditMission, deriveAuditMissionState } from "./audit-mission-contract.js";
 import { repairMissionState } from "./repair-contract.js";
 import { contextualFrontmendToolNames, registerFrontmendTools } from "./webmcp.js";
 
@@ -440,6 +441,90 @@ function Landing({ value, setValue, onSubmit, error, inputRef, isSubmitting }) {
   );
 }
 
+function missionActionLabel(state) {
+  if (!state.nextAction) {
+    return state.assessmentComplete
+      ? "No required continuation"
+      : "The person chooses the next repair target";
+  }
+  const labels = {
+    check_site_audit_progress: "Agent waits for the live measurement",
+    open_diagnostic_mission: "Agent opens the measured issue for diagnosis",
+    submit_runtime_diagnosis: "Agent contributes browser and repository diagnosis",
+    stage_site_repair: "Agent prepares a bounded repair draft",
+    get_repair_workspace: "Agent continues the reviewed repair workspace",
+  };
+  return labels[state.nextAction.tool] ?? `Next: ${state.nextAction.tool.replaceAll("_", " ")}`;
+}
+
+function missionFocusLabel(focusAreas) {
+  if (!focusAreas.length) return "Full frontend audit";
+  return focusAreas
+    .map((area) => (area === "seo" ? "SEO" : `${area[0].toUpperCase()}${area.slice(1)}`))
+    .join(" + ");
+}
+
+function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = [] }) {
+  const titleId = useId();
+  const retainedMission = audit?.mission ?? createAuditMission(
+    {},
+    audit?.source === "agent" ? "agent" : "human",
+    0,
+  );
+  const state = deriveAuditMissionState({
+    report: audit?.report ?? null,
+    mission: retainedMission,
+    diagnosticMissions,
+    repairs,
+  });
+  const focusLabel = missionFocusLabel(state.requestedFocusAreas);
+  const statusLabel = !state.auditComplete
+    ? "Measurement in progress"
+    : state.assessmentComplete
+      ? "Assessment complete"
+      : "Measurement complete · diagnosis active";
+  const tone = state.assessmentComplete ? "complete" : state.auditComplete ? "attention" : "running";
+
+  return (
+    <section className={`audit-mission-summary ${tone}`} aria-labelledby={titleId}>
+      <div className="audit-mission-identity">
+        <p className="kicker">
+          <Robot size={14} weight="fill" aria-hidden="true" />
+          {state.intent === "prepare-fix" ? "Preparing a fix" : "Assessment"}
+          <span>{retainedMission.requestedBy === "agent" ? "Agent-started" : "Person-started"}</span>
+        </p>
+        <h2 id={titleId}>{focusLabel}</h2>
+        <div className="audit-mission-focus" aria-label="Mission focus">
+          {state.requestedFocusAreas.length ? state.requestedFocusAreas.map((area) => (
+            <span key={area}>{area === "seo" ? "SEO" : area}</span>
+          )) : <span>All supported areas</span>}
+        </div>
+      </div>
+      <div className="audit-mission-status">
+        <span className="audit-mission-status-icon" aria-hidden="true">
+          {state.assessmentComplete
+            ? <CheckCircle size={18} weight="fill" />
+            : state.auditComplete
+              ? <MagnifyingGlass size={18} weight="bold" />
+              : <Pulse size={18} weight="bold" />}
+        </span>
+        <div>
+          <strong>{statusLabel}</strong>
+          <small>{missionActionLabel(state)}</small>
+        </div>
+      </div>
+      <p className="audit-mission-authority">
+        <ShieldCheck size={17} weight="duotone" aria-hidden="true" />
+        <span>
+          <strong>Shared authority</strong>
+          Agent investigates browser and repository evidence. You control repair intent, approval,
+          deployment, and deployment attestation.
+        </span>
+      </p>
+    </section>
+  );
+}
+
 function AuditProgress({ audit, onCancelAudit, onLeave, onRetry, isRetrying, isCancelling, cancelError }) {
   const stages = [
     { id: "capture", label: "Capture", icon: Browser },
@@ -498,6 +583,7 @@ function AuditProgress({ audit, onCancelAudit, onLeave, onRetry, isRetrying, isC
         <p className="kicker">Live audit · attempt {audit.attempt ?? 1} · {audit.progress}%</p>
         <h1 id="progress-title">{audit.phaseLabel}</h1>
         <p className="audit-url">{audit.url}</p>
+        <AuditMissionSummary audit={audit} />
         <div
           className="progress-track"
           role="progressbar"
@@ -2106,6 +2192,12 @@ function ReportWorkspace({ audit, onReset, onVerify, onAuditRoute }) {
           <span>{isDocumentAudit ? "Coverage" : "Health"}</span>
         </div>
       </div>
+
+      <AuditMissionSummary
+        audit={audit}
+        diagnosticMissions={diagnosticMissions}
+        repairs={repairs}
+      />
 
       {shareState === "manual" ? (
         <div className="manual-share" role="status">
