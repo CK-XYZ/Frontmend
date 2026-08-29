@@ -1,4 +1,5 @@
 import { AuditError, normalizePublicUrl } from "./url-policy.js";
+import { createAuditMission } from "./audit-mission-contract.js";
 
 export { AuditError, normalizePublicUrl } from "./url-policy.js";
 
@@ -31,12 +32,19 @@ export function createHttpAuditTransport(options = {}) {
   if (!fetchImpl) throw new Error("Frontmend requires fetch to reach the live audit service.");
 
   return {
-    async start({ url, source }) {
+    async start({ url, source, mission }) {
+      const missionInput = mission
+        ? {
+            intent: mission.intent,
+            focusAreas: mission.focusAreas,
+            maxPriorities: mission.maxPriorities,
+          }
+        : undefined;
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ url, source }),
+          body: JSON.stringify({ url, source, mission: missionInput }),
         }),
       );
     },
@@ -329,8 +337,9 @@ export function createAuditService(options = {}) {
     async startAudit(input) {
       const url = normalizePublicUrl(input?.url);
       const source = input?.source === "agent" ? "agent" : "human";
+      const mission = createAuditMission(input?.mission ?? {}, source, now());
       const expectedGeneration = generation;
-      const audit = await transport.start({ url, source });
+      const audit = await transport.start({ url, source, mission });
       return remember(audit, expectedGeneration);
     },
 

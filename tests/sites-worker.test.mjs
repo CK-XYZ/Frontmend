@@ -144,7 +144,11 @@ test("starts a same-origin public audit through the job boundary", async () => {
         "content-type": "application/json",
         origin: "https://frontmend.test",
       },
-      body: JSON.stringify({ url: "removemyexif.com", source: "agent" }),
+      body: JSON.stringify({
+        url: "removemyexif.com",
+        source: "agent",
+        mission: { intent: "assess", focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+      }),
     }),
     {
       AUDIT_GATE: {
@@ -177,6 +181,53 @@ test("starts a same-origin public audit through the job boundary", async () => {
   assert.equal(response.headers.get("location"), `/api/audits/${jobId}`);
   assert.equal(calls[0].input.url, "https://removemyexif.com/");
   assert.equal(calls[0].input.source, "agent");
+  assert.equal(calls[0].input.mission.intent, "assess");
+  assert.deepEqual(calls[0].input.mission.focusAreas, ["accessibility", "seo"]);
+  assert.equal(calls[0].input.mission.maxPriorities, 2);
+  assert.equal(calls[0].input.mission.requestedBy, "agent");
+  assert.equal(calls[0].input.mission.repairPreparation, null);
+});
+
+test("uses semantic audit missions in production admission identity", async () => {
+  const admissions = [];
+  let sequence = 0;
+  const env = {
+    AUDIT_GATE: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (_url, init) => {
+          admissions.push(JSON.parse(init.body));
+          sequence += 1;
+          return Response.json({
+            allowed: true,
+            jobId: `b8b16bf0-913c-4${String(sequence).padStart(3, "0")}-8aaa-bb4bf76d326b`,
+            reused: false,
+          });
+        },
+      }),
+    },
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: (id) => ({
+        fetch: async (_url, init) => Response.json({
+          ok: true,
+          data: { id, ...JSON.parse(init.body), status: "queued" },
+        }, { status: 202 }),
+      }),
+    },
+  };
+  const start = (focusAreas) => worker.fetch(new Request("https://frontmend.test/api/audits", {
+    method: "POST",
+    headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+    body: JSON.stringify({ url: "example.com", source: "agent", mission: { focusAreas } }),
+  }), env);
+
+  assert.equal((await start(["accessibility", "seo"])).status, 202);
+  assert.equal((await start(["seo", "accessibility"])).status, 202);
+  assert.equal((await start(["seo"])).status, 202);
+  assert.equal(admissions[0].urlHash, admissions[1].urlHash);
+  assert.notEqual(admissions[1].urlHash, admissions[2].urlHash);
+  assert.equal(JSON.stringify(admissions).includes("accessibility"), false);
 });
 
 test("starts a related audit only from the parent job's authoritative route input", async () => {
@@ -410,6 +461,15 @@ test("failed Durable Object jobs restart under the same stable audit ID", async 
       attempt: 1,
       url: "https://removemyexif.com/",
       source: "human",
+      mission: {
+        schemaVersion: 1,
+        intent: "assess",
+        focusAreas: ["accessibility"],
+        maxPriorities: 3,
+        requestedBy: "human",
+        requestedAt: 100,
+        repairPreparation: null,
+      },
       status: "failed",
       phase: "failed",
       phaseLabel: "Live audit failed",
@@ -438,6 +498,7 @@ test("failed Durable Object jobs restart under the same stable audit ID", async 
       id: auditId,
       url: "https://removemyexif.com/",
       source: "human",
+      mission: { intent: "assess", focusAreas: ["accessibility"], maxPriorities: 3 },
     }),
   }));
   await scheduled;
@@ -448,6 +509,7 @@ test("failed Durable Object jobs restart under the same stable audit ID", async 
   assert.equal(payload.data.attempt, 2);
   assert.equal(payload.data.status, "queued");
   assert.equal(values.get("state").error, null);
+  assert.equal(values.get("state").mission.requestedAt, 100);
   assert.equal(restartedState.attempt, 2);
 });
 
@@ -731,10 +793,15 @@ test("local development retries a failed audit as a fresh stable attempt", async
     method: "POST",
     url: "/api/audits",
     headers: { host: "localhost:3434", origin: "http://localhost:3434" },
-    body: JSON.stringify({ url: "https://removemyexif.com/", source: "human" }),
+    body: JSON.stringify({
+      url: "https://removemyexif.com/",
+      source: "human",
+      mission: { focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+    }),
   });
   const first = await startRequest();
   const firstPayload = JSON.parse(first.body).data;
+  assert.deepEqual(firstPayload.mission.focusAreas, ["accessibility", "seo"]);
   let failed;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     failed = await callLocalRuntime(middleware, { url: `/api/audits/${firstPayload.id}` });
@@ -748,6 +815,7 @@ test("local development retries a failed audit as a fresh stable attempt", async
   assert.equal(retry.status, 202);
   assert.equal(retryPayload.id, firstPayload.id);
   assert.equal(retryPayload.attempt, 2);
+  assert.equal(retryPayload.mission.requestedAt, firstPayload.mission.requestedAt);
   let complete;
   for (let attempt = 0; attempt < 20; attempt += 1) {
     complete = await callLocalRuntime(middleware, { url: `/api/audits/${retryPayload.id}` });
@@ -756,6 +824,42 @@ test("local development retries a failed audit as a fresh stable attempt", async
   }
   assert.equal(JSON.parse(complete.body).data.status, "complete");
   assert.equal(JSON.parse(complete.body).data.attempt, 2);
+});
+
+test("local admission reuses the same mission and separates materially different goals", async () => {
+  const providerUrls = [];
+  const middleware = createLocalAuditRuntime({
+    fetchImpl: async (input) => {
+      const url = new URL(input);
+      if (url.hostname === "pagespeedonline.googleapis.com") {
+        providerUrls.push(url);
+        return Response.json({ error: { message: "rate limited" } }, { status: 429 });
+      }
+      return new Response(
+        '<!doctype html><html lang="en"><head><title>Mission</title><meta name="viewport" content="width=device-width"></head><body><main><h1>Mission</h1></main></body></html>',
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    },
+  });
+  const start = (focusAreas) => callLocalRuntime(middleware, {
+    method: "POST",
+    url: "/api/audits",
+    headers: { host: "localhost:3434", origin: "http://localhost:3434" },
+    body: JSON.stringify({ url: "https://example.com/", source: "agent", mission: { focusAreas } }),
+  });
+
+  const first = JSON.parse((await start(["accessibility", "seo"])).body).data;
+  const reordered = JSON.parse((await start(["seo", "accessibility"])).body).data;
+  const different = JSON.parse((await start(["seo"])).body).data;
+  assert.equal(reordered.id, first.id);
+  assert.notEqual(different.id, first.id);
+  assert.deepEqual(first.mission.focusAreas, ["accessibility", "seo"]);
+  await new Promise((resolve) => setTimeout(resolve, 10));
+  assert.ok(providerUrls.length >= 2);
+  assert.equal(providerUrls.some((url) => url.searchParams.has("mission")), false);
+  assert.equal(providerUrls.some((url) => url.searchParams.has("focusAreas")), false);
+  assert.equal(providerUrls.some((url) => url.searchParams.has("maxPriorities")), false);
+  assert.equal(providerUrls.some((url) => url.searchParams.has("intent")), false);
 });
 
 test("local development cancels an active provider request and retries the stable audit", async () => {

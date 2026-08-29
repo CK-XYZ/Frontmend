@@ -23,7 +23,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Acceptance: Assess is the default; raw prompts are never retained; priorities are bounded/deduplicated; a supported undiagnosed symptom keeps assessment incomplete with an exact next action; contributed diagnosis completes its read-only obligation; repair intent freezes one finding and cannot be silently replaced.
   Verify: `bun test tests/audit-mission-contract.test.mjs`
 
-- [ ] **2. Persist structured mission goals through audit start and retry**
+- [x] **2. Persist structured mission goals through audit start and retry**
   Spec ref: `spec.md > HTTP Contract > Start audit`; `spec.md > Data Flow > Natural assessment lifecycle`
   What to build: Extend HTTP transport, application service, Worker admission/start, Durable Object state, audit snapshots, and local runtime to carry the mission. Include its signature in same-URL admission identity and preserve it across retry without changing provider input.
   Acceptance: Same URL plus same mission retains existing deduplication; a materially different goal does not overwrite the first mission; progress/reload/completed snapshots retain the exact bounded goal; human URL-only starts remain broad Assess missions; PageSpeed receives no mission metadata.

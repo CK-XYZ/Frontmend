@@ -1,4 +1,8 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import {
+  auditMissionSignature,
+  createAuditMission,
+} from "../src/audit-mission-contract.js";
 import { createRelatedAuditInput } from "../src/route-contract.js";
 import {
   assertMissionId,
@@ -147,6 +151,7 @@ function auditSnapshot(state) {
     attempt: Number.isFinite(state.attempt) ? state.attempt : 1,
     url: state.url,
     source: state.source,
+    mission: state.mission ?? null,
     status: state.status,
     phase: state.phase,
     phaseLabel: state.phaseLabel,
@@ -421,16 +426,22 @@ async function startAudit(request, env) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new AuditError("INVALID_INPUT", "The request body must be an object.");
   }
-  const extra = Object.keys(input).find((key) => !["url", "source"].includes(key));
+  const extra = Object.keys(input).find((key) => !["url", "source", "mission"].includes(key));
   if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
   const url = normalizePublicUrl(input.url);
   const source = input.source === "agent" ? "agent" : "human";
-  const admission = await gateAdmission(request, env, url);
+  const mission = createAuditMission(input.mission ?? {}, source);
+  const admission = await gateAdmission(
+    request,
+    env,
+    url,
+    `mission:${auditMissionSignature(mission)}`,
+  );
   const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
   const response = await job.fetch("https://frontmend.internal/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: admission.jobId, url, source }),
+    body: JSON.stringify({ id: admission.jobId, url, source, mission }),
   });
   const payload = await response.json();
   return json(payload, {
@@ -758,6 +769,7 @@ export class FrontmendAuditJob {
           : 1,
         url: input.url,
         source: input.source,
+        mission: existing?.mission ?? input.mission ?? null,
         verification: input.verification ?? null,
         exploration: input.exploration ?? null,
         siteExploration: input.siteExploration ?? null,

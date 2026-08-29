@@ -52,6 +52,7 @@ test("uses the remote job transport and synchronizes active state", async () => 
   ];
   const report = { auditId: AUDIT_ID, schemaVersion: 2, findings: [] };
   const service = createAuditService({
+    now: () => 10,
     transport: {
       async start(input) {
         calls.push(["start", input]);
@@ -78,8 +79,51 @@ test("uses the remote job transport and synchronizes active state", async () => 
   assert.equal(service.getActiveAudit().status, "complete");
   assert.deepEqual(calls[0], [
     "start",
-    { url: "https://removemyexif.com/", source: "human" },
+    {
+      url: "https://removemyexif.com/",
+      source: "human",
+      mission: {
+        schemaVersion: 1,
+        intent: "assess",
+        focusAreas: [],
+        maxPriorities: 3,
+        requestedBy: "human",
+        requestedAt: 10,
+        repairPreparation: null,
+      },
+    },
   ]);
+});
+
+test("validates mission goals before transport and sends only bounded semantic fields", async () => {
+  const calls = [];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { id: AUDIT_ID, status: "queued" } });
+    },
+  });
+  const service = createAuditService({ transport, now: () => 10 });
+
+  await assert.rejects(
+    () => service.startAudit({ url: "example.com", mission: { prompt: "audit everything" } }),
+    (error) => error.code === "INVALID_INPUT",
+  );
+  await service.startAudit({
+    url: "example.com",
+    source: "agent",
+    mission: { intent: "assess", focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+  });
+
+  assert.equal(calls.length, 1);
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    url: "https://example.com/",
+    source: "agent",
+    mission: { intent: "assess", focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+  });
+  assert.equal(calls[0].init.body.includes("requestedAt"), false);
+  assert.equal(calls[0].init.body.includes("prompt"), false);
 });
 
 test("reset prevents a late remote response from reviving the audit", async () => {

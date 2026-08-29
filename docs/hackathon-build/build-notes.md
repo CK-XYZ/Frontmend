@@ -54,3 +54,12 @@
 - Derived assessment completion distinguishes a finished measurement job from unfinished browser/repository diagnosis.
 - Repair preparation is immutable per selected finding, idempotent for repetition, and carries no deployment authority.
 - Verification: `bun test tests/audit-mission-contract.test.mjs` — 7 passed, 0 failed.
+
+## 2026-08-29 — Build item 2
+
+- Application and HTTP service layers validate mission goals before transport and transmit only intent, focus, and maximum—not timestamps, prompts, or local metadata.
+- Production admission hashes the normalised mission signature with the URL, so reordered equivalent focus reuses a job while materially different focus receives a separate stable audit ID.
+- Durable Object and local snapshots retain the bounded mission through queued, running, complete, failed, cancelled, reload, and stable-ID retry states.
+- Retry preserves the original mission attribution and timestamp instead of silently rewriting it.
+- PageSpeed requests receive no mission, focus, maximum, or intent parameters.
+- Verification: `bun test tests/audit-service.test.mjs tests/sites-worker.test.mjs tests/audit-mission-contract.test.mjs` — 51 passed, 0 failed.

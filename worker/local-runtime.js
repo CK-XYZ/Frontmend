@@ -1,4 +1,8 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import {
+  auditMissionSignature,
+  createAuditMission,
+} from "../src/audit-mission-contract.js";
 import { createRelatedAuditInput } from "../src/route-contract.js";
 import {
   assertMissionId,
@@ -83,6 +87,7 @@ function snapshot(job) {
     attempt: Number.isFinite(job.attempt) ? job.attempt : 1,
     url: job.url,
     source: job.source,
+    mission: job.mission ?? null,
     status: job.status,
     phase: job.phase,
     phaseLabel: job.phaseLabel,
@@ -211,6 +216,7 @@ export function createLocalAuditRuntime(options = {}) {
     source,
     client,
     operationKey = "",
+    mission = null,
     verification = null,
     exploration = null,
     siteExploration = null,
@@ -237,6 +243,7 @@ export function createLocalAuditRuntime(options = {}) {
         attempt: (Number.isFinite(previousJob.attempt) ? previousJob.attempt : 1) + 1,
         url,
         source,
+        mission: previousJob.mission ?? mission,
         verification,
         exploration,
         siteExploration,
@@ -263,6 +270,7 @@ export function createLocalAuditRuntime(options = {}) {
       attempt: 1,
       url,
       source,
+      mission,
       verification,
       exploration,
       siteExploration,
@@ -332,12 +340,19 @@ export function createLocalAuditRuntime(options = {}) {
       if (request.method === "POST" && requestUrl.pathname === "/api/audits") {
         assertSameOrigin(request);
         const input = await readBody(request);
-        const extra = Object.keys(input ?? {}).find((key) => !["url", "source"].includes(key));
+        const extra = Object.keys(input ?? {}).find((key) => !["url", "source", "mission"].includes(key));
         if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
         const url = normalizePublicUrl(input?.url);
         const source = input?.source === "agent" ? "agent" : "human";
+        const mission = createAuditMission(input?.mission ?? {}, source);
         const client = request.socket.remoteAddress ?? "local-preview";
-        const { job, reused } = startJob({ url, source, client });
+        const { job, reused } = startJob({
+          url,
+          source,
+          mission,
+          client,
+          operationKey: `mission:${auditMissionSignature(mission)}`,
+        });
         return sendJson(response, reused ? 200 : 202, { ok: true, data: snapshot(job) }, {
           location: `/api/audits/${job.id}`,
         });
