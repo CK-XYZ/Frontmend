@@ -451,6 +451,7 @@ export function createLocalAuditRuntime(options = {}) {
     const impact = createRepairVerificationImpact({
       repairId: repair.id,
       repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
+      findingId: repair.findingId,
       rootReport: root.report,
       findingSource: repair.findingSource,
       findingScope: repair.findingScope,

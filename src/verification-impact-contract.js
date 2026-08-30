@@ -230,6 +230,7 @@ function browserRowForTarget(target, findingEvidence) {
 export function createRepairVerificationImpact({
   repairId,
   repairRevision = 1,
+  findingId = null,
   rootReport,
   findingSource,
   findingScope = null,
@@ -291,6 +292,8 @@ export function createRepairVerificationImpact({
     schemaVersion: 1,
     repairId: bounded(repairId, 80),
     repairRevision: Number.isInteger(repairRevision) && repairRevision > 0 ? repairRevision : 1,
+    rootAuditId: bounded(rootReport.auditId, 160),
+    findingId: bounded(findingId, 120) || null,
     status: "unreviewed",
     rule: {
       provider: bounded(findingSource.provider, 120),
@@ -357,6 +360,7 @@ export function createLegacyRepairVerificationImpact({ repair, rootReport } = {}
   const impact = createRepairVerificationImpact({
     repairId: repair.id,
     repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
+    findingId: repair.findingId,
     rootReport,
     findingSource: repair.findingSource,
     findingScope: { sources: [repair.findingSource] },
@@ -378,6 +382,8 @@ export function createLegacyRepairVerificationImpact({ repair, rootReport } = {}
 
 export function verificationCandidateProjection(impact) {
   return {
+    auditId: impact?.rootAuditId ?? impact?.targets?.[0]?.auditId ?? null,
+    findingId: impact?.findingId ?? null,
     selectedTargetIds: [...(impact?.selectedTargetIds ?? [])],
     candidates: (impact?.candidates ?? []).map((candidate) => ({
       id: candidate.id,

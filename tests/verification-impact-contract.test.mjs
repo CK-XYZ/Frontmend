@@ -55,6 +55,7 @@ function impact(selected = []) {
   return createRepairVerificationImpact({
     repairId: "repair-1",
     repairRevision: 2,
+    findingId: "contrast",
     rootReport,
     findingSource: source("mobile"),
     findingScope: { sources: [source("mobile"), source("desktop")] },
@@ -69,12 +70,15 @@ function impact(selected = []) {
 
 test("automatically retains failed routes and exposes only evaluated completed routes as candidates", () => {
   const value = impact();
+  const projection = verificationCandidateProjection(value);
   assert.deepEqual(value.previewRows.map((row) => [row.path, row.strategy]), [
     ["/", "mobile"],
     ["/", "desktop"],
     ["/docs", "mobile"],
   ]);
-  assert.deepEqual(verificationCandidateProjection(value).candidates, [{
+  assert.equal(projection.auditId, "root-audit");
+  assert.equal(projection.findingId, "contrast");
+  assert.deepEqual(projection.candidates, [{
     id: "audit:pricing-audit",
     auditId: "pricing-audit",
     path: "/pricing",

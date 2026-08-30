@@ -13,7 +13,7 @@ import {
   Wrench,
 } from "@phosphor-icons/react";
 import { useEffect, useState } from "react";
-import { auditService } from "../audit-service.js";
+import { AuditError, auditService } from "../audit-service.js";
 import { repairMissionState } from "../repair-contract.js";
 import { humanMissionMutationFailure } from "../ui/human-mission-recovery.js";
 import DiagnosticProvenanceCard from "./DiagnosticProvenanceCard.jsx";
@@ -171,6 +171,7 @@ function RepairWorkbench({
   const [verificationScope, setVerificationScope] = useState(null);
   const [verificationTargetIds, setVerificationTargetIds] = useState([]);
   const [verificationScopeStatus, setVerificationScopeStatus] = useState("idle");
+  const [verificationScopeError, setVerificationScopeError] = useState("");
   const [scopeRefreshRevision, setScopeRefreshRevision] = useState(0);
 
   useEffect(() => {
@@ -184,25 +185,40 @@ function RepairWorkbench({
       setVerificationScope(null);
       setVerificationTargetIds([]);
       setVerificationScopeStatus("idle");
+      setVerificationScopeError("");
       return undefined;
     }
     let active = true;
+    let retryTimer;
+    setVerificationScope(null);
+    setVerificationTargetIds([]);
     setVerificationScopeStatus("loading");
+    setVerificationScopeError("");
     void auditService.getVerificationCandidates(auditId, finding.id)
       .then((scope) => {
         if (!active) return;
         setVerificationScope(scope);
         setVerificationTargetIds(scope.selectedTargetIds ?? []);
         setVerificationScopeStatus("ready");
+        setVerificationScopeError("");
       })
-      .catch(() => {
+      .catch((cause) => {
         if (!active) return;
         setVerificationScope(null);
         setVerificationTargetIds([]);
         setVerificationScopeStatus("unavailable");
+        setVerificationScopeError(
+          cause instanceof AuditError
+            ? cause.message
+            : "Frontmend could not read the current verification candidates.",
+        );
+        retryTimer = window.setTimeout(() => {
+          if (active) setScopeRefreshRevision((revision) => revision + 1);
+        }, 3_000);
       });
     return () => {
       active = false;
+      window.clearTimeout(retryTimer);
     };
   }, [auditId, diagnosticReady, finding?.id, repair, repairPrepared, scopeRefreshRevision]);
 
@@ -223,6 +239,10 @@ function RepairWorkbench({
   };
 
   const stage = async () => {
+    if (verificationScopeStatus !== "ready" || !verificationScope) {
+      setError("Wait for the current verification scope before staging this repair.");
+      return;
+    }
     setBusy("stage");
     setError("");
     try {
@@ -238,6 +258,11 @@ function RepairWorkbench({
     } finally {
       setBusy("");
     }
+  };
+
+  const retryVerificationScope = () => {
+    if (verificationScopeStatus === "loading") return;
+    setScopeRefreshRevision((revision) => revision + 1);
   };
 
   const approve = async () => {
@@ -324,7 +349,19 @@ function RepairWorkbench({
               <small role="status">Checking the retained audit evidence for eligible routes…</small>
             ) : null}
             {verificationScopeStatus === "unavailable" ? (
-              <small role="status">Optional routes are unavailable. Required retained evidence will still be included.</small>
+              <div className="verification-scope-warning" role="alert">
+                <Warning size={17} weight="fill" aria-hidden="true" />
+                <div>
+                  <strong>Verification scope temporarily unavailable</strong>
+                  <p>{verificationScopeError}</p>
+                  <small>
+                    No repair can be staged until this read succeeds. Frontmend retries automatically and does not change the repair.
+                  </small>
+                </div>
+                <button type="button" onClick={retryVerificationScope}>
+                  Retry scope now
+                </button>
+              </div>
             ) : null}
             {verificationScopeStatus === "ready" && !verificationScope?.candidates?.length ? (
               <small role="status">No additional audited route evaluated this exact rule.</small>
@@ -360,10 +397,14 @@ function RepairWorkbench({
             type="button"
             className="repair-button"
             onClick={stage}
-            disabled={Boolean(busy) || verificationScopeStatus === "loading"}
+            disabled={Boolean(busy) || verificationScopeStatus !== "ready"}
           >
             <ClipboardText size={17} weight="bold" />
-            {busy === "stage" ? "Staging…" : "Stage repair draft"}
+            {busy === "stage"
+              ? "Staging…"
+              : verificationScopeStatus === "ready"
+                ? "Stage repair draft"
+                : "Waiting for verification scope"}
           </button>
         ) : null}
         {error ? <p className="repair-error" role="alert">{error}</p> : null}

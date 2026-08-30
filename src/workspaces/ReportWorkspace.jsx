@@ -1099,30 +1099,55 @@ function SiteExploration({ report }) {
   );
   const [isStarting, setIsStarting] = useState(false);
   const [error, setError] = useState("");
+  const [readError, setReadError] = useState("");
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [pollAttempt, setPollAttempt] = useState(0);
   const current = explorations[0] ?? null;
 
   useEffect(() => {
     let active = true;
     let timer;
+    let collectionLoaded = false;
     const sync = () => {
       if (active) setExplorations([...auditService.getSiteExplorations(report.auditId)]);
     };
     const unsubscribe = auditService.subscribe(sync);
     const poll = async () => {
-      const mission = auditService.getSiteExplorations(report.auditId)[0];
-      if (mission && ["queued", "running"].includes(mission.status)) {
-        await auditService.getSiteExploration(report.auditId, mission.id).catch(() => {});
+      if (!active) return;
+      setIsRefreshingStatus(true);
+      try {
+        if (!collectionLoaded) {
+          await auditService.listSiteExplorations(report.auditId);
+          collectionLoaded = true;
+        } else {
+          const mission = auditService.getSiteExplorations(report.auditId)[0];
+          if (mission && ["queued", "running"].includes(mission.status)) {
+            await auditService.getSiteExploration(report.auditId, mission.id);
+          }
+        }
+        if (!active) return;
+        sync();
+        setReadError("");
+        timer = window.setTimeout(poll, 900);
+      } catch (cause) {
+        if (!active) return;
+        setReadError(
+          cause instanceof AuditError
+            ? cause.message
+            : "Frontmend could not refresh this exploration status.",
+        );
+        timer = window.setTimeout(poll, 3_000);
+      } finally {
+        if (active) setIsRefreshingStatus(false);
       }
-      if (active) timer = window.setTimeout(poll, 900);
     };
-    void auditService.listSiteExplorations(report.auditId).then(sync).catch(() => {});
-    timer = window.setTimeout(poll, 900);
+    void poll();
     return () => {
       active = false;
       unsubscribe();
       window.clearTimeout(timer);
     };
-  }, [report.auditId]);
+  }, [pollAttempt, report.auditId]);
 
   if (!routes.length) return null;
 
@@ -1141,6 +1166,8 @@ function SiteExploration({ report }) {
     try {
       await auditService.startSiteExploration(report.auditId, selected, "human");
       setSelected([]);
+      setReadError("");
+      setPollAttempt((attempt) => attempt + 1);
     } catch (cause) {
       const failure = await humanMissionMutationFailure(
         cause,
@@ -1152,6 +1179,11 @@ function SiteExploration({ report }) {
     } finally {
       setIsStarting(false);
     }
+  };
+
+  const retryStatus = () => {
+    if (isRefreshingStatus) return;
+    setPollAttempt((attempt) => attempt + 1);
   };
 
   const terminal = current && ["complete", "partial", "failed"].includes(current.status);
@@ -1204,6 +1236,24 @@ function SiteExploration({ report }) {
         <p>Every page keeps its own audit ID and evidence boundary.</p>
       </div>
       {error ? <p className="repair-error" role="alert">{error}</p> : null}
+      {readError ? (
+        <div className="site-exploration-read-warning" role="alert">
+          <Warning size={18} weight="fill" aria-hidden="true" />
+          <div>
+            <strong>Exploration status temporarily unavailable</strong>
+            <p>
+              {readError}{" "}
+              {current
+                ? "The last confirmed mission remains visible and has not been marked failed."
+                : "No mission was created or marked failed by this read error."}
+            </p>
+            <small>Frontmend retries automatically. Retry status now only reads the retained exploration.</small>
+          </div>
+          <button type="button" onClick={retryStatus} disabled={isRefreshingStatus}>
+            {isRefreshingStatus ? "Refreshing…" : "Retry status now"}
+          </button>
+        </div>
+      ) : null}
 
       {current ? (
         <article className={`site-mission site-mission-${current.status}`} aria-live="polite">
@@ -1286,6 +1336,10 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const [diagnosticMissions, setDiagnosticMissions] = useState(() => auditService.getDiagnosticMissions(report.auditId));
   const [browserReview, setBrowserReview] = useState(() => auditService.getBrowserReview(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
+  const [workspaceReadError, setWorkspaceReadError] = useState("");
+  const [workspaceUnavailable, setWorkspaceUnavailable] = useState([]);
+  const [isRefreshingWorkspace, setIsRefreshingWorkspace] = useState(false);
+  const [workspaceRefreshAttempt, setWorkspaceRefreshAttempt] = useState(0);
   const mission = retainedAuditMission(audit);
   const missionState = deriveAuditMissionState({ report, mission, diagnosticMissions, repairs, browserReview });
   const findings = useMemo(() => assessmentFindings(report, browserReview), [report, browserReview]);
@@ -1332,6 +1386,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
 
   useEffect(() => {
     let active = true;
+    let retryTimer;
     const refresh = () => {
       if (active) {
         setRepairs([...auditService.getRepairs(report.auditId)]);
@@ -1341,14 +1396,47 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
       }
     };
     const unsubscribe = auditService.subscribe(refresh);
-    void auditService.listRepairs(report.auditId).then(refresh).catch(() => {});
-    void auditService.listDiagnosticMissions(report.auditId).then(refresh).catch(() => {});
-    void auditService.loadBrowserReview(report.auditId).then(refresh).catch(() => {});
+    const readWorkspace = async () => {
+      if (!active) return;
+      setIsRefreshingWorkspace(true);
+      try {
+        const result = await auditService.refreshMissionWorkspace(report.auditId, {
+          publishOnlyWhenComplete: true,
+        });
+        if (!active) return;
+        if (result.published !== true) {
+          setWorkspaceUnavailable(result.unavailable ?? []);
+          setWorkspaceReadError(
+            result.unavailable?.length
+              ? "Frontmend could not refresh every retained mission record."
+              : "The mission workspace changed before its refresh could be published.",
+          );
+          retryTimer = window.setTimeout(readWorkspace, 3_000);
+          return;
+        }
+        refresh();
+        setWorkspaceUnavailable([]);
+        setWorkspaceReadError("");
+      } catch (cause) {
+        if (!active) return;
+        setWorkspaceUnavailable([]);
+        setWorkspaceReadError(
+          cause instanceof AuditError
+            ? cause.message
+            : "Frontmend could not refresh the retained mission details.",
+        );
+        retryTimer = window.setTimeout(readWorkspace, 3_000);
+      } finally {
+        if (active) setIsRefreshingWorkspace(false);
+      }
+    };
+    void readWorkspace();
     return () => {
       active = false;
       unsubscribe();
+      window.clearTimeout(retryTimer);
     };
-  }, [report.auditId]);
+  }, [report.auditId, workspaceRefreshAttempt]);
 
   useEffect(() => {
     if (findings.length && !findings.some((finding) => finding.id === selectedFindingId)) {
@@ -1359,6 +1447,11 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const rememberRepair = (repair) => {
     setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
     setRepairPolicy(auditService.getRepairPolicy(report.auditId));
+  };
+
+  const retryMissionWorkspace = () => {
+    if (isRefreshingWorkspace) return;
+    setWorkspaceRefreshAttempt((attempt) => attempt + 1);
   };
 
   const selectFinding = (findingId) => {
@@ -1494,6 +1587,33 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
           <span>{isDocumentAudit ? "Coverage" : "Health"}</span>
         </div>
       </div>
+
+      {workspaceReadError ? (
+        <div className="mission-workspace-read-warning" role="alert">
+          <Warning size={19} weight="fill" aria-hidden="true" />
+          <div>
+            <strong>Mission details temporarily unavailable</strong>
+            <p>
+              {workspaceReadError}
+              {workspaceUnavailable.length
+                ? ` Waiting for ${workspaceUnavailable.map((item) => item === "browserReview"
+                  ? "browser review"
+                  : item === "diagnostics"
+                    ? "diagnosis"
+                    : item === "repairs"
+                      ? "repairs and policy"
+                      : item).join(", ")}.`
+                : ""}
+            </p>
+            <small>
+              The last coherent mission remains visible. Frontmend retries automatically and never replays an action.
+            </small>
+          </div>
+          <button type="button" onClick={retryMissionWorkspace} disabled={isRefreshingWorkspace}>
+            {isRefreshingWorkspace ? "Refreshing…" : "Retry mission details"}
+          </button>
+        </div>
+      ) : null}
 
       <AuditMissionSummary
         audit={audit}

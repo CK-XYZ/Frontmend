@@ -539,10 +539,11 @@ export function createAuditService(options = {}) {
     return remember(audit, expectedGeneration);
   };
 
-  const refreshMissionWorkspace = async (auditId) => {
+  const refreshMissionWorkspace = async (auditId, options = {}) => {
     if (typeof auditId !== "string" || !auditId) {
       throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
     }
+    const publishOnlyWhenComplete = options?.publishOnlyWhenComplete === true;
     const expectedGeneration = generation;
     let snapshot = null;
     let latestCheckpoint = null;
@@ -571,18 +572,24 @@ export function createAuditService(options = {}) {
       }
       const repairResult = settled[1];
       if (repairResult.status === "fulfilled") {
+        assertResponseIdentity(repairResult.value, "auditId", auditId);
         assertResponseListIdentity(repairResult.value?.repairs, "auditId", auditId);
       }
       const diagnosticResult = settled[2];
       if (diagnosticResult.status === "fulfilled") {
+        assertResponseIdentity(diagnosticResult.value, "auditId", auditId);
         assertResponseListIdentity(diagnosticResult.value?.missions, "auditId", auditId);
       }
       const browserResult = settled[3];
-      if (browserResult.status === "fulfilled" && browserResult.value?.review) {
-        assertResponseIdentity(browserResult.value.review, "auditId", auditId);
+      if (browserResult.status === "fulfilled") {
+        assertResponseIdentity(browserResult.value, "auditId", auditId);
+        if (browserResult.value?.review) {
+          assertResponseIdentity(browserResult.value.review, "auditId", auditId);
+        }
       }
       const explorationResult = settled[4];
       if (explorationResult.status === "fulfilled") {
+        assertResponseIdentity(explorationResult.value, "rootAuditId", auditId);
         assertResponseListIdentity(explorationResult.value?.explorations, "rootAuditId", auditId);
       }
       const auditRevision = auditResult.status === "fulfilled"
@@ -613,12 +620,25 @@ export function createAuditService(options = {}) {
       browserReview: browserResult.status === "fulfilled",
       explorations: explorationResult.status === "fulfilled",
     };
+    const unavailable = Object.entries(results)
+      .filter(([, ready]) => !ready)
+      .map(([name]) => name);
     if (expectedGeneration !== generation) {
       return {
         auditId,
         missionCheckpoint,
         refreshed: results,
-        unavailable: Object.entries(results).filter(([, ready]) => !ready).map(([name]) => name),
+        unavailable,
+        published: false,
+      };
+    }
+    if (publishOnlyWhenComplete && unavailable.length) {
+      return {
+        auditId,
+        missionCheckpoint,
+        refreshed: results,
+        unavailable,
+        published: false,
       };
     }
 
@@ -662,7 +682,8 @@ export function createAuditService(options = {}) {
       auditId,
       missionCheckpoint,
       refreshed: results,
-      unavailable: Object.entries(results).filter(([, ready]) => !ready).map(([name]) => name),
+      unavailable,
+      published: true,
     };
   };
 
@@ -677,7 +698,7 @@ export function createAuditService(options = {}) {
       };
     }
 
-    const workspace = await refreshMissionWorkspace(auditId);
+    const workspace = await refreshMissionWorkspace(auditId, { publishOnlyWhenComplete: true });
     if (workspace.unavailable.length) {
       throw new AuditError(
         "MISSION_WORKSPACE_INCOMPLETE",
@@ -757,13 +778,18 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "Choose between 1 and 3 observed routes.");
       }
       const expectedGeneration = generation;
-      return rememberExploration(
+      const exploration = assertResponseIdentity(
         await transport.startExploration(
           auditId,
           paths,
           source === "agent" ? "agent" : "human",
           revisionFor(auditId, expectedMissionRevision),
         ),
+        "rootAuditId",
+        auditId,
+      );
+      return rememberExploration(
+        exploration,
         expectedGeneration,
       );
     },
@@ -773,11 +799,20 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const workspace = await transport.listExplorations(auditId);
+      const workspace = assertResponseIdentity(
+        await transport.listExplorations(auditId),
+        "rootAuditId",
+        auditId,
+      );
+      const retained = assertResponseListIdentity(
+        workspace.explorations,
+        "rootAuditId",
+        auditId,
+      );
       if (expectedGeneration === generation) {
         explorations.set(
           auditId,
-          [...(workspace.explorations ?? [])].sort(
+          [...(retained ?? [])].sort(
             (a, b) => (b.createdAt ?? 0) - (a.createdAt ?? 0),
           ),
         );
@@ -796,8 +831,14 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
       }
       const expectedGeneration = generation;
-      return rememberExploration(
+      const exploration = assertResponseIdentity(
         await transport.getExploration(auditId, missionId),
+        "rootAuditId",
+        auditId,
+      );
+      assertResponseIdentity(exploration, "id", missionId);
+      return rememberExploration(
+        exploration,
         expectedGeneration,
       );
     },
@@ -820,8 +861,8 @@ export function createAuditService(options = {}) {
       return checkpoint;
     },
 
-    async refreshMissionWorkspace(auditId) {
-      return refreshMissionWorkspace(auditId);
+    async refreshMissionWorkspace(auditId, options) {
+      return refreshMissionWorkspace(auditId, options);
     },
 
     async cancelAudit(auditId, expectedMissionRevision) {
@@ -860,7 +901,12 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const workspace = await transport.listRepairs(auditId);
+      const workspace = assertResponseIdentity(
+        await transport.listRepairs(auditId),
+        "auditId",
+        auditId,
+      );
+      assertResponseListIdentity(workspace.repairs, "auditId", auditId);
       if (expectedGeneration === generation) {
         repairs.set(auditId, workspace.repairs ?? []);
         if (workspace.policy) repairPolicies.set(auditId, workspace.policy);
@@ -873,7 +919,13 @@ export function createAuditService(options = {}) {
       if (typeof auditId !== "string" || !auditId || typeof findingId !== "string" || !findingId) {
         throw new AuditError("INVALID_INPUT", "auditId and findingId must be non-empty strings.");
       }
-      return transport.verificationCandidates(auditId, findingId);
+      const scope = assertResponseIdentity(
+        await transport.verificationCandidates(auditId, findingId),
+        "auditId",
+        auditId,
+      );
+      assertResponseIdentity(scope, "findingId", findingId);
+      return scope;
     },
 
     async getRepairVerification(auditId, repairId) {
@@ -897,7 +949,12 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const workspace = await transport.listDiagnosticMissions(auditId);
+      const workspace = assertResponseIdentity(
+        await transport.listDiagnosticMissions(auditId),
+        "auditId",
+        auditId,
+      );
+      assertResponseListIdentity(workspace.missions, "auditId", auditId);
       if (expectedGeneration === generation) {
         diagnosticMissions.set(auditId, workspace.missions ?? []);
         emit();
@@ -921,8 +978,18 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const workspace = await transport.getBrowserReview(auditId);
-      if (workspace.review) rememberBrowserReview(workspace.review, expectedGeneration);
+      const workspace = assertResponseIdentity(
+        await transport.getBrowserReview(auditId),
+        "auditId",
+        auditId,
+      );
+      if (workspace.review) {
+        assertResponseIdentity(workspace.review, "auditId", auditId);
+        rememberBrowserReview(workspace.review, expectedGeneration);
+      } else if (expectedGeneration === generation) {
+        browserReviews.delete(auditId);
+        emit();
+      }
       return workspace;
     },
 

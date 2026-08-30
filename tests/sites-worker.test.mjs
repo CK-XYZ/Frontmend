@@ -1679,6 +1679,8 @@ test("local development shares the bounded repair-intent transition without cons
   const candidates = JSON.parse((await callLocalRuntime(middleware, {
     url: `/api/audits/${auditId}/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
   })).body).data;
+  assert.equal(candidates.auditId, auditId);
+  assert.equal(candidates.findingId, findingId);
   assert.equal(candidates.limit, 3);
 
   const approved = JSON.parse((await callLocalRuntime(middleware, {

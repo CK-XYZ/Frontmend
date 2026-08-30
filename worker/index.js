@@ -1416,6 +1416,7 @@ export class FrontmendAuditJob {
     const impact = createRepairVerificationImpact({
       repairId: repair.id,
       repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
+      findingId: repair.findingId,
       rootReport: state.report,
       findingSource: repair.findingSource,
       findingScope: repair.findingScope,
