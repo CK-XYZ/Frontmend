@@ -606,6 +606,62 @@ A correctly addressed request is not enough if its returned record can be cached
 - Make Worker and local related-route payloads return the same parent mission checkpoint and make aggregate proof self-identifying.
 - Reject mismatches before changing the active audit, checkpoint, repair, diagnosis, review, or exploration cache; preserve existing safe error propagation and never replay a mutation.
 
+## Freeform Product Round — Checkpoint-Complete Mission Publication
+
+Identity-bound responses can still regress the visible mission if a continuation omits its authoritative checkpoint. Make the checkpoint mandatory anywhere a completed read or accepted mutation can publish mission state.
+
+- Require every state-changing continuation response and direct results read to carry the current bounded mission checkpoint; starting a new audit remains the only mutation exemption.
+- Validate checkpoint identity and revision before publishing the returned report, review, diagnosis, repair, policy, exploration, cancellation, route, or verification record.
+- Reject missing, malformed, foreign, or older checkpoints with the existing safe response boundary, leaving all previously retained cache entries untouched.
+- Preserve the current mission-revision comparison, generation gate, stale-write recovery, and idempotent mutation semantics; never replay a rejected action.
+- Prove that Worker and local repair, diagnosis, browser-review, and exploration reads expose the same current checkpoint.
+- Preserve Human-only fallback, every authority boundary, the existing providers and Durable Objects, and the twenty-one-tool library.
+
+## Freeform Product Round — Atomic Fresh-Read Checkpoint Handoff
+
+A valid direct workspace read can reveal a newer mission revision than the currently retained page. Publish that checkpoint with its associated state so the inspector and next write cannot remain one turn behind.
+
+- Atomically adopt the authoritative checkpoint with direct repair, diagnosis, browser-review, exploration, verification-candidate, and aggregate-verification reads.
+- Emit one coherent shared-service publication containing both the new revision and its associated workspace state; never expose the newer record under the older checkpoint.
+- Apply the existing generation gate so a delayed read cannot advance a replacement workspace after reset.
+- Return the adopted checkpoint from repository fix briefs and repair workspaces so the next WebMCP mutation can supply the exact expected revision.
+- Build repository fix briefs from report and verification-scope reads only when their checkpoints agree; fail with a bounded current checkpoint when the mission changes between reads.
+- Preserve Human-only fallback, contextual registration, every authority boundary, Worker/local payload parity, and the twenty-one-tool library.
+
+## Freeform Product Round — Revision-Coherent Agent Evidence Reads
+
+Agent result projections combine the report with browser, diagnosis, repair, and exploration records. Refresh that compound view under one authoritative checkpoint before deriving priorities, receipts, or repository work.
+
+- Add one shared coherent-results service boundary over the existing checkpoint-bracketed restoration contract; do not create another cache or state machine.
+- Require the completed audit plus repair/policy, diagnosis, browser-review, and exploration snapshots to share one audit ID and mission revision before returning the report.
+- Use the coherent boundary for `get_site_audit_results`, assessment receipts, repository fix briefs, and single-audit verification receipts.
+- Fail closed when any required mission read is unavailable or keeps changing; retain the previously coherent state and return the bounded current checkpoint.
+- Keep compatibility for isolated tool-test services that do not implement the full application service, while the production shared service always takes the coherent path.
+- Preserve Human-only fallback, contextual registration, every evidence/authority boundary, and the twenty-one-tool library.
+
+## Freeform Product Round — Automatic Cross-Revision Workspace Reconciliation
+
+A direct workspace read can reveal an externally advanced mission before its sibling caches have been refreshed. Treat that revision crossing as a full restoration boundary so Human state and contextual WebMCP registration never observe a partial mission.
+
+- Detect a direct completed-results, repair, diagnosis, browser-review, exploration collection/detail, verification-candidate, or aggregate-verification response whose checkpoint is newer than the retained audit.
+- Reuse the existing complete-only checkpoint-bracketed refresh to reconcile the audit, repairs/policy, diagnosis, browser review, and explorations before publishing any of the newer mission.
+- Publish the reconciled mission once; retain lightweight one-family publication for direct reads at the already retained revision.
+- Fail with `MISSION_WORKSPACE_INCOMPLETE` and the bounded current checkpoint when any sibling record is unavailable, retaining the prior coherent mission.
+- Keep reset generation gating so a late direct read cannot revive or advance a replacement workspace.
+- Prove that contextual tools move directly from the old coherent subset to the new coherent subset without an intermediate registration.
+- Preserve Human-only fallback, Worker/local parity, every evidence and authority boundary, and the twenty-one-tool library.
+
+## Freeform Product Round — Atomic Compound Mission Publication
+
+Some accepted operations carry more than one authoritative record. Retain the complete accepted response before notifying Human UI and contextual WebMCP subscribers so one logical operation cannot expose transient tool states.
+
+- Publish repair preparation once with its updated mission and authoritative checkpoint.
+- Publish related-route and verification starts once, after the parent checkpoint and child active workspace are both retained.
+- Publish a verification browser contribution once, after both the review result and refreshed verification report are ready.
+- Require the replay review and refreshed result to share one revision; return `MISSION_REFRESH_UNSTABLE` without changing local caches when they do not.
+- Leave ordinary one-record mission mutations and the separately visible agent-activity ledger unchanged.
+- Preserve Human-only fallback, Worker/local parity, every authority boundary, and the twenty-one-tool library.
+
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
@@ -630,9 +686,15 @@ A correctly addressed request is not enough if its returned record can be cached
 - [x] **20. Coherent mounted-report mission refresh** — implemented and locally verified on 30 August 2026; partial background reads retain the last complete mission snapshot and expose a read-only retry
 - [x] **21. Fail-closed verification-scope recovery** — implemented and locally verified on 30 August 2026; candidate reads are audit/finding-bound and repair staging waits for the exact current scope
 - [x] **22. Authority-bound continuation responses** — implemented and locally verified on 30 August 2026; every retained response is identity- and intent-checked before shared state changes and Worker/local route checkpoints now agree
-- [ ] **23. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **23. Checkpoint-complete mission publication** — implemented and locally verified on 30 August 2026; missing or regressive checkpoints fail before shared state changes and Worker/local workspace reads expose the authoritative revision
+- [x] **24. Atomic fresh-read checkpoint handoff** — implemented and locally verified on 30 August 2026; direct workspace reads publish one coherent revision and WebMCP read-to-write handoffs return that checkpoint
+- [x] **25. Revision-coherent agent evidence reads** — implemented and locally verified on 30 August 2026; compound WebMCP results, receipts, and repository briefs now derive from one checkpoint-bracketed workspace
+- [x] **26. Automatic cross-revision workspace reconciliation** — implemented and locally verified on 30 August 2026; every newer direct mission read reconciles all contextual caches before one shared publication
+- [x] **27. Atomic compound mission publication** — implemented and locally verified on 30 August 2026; preparation, route starts, verification starts, and replay now publish one complete shared-service state
+- [x] **28. Compound repair-response integrity** — implemented and locally verified on 30 August 2026; contradictory repair missions or revision stamps now fail closed before shared Human/WebMCP publication
+- [ ] **29. Fresh current-candidate browser proof after explicit deployment/server authority**
 
-Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, accessibility, fail-closed scope-recovery, and authority-bound continuation rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
+Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, accessibility, fail-closed scope-recovery, authority-bound continuation, checkpoint-complete publication, atomic read-handoff, revision-coherent agent-read, cross-revision reconciliation, atomic compound-publication, and compound-response-integrity rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 
 ## Full Regression Gate
 

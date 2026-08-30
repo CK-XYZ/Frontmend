@@ -76,6 +76,7 @@ function completedBrowserReview({ auditId, mission, target = "https://example.co
 
 test("repository fix brief gives a coding agent bounded evidence without claiming source access", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const checkpoint = { auditId, missionRevision: 3 };
   const finding = {
     id: "document-content-security-policy",
     title: "No Content Security Policy header was observed",
@@ -98,6 +99,13 @@ test("repository fix brief gives a coding agent bounded evidence without claimin
       finalUrl: "https://removemyexif.com/",
       engine: { mode: "live-document", provider: "Frontmend document audit", ruleSetVersion: 1 },
       findings: [finding],
+      missionCheckpoint: checkpoint,
+    }),
+    getVerificationCandidates: async () => ({
+      auditId,
+      findingId: finding.id,
+      candidates: [],
+      missionCheckpoint: checkpoint,
     }),
   };
 
@@ -113,7 +121,192 @@ test("repository fix brief gives a coding agent bounded evidence without claimin
   assert.equal(result.data.repositoryHandoff.patchType, "headers");
   assert.equal(result.data.authority.sourceAccess, "coding-agent-only");
   assert.equal(result.data.authority.frontmendChangedTarget, false);
+  assert.deepEqual(result.data.missionCheckpoint, checkpoint);
   assert.equal("absolutePath" in result.data.repositoryHandoff, false);
+});
+
+test("repository fix brief fails closed when its report and route scope cross revisions", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const findingId = "document-content-security-policy";
+  const currentCheckpoint = { auditId, missionRevision: 4 };
+  const result = await findTool(createFrontmendTools({
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getMissionCheckpoint: () => currentCheckpoint,
+    getResults: async () => ({
+      auditId,
+      url: "https://example.com/",
+      findings: [{
+        id: findingId,
+        title: "CSP is missing",
+        severity: "low",
+        category: "Security",
+        source: { provider: "Frontmend document audit", auditId: "csp", strategy: "document" },
+      }],
+      missionCheckpoint: { auditId, missionRevision: 3 },
+    }),
+    getVerificationCandidates: async () => ({
+      auditId,
+      findingId,
+      candidates: [],
+      missionCheckpoint: currentCheckpoint,
+    }),
+  }), "get_repository_fix_brief").execute({ findingId });
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "MISSION_REFRESH_UNSTABLE");
+  assert.deepEqual(result.error.details, { missionCheckpoint: currentCheckpoint });
+});
+
+test("repair workspace reads hand the adopted checkpoint to the next WebMCP mutation", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const findingId = "color-contrast";
+  let stagedRevision = null;
+  let audit = null;
+  const checkpoint = { auditId, missionRevision: 3 };
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => {
+        audit = {
+          id: auditId,
+          url,
+          source,
+          mission,
+          status: "complete",
+          progress: 100,
+          report: { auditId, findings: [{ id: findingId }] },
+          missionRevision: 2,
+          missionCheckpoint: { auditId, missionRevision: 2 },
+        };
+        return audit;
+      },
+      get: async () => ({ ...audit, missionRevision: 3, missionCheckpoint: checkpoint }),
+      checkpoint: async () => checkpoint,
+      listRepairs: async () => ({
+        auditId,
+        repairs: [],
+        policy: { mode: "review" },
+        missionCheckpoint: checkpoint,
+      }),
+      listDiagnosticMissions: async () => ({ auditId, missions: [], missionCheckpoint: checkpoint }),
+      getBrowserReview: async () => ({ auditId, review: null, missionCheckpoint: checkpoint }),
+      listExplorations: async () => ({ rootAuditId: auditId, explorations: [], missionCheckpoint: checkpoint }),
+      stageRepair: async (_auditId, input, expectedMissionRevision) => {
+        stagedRevision = expectedMissionRevision;
+        return {
+          id: "repair-1",
+          auditId,
+          findingId: input.findingId,
+          status: "draft",
+          revision: 1,
+          summary: "Adjust contrast.",
+          patchType: "css",
+          patch: "Update the colour token.",
+          risk: "low",
+          requiresHumanReview: true,
+          verificationImpact: { candidates: [] },
+          missionCheckpoint: { auditId, missionRevision: 4 },
+        };
+      },
+    },
+  });
+  await service.startAudit({ url: "https://example.com/" });
+  const tools = createFrontmendTools(service);
+
+  const workspace = await findTool(tools, "get_repair_workspace").execute({});
+  assert.equal(workspace.ok, true);
+  assert.equal(workspace.data.missionCheckpoint.missionRevision, 3);
+  assert.equal(service.getMissionCheckpoint(auditId).missionRevision, 3);
+
+  const staged = await findTool(tools, "stage_site_repair").execute({
+    findingId,
+    expectedMissionRevision: 3,
+  });
+  assert.equal(staged.ok, true);
+  assert.equal(stagedRevision, 3);
+  assert.equal(staged.data.missionCheckpoint.missionRevision, 4);
+});
+
+test("a newer direct workspace read publishes one coherent contextual tool state", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const checkpoint = { auditId, missionRevision: 3 };
+  let currentAudit = null;
+  let review = null;
+  const report = {
+    auditId,
+    findings: [],
+    documentProfile: { routes: ["/privacy"] },
+  };
+  const repair = {
+    id: "repair-1",
+    auditId,
+    findingId: "color-contrast",
+    status: "draft",
+  };
+  const exploration = {
+    id: "exploration-1",
+    rootAuditId: auditId,
+    status: "running",
+  };
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => {
+        review = createBrowserReviewMission({
+          auditId,
+          mission,
+          report,
+          target: url,
+          now: 20,
+        });
+        currentAudit = {
+          id: auditId,
+          url,
+          source,
+          mission,
+          status: "complete",
+          progress: 100,
+          report,
+          missionRevision: 2,
+          missionCheckpoint: { auditId, missionRevision: 2 },
+        };
+        return currentAudit;
+      },
+      get: async () => ({ ...currentAudit, missionRevision: 3, missionCheckpoint: checkpoint }),
+      checkpoint: async () => checkpoint,
+      listRepairs: async () => ({
+        auditId,
+        repairs: [repair],
+        policy: { mode: "review" },
+        missionCheckpoint: checkpoint,
+      }),
+      listDiagnosticMissions: async () => ({ auditId, missions: [], missionCheckpoint: checkpoint }),
+      getBrowserReview: async () => ({ auditId, review, missionCheckpoint: checkpoint }),
+      listExplorations: async () => ({
+        rootAuditId: auditId,
+        explorations: [exploration],
+        missionCheckpoint: checkpoint,
+      }),
+    },
+  });
+
+  await service.startAudit({
+    url: "https://example.com/",
+    source: "agent",
+    mission: { focusAreas: ["accessibility"] },
+  });
+  const before = contextualFrontmendToolNames(service);
+  assert.ok(before.includes("open_browser_review"));
+  assert.equal(before.includes("record_browser_review_check"), false);
+
+  const publications = [];
+  const unsubscribe = service.subscribe(() => publications.push(contextualFrontmendToolNames(service)));
+  await service.listRepairs(auditId);
+
+  assert.equal(publications.length, 1);
+  assert.equal(publications[0].includes("open_browser_review"), false);
+  assert.ok(publications[0].includes("record_browser_review_check"));
+  assert.ok(publications[0].includes("get_repair_workspace"));
+  assert.ok(publications[0].includes("get_site_exploration"));
+  unsubscribe();
 });
 
 test("cancel tool uses visible audit context and returns persisted terminal state", async () => {
@@ -213,7 +406,13 @@ test("site-exploration tools start and read one durable cross-page mission", asy
 
 test("agent tools use the same audit service as the human interface", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
-  const report = { auditId, schemaVersion: 2, findings: [] };
+  const checkpoint = { auditId, missionRevision: 1 };
+  const report = {
+    auditId,
+    schemaVersion: 2,
+    findings: [],
+    missionCheckpoint: checkpoint,
+  };
   const service = createAuditService({
     now: () => 10,
     transport: {
@@ -236,8 +435,15 @@ test("agent tools use the same audit service as the human interface", async () =
         phase: "complete",
         progress: 100,
         report,
+        missionRevision: 1,
+        missionCheckpoint: checkpoint,
       }),
       results: async () => report,
+      checkpoint: async () => checkpoint,
+      listRepairs: async () => ({ auditId, repairs: [], missionCheckpoint: checkpoint }),
+      listDiagnosticMissions: async () => ({ auditId, missions: [], missionCheckpoint: checkpoint }),
+      getBrowserReview: async () => ({ auditId, review: null, missionCheckpoint: checkpoint }),
+      listExplorations: async () => ({ rootAuditId: auditId, explorations: [], missionCheckpoint: checkpoint }),
     },
   });
   const tools = createFrontmendTools(service);
@@ -627,6 +833,126 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.deepEqual(mission.focusAreas, ["accessibility", "seo"]);
 });
 
+test("result, receipt, and repository-brief tools derive from one coherent restored revision", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const findingId = "mobile-color-contrast";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["accessibility"],
+    maxPriorities: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const report = {
+    auditId,
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    engine: { mode: "live-lighthouse", provider: "PageSpeed Insights" },
+    findings: [{
+      id: findingId,
+      title: "Text contrast is too low",
+      severity: "medium",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      evidence: "Measured failure",
+      repair: "Repair the measured rule.",
+      diagnosticEvidence: { kind: "contrast-nodes" },
+      source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+    }],
+    viewports: [{ id: "mobile", scores: { accessibility: 92 } }],
+  };
+  const checkpoint = { auditId, missionRevision: 3 };
+  const review = completedBrowserReview({ auditId, mission });
+  const diagnosis = {
+    id: "diagnostic-1",
+    auditId,
+    findingId,
+    diagnosis: {
+      revision: 1,
+      summary: "The measured text inherits the low-contrast secondary token.",
+      reproduction: "Render the page at the measured mobile viewport and inspect the affected text.",
+      observations: [{ kind: "browser", detail: "The affected text uses the secondary foreground token." }],
+      sourceLocations: [{ file: "src/styles.css", line: 12, reason: "Owns the secondary foreground token." }],
+      verificationChecks: ["Rerun the exact contrast rule."],
+      confidence: "high",
+      source: "agent",
+      agentReported: true,
+      reportedAt: 20,
+    },
+    state: { state: "ready-for-repair" },
+  };
+  const currentAudit = {
+    id: auditId,
+    url: report.url,
+    source: "agent",
+    mission,
+    status: "complete",
+    progress: 100,
+    report,
+    missionRevision: 3,
+    missionCheckpoint: checkpoint,
+  };
+  let startRevision = 2;
+  const service = createAuditService({
+    transport: {
+      start: async () => ({
+        ...currentAudit,
+        missionRevision: startRevision,
+        missionCheckpoint: { auditId, missionRevision: startRevision },
+      }),
+      get: async () => currentAudit,
+      results: async () => ({ ...report, missionCheckpoint: checkpoint }),
+      checkpoint: async () => checkpoint,
+      listRepairs: async () => ({ auditId, repairs: [], policy: { mode: "review" }, missionCheckpoint: checkpoint }),
+      listDiagnosticMissions: async () => ({ auditId, missions: [diagnosis], missionCheckpoint: checkpoint }),
+      getBrowserReview: async () => ({ auditId, review, missionCheckpoint: checkpoint }),
+      listExplorations: async () => ({ rootAuditId: auditId, explorations: [], missionCheckpoint: checkpoint }),
+      verificationCandidates: async () => ({ auditId, findingId, candidates: [], missionCheckpoint: checkpoint }),
+    },
+  });
+  await service.startAudit({
+    url: report.url,
+    source: "agent",
+    mission: { intent: "assess", focusAreas: ["accessibility"], maxPriorities: 3 },
+  });
+
+  const result = await findTool(createFrontmendTools(service), "get_site_audit_results").execute({});
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.missionCheckpoint.missionRevision, 3);
+  assert.equal(result.data.browserReview.state.status, "complete");
+  assert.equal(result.data.priorities[0].evidenceState, "diagnosis-contributed");
+  assert.equal(result.data.missionState.assessmentComplete, true);
+
+  service.reset();
+  startRevision = 3;
+  await service.startAudit({
+    url: report.url,
+    source: "agent",
+    mission: { intent: "assess", focusAreas: ["accessibility"], maxPriorities: 3 },
+  });
+  assert.equal(service.getBrowserReview(auditId), null);
+  const receipt = await findTool(createFrontmendTools(service), "get_assessment_receipt").execute({});
+  assert.equal(receipt.ok, true, JSON.stringify(receipt));
+  assert.equal(receipt.data.missionCheckpoint.missionRevision, 3);
+  assert.equal(receipt.data.assessment.complete, true);
+  assert.equal(service.getBrowserReview(auditId).state.status, "complete");
+
+  service.reset();
+  await service.startAudit({
+    url: report.url,
+    source: "agent",
+    mission: { intent: "assess", focusAreas: ["accessibility"], maxPriorities: 3 },
+  });
+  assert.equal(service.getBrowserReview(auditId), null);
+  const brief = await findTool(createFrontmendTools(service), "get_repository_fix_brief").execute({ findingId });
+  assert.equal(brief.ok, true);
+  assert.equal(brief.data.missionCheckpoint.missionRevision, 3);
+  assert.equal(service.getBrowserReview(auditId).state.status, "complete");
+});
+
 test("browser review tools turn one exact browser task at a time into attributed evidence", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const mission = {
@@ -999,6 +1325,7 @@ test("repair preparation updates contextual tools without exposing person-only a
             status: "action-available",
             nextAction: { tool: "stage_site_repair", input: { findingId } },
           },
+          missionCheckpoint: { auditId, missionRevision: 2 },
         };
       },
     },

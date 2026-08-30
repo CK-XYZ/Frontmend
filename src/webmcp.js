@@ -114,6 +114,12 @@ function expectedMissionRevisionForTool(service, auditId, value) {
   throw new AuditError("MISSION_REVISION_REQUIRED", "Read the latest mission checkpoint before changing this audit.");
 }
 
+function coherentResultsForTool(service, auditId) {
+  return typeof service?.getCoherentResults === "function"
+    ? service.getCoherentResults(auditId)
+    : service.getResults(auditId);
+}
+
 async function safely(operation) {
   try {
     return { ok: true, data: await operation() };
@@ -458,7 +464,7 @@ export function createFrontmendTools(service) {
           throw new AuditError("INVALID_INPUT", "focusAreas must contain between 1 and 3 areas when supplied.");
         }
         const auditId = auditIdForTool(service, value.auditId);
-        const report = await service.getResults(auditId);
+        const report = await coherentResultsForTool(service, auditId);
         const remembered = service?.getActiveAudit?.();
         const persistedMission = remembered?.id === auditId && remembered.mission
           ? auditMissionSnapshot(remembered.mission)
@@ -669,9 +675,13 @@ export function createFrontmendTools(service) {
         const value = objectInput(input);
         noExtra(value, ["auditId"]);
         const auditId = auditIdForTool(service, value.auditId);
+        if (typeof service?.getCoherentResults === "function") {
+          await service.getCoherentResults(auditId);
+        }
         const receipt = service.getAssessmentReceipt(auditId);
         return {
           ...receipt,
+          missionCheckpoint: service?.getMissionCheckpoint?.(auditId) ?? null,
           format: "text/markdown",
           downloadPath: `/api/audits/${encodeURIComponent(auditId)}/assessment`,
           markdown: assessmentReceiptMarkdown(receipt),
@@ -698,16 +708,38 @@ export function createFrontmendTools(service) {
         noExtra(value, ["auditId", "findingId"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
-        const [report, verificationCandidates] = await Promise.all([
-          service.getResults(auditId),
-          service?.getVerificationCandidates?.(auditId, findingId) ?? null,
-        ]);
-        return createRepositoryFixBrief(
+        const report = await coherentResultsForTool(service, auditId);
+        const verificationCandidates = await (
+          service?.getVerificationCandidates?.(auditId, findingId) ?? null
+        );
+        const reportCheckpoint = report?.missionCheckpoint ?? null;
+        const candidateCheckpoint = verificationCandidates?.missionCheckpoint ?? null;
+        if (
+          Number.isInteger(reportCheckpoint?.missionRevision)
+          && Number.isInteger(candidateCheckpoint?.missionRevision)
+          && reportCheckpoint.missionRevision !== candidateCheckpoint.missionRevision
+        ) {
+          throw new AuditError(
+            "MISSION_REFRESH_UNSTABLE",
+            "The mission changed while Frontmend prepared this repository brief. Read the latest brief again before acting.",
+            true,
+            { missionCheckpoint: service?.getMissionCheckpoint?.(auditId) ?? candidateCheckpoint },
+          );
+        }
+        const brief = createRepositoryFixBrief(
           report,
           findingId,
           assessmentFindings(report, service?.getBrowserReview?.(auditId) ?? null),
           verificationCandidates,
         );
+        return {
+          ...brief,
+          missionCheckpoint:
+            candidateCheckpoint
+            ?? reportCheckpoint
+            ?? service?.getMissionCheckpoint?.(auditId)
+            ?? null,
+        };
       },
     }),
     tool({
@@ -1019,7 +1051,7 @@ export function createFrontmendTools(service) {
             receipt: repairVerificationReceiptMarkdown(aggregate),
           };
         }
-        const report = await service.getResults(auditId);
+        const report = await coherentResultsForTool(service, auditId);
         return {
           auditId,
           status: report.verification?.status,
@@ -1300,6 +1332,7 @@ export function createFrontmendTools(service) {
         return {
           auditId,
           policy: workspace.policy ?? service.getRepairPolicy?.(auditId),
+          missionCheckpoint: workspace.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId) ?? null,
           repairs: repairs.map((repair) => ({
             id: repair.id,
             findingId: repair.findingId,

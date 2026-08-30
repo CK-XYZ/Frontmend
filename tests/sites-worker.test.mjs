@@ -607,6 +607,57 @@ test("audit jobs derive route lineage from completed retained evidence", async (
   assert.deepEqual(payload.data.exploration.trail, [{ auditId, path: "/" }]);
 });
 
+test("Durable Object mission workspace reads carry the current authoritative checkpoint", async () => {
+  const auditId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
+  const state = {
+    id: auditId,
+    url: "https://removemyexif.com/",
+    source: "human",
+    mission: {
+      schemaVersion: 1,
+      intent: "assess",
+      focusAreas: ["accessibility"],
+      maxPriorities: 3,
+      requestedBy: "human",
+      requestedAt: 1,
+      repairPreparation: null,
+    },
+    missionRevision: 7,
+    status: "complete",
+    phase: "complete",
+    phaseLabel: "Audit complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://removemyexif.com/",
+      finalUrl: "https://removemyexif.com/",
+      findings: [],
+      viewports: [],
+    },
+  };
+  const values = new Map([
+    ["state", state],
+    ["repairs", []],
+    ["diagnosticMissions", []],
+    ["browserReview", null],
+    ["explorations", []],
+  ]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+
+  for (const pathname of ["/repairs", "/diagnostics", "/browser-review", "/explorations"]) {
+    const response = await job.fetch(new Request(`https://frontmend.internal${pathname}`));
+    const payload = await response.json();
+    assert.equal(response.status, 200, pathname);
+    assert.equal(payload.data.missionCheckpoint.auditId, auditId, pathname);
+    assert.equal(payload.data.missionCheckpoint.missionRevision, 7, pathname);
+  }
+});
+
 test("starts one durable site exploration through atomic batch admission", async () => {
   const rootId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
   const childIds = [
@@ -1427,6 +1478,16 @@ test("local development exports completed evidence and adopts it without a secon
   });
   assert.equal(JSON.parse(results.body).data.missionCheckpoint.missionRevision, 2);
 
+  for (const pathname of ["repairs", "diagnostics", "browser-review", "explorations"]) {
+    const workspace = await callLocalRuntime(middleware, {
+      url: `/api/audits/${auditId}/${pathname}`,
+    });
+    const workspacePayload = JSON.parse(workspace.body).data;
+    assert.equal(workspace.status, 200, pathname);
+    assert.equal(workspacePayload.missionCheckpoint.auditId, auditId, pathname);
+    assert.equal(workspacePayload.missionCheckpoint.missionRevision, 2, pathname);
+  }
+
   const adopt = await callLocalRuntime(middleware, {
     method: "POST",
     url: `/api/audits/${auditId}/browser-review`,
@@ -1682,6 +1743,7 @@ test("local development shares the bounded repair-intent transition without cons
   assert.equal(stagedRepair.findingId, findingId);
   assert.equal(stagedRepair.verificationImpact.status, "unreviewed");
   assert.equal(stagedRepair.verificationImpact.previewRows.length >= 1, true);
+  assert.equal(stagedRepair.missionCheckpoint.auditId, auditId);
 
   const candidates = JSON.parse((await callLocalRuntime(middleware, {
     url: `/api/audits/${auditId}/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
@@ -1689,6 +1751,7 @@ test("local development shares the bounded repair-intent transition without cons
   assert.equal(candidates.auditId, auditId);
   assert.equal(candidates.findingId, findingId);
   assert.equal(candidates.limit, 3);
+  assert.equal(candidates.missionCheckpoint.auditId, auditId);
 
   const approved = JSON.parse((await callLocalRuntime(middleware, {
     method: "POST",
@@ -1698,6 +1761,7 @@ test("local development shares the bounded repair-intent transition without cons
   })).body).data;
   assert.equal(approved.verificationImpact.status, "reviewed");
   assert.equal(approved.verificationImpact.matrix.reviewedBy, "person");
+  assert.equal(approved.missionCheckpoint.auditId, auditId);
 
   const repairs = JSON.parse((await callLocalRuntime(
     middleware,
@@ -1708,6 +1772,7 @@ test("local development shares the bounded repair-intent transition without cons
     { url: `/api/audits/${auditId}/repair-policy` },
   )).body).data;
   assert.equal(repairs.repairs.length, 1);
+  assert.equal(repairs.missionCheckpoint.auditId, auditId);
   assert.deepEqual(policyAfter, policyBefore);
 });
 
