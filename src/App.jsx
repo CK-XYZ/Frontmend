@@ -4,7 +4,6 @@ import {
   Browser,
   Check,
   CheckCircle,
-  DeviceMobile,
   Info,
   MagnifyingGlass,
   Pulse,
@@ -12,11 +11,17 @@ import {
   ShieldCheck,
   Sparkle,
   Warning,
-  Wrench,
   X,
 } from "@phosphor-icons/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "./audit-service.js";
+import {
+  DiagnosisSpecimen,
+  ReviewSpecimen,
+  SelectionSpecimen,
+  SiteSpecimen,
+  VerifiedSpecimen,
+} from "./ui/EvidenceSpecimens.jsx";
 import { AUDIT_FOCUS_AREAS, createAuditMission } from "./audit-mission-contract.js";
 import { AuditMissionSummary } from "./ui/AuditMissionSummary.jsx";
 import { humanMissionMutationFailure } from "./ui/human-mission-recovery.js";
@@ -27,10 +32,75 @@ import {
   registerFrontmendTools,
 } from "./webmcp.js";
 
-const LANDING_SIGNALS = [
-  { label: "Live measurement", detail: "Mobile + desktop", state: "warn", icon: DeviceMobile },
-  { label: "Agent browser", detail: "Rendered checks", state: "neutral", icon: Robot },
-  { label: "Fresh proof", detail: "Before + after", state: "good", icon: CheckCircle },
+const HERO_SPECIMENS = [
+  {
+    id: "measured",
+    label: "Measured",
+    facts: ["Insufficient text contrast", "Mobile + desktop"],
+  },
+  {
+    id: "investigation",
+    label: "Browser investigation",
+    facts: [".hero__title", "390 × 844"],
+  },
+  {
+    id: "diagnosis",
+    label: "Repository diagnosis",
+    facts: ["src/styles.css:42", "No source upload"],
+  },
+  {
+    id: "review",
+    label: "Human review",
+    facts: ["Awaiting explicit approval"],
+  },
+  {
+    id: "verification",
+    label: "Fresh verification",
+    facts: ["Root + retained route", "Regression guardrails passed"],
+  },
+];
+const EVIDENCE_LOOP_STAGES = [
+  {
+    id: "measured",
+    index: "01",
+    label: "Measured",
+    facts: ["Insufficient text contrast", "Mobile + desktop", "Lighthouse evidence"],
+  },
+  {
+    id: "investigation",
+    index: "02",
+    label: "Browser investigation",
+    facts: [".hero__title", "390 × 844", "Rendered observation"],
+  },
+  {
+    id: "diagnosis",
+    index: "03",
+    label: "Repository diagnosis",
+    facts: ["src/styles.css:42", "No source upload", "Bounded ownership"],
+  },
+  {
+    id: "review",
+    index: "04",
+    label: "Human review",
+    facts: ["Awaiting explicit approval", "Agent cannot approve"],
+  },
+  {
+    id: "verification",
+    index: "05",
+    label: "Fresh verification",
+    facts: ["Root + retained route", "Exact rule resolved", "Regression guardrails passed"],
+  },
+];
+const EVIDENCE_LOOP_CAPTIONS = [
+  { title: "Measure the live URL", detail: "Public evidence starts the mission." },
+  {
+    title: "Investigate what automation misses",
+    detail: "Rendered context and bounded diagnosis stay attached.",
+  },
+  {
+    title: "Review the fix, then prove it",
+    detail: "A human approves. Fresh measurement closes the loop.",
+  },
 ];
 const HOW_IT_WORKS_STEPS = [
   {
@@ -83,10 +153,24 @@ function staticRouteFromPathname(pathname) {
 function Brand({ onClick }) {
   return (
     <button className="brand" type="button" aria-label="Frontmend home" onClick={onClick}>
-      <span className="brand-symbol" aria-hidden="true">
-        <Wrench size={17} weight="bold" />
+      <span className="brand-icon" aria-hidden="true">
+        <img
+          src="/assets/images/icon_logo.png"
+          alt=""
+          width="1254"
+          height="1254"
+          draggable="false"
+        />
       </span>
-      <span>Frontmend</span>
+      <span className="brand-wordmark" aria-hidden="true">
+        <img
+          src="/assets/images/full_logo.png"
+          alt=""
+          width="2172"
+          height="724"
+          draggable="false"
+        />
+      </span>
     </button>
   );
 }
@@ -99,7 +183,7 @@ function WebMcpStatus({ status, expanded, restoring, onClick, buttonRef }) {
   const label = restoring
     ? "WebMCP · restoring"
     : ready
-      ? `WebMCP · ${status.toolNames.length} active`
+      ? "WebMCP ready"
       : status.status === "registering"
         ? "WebMCP · syncing"
         : failed
@@ -292,6 +376,97 @@ function HowItWorksPage() {
   );
 }
 
+function EvidenceSpecimen({ stage }) {
+  if (stage === "measured") return <SiteSpecimen state="unresolved" split />;
+  if (stage === "investigation") return <SelectionSpecimen />;
+  if (stage === "diagnosis") return <DiagnosisSpecimen />;
+  if (stage === "review") return <ReviewSpecimen />;
+  return <VerifiedSpecimen />;
+}
+
+function EvidenceLoop() {
+  return (
+    <section className="evidence-loop" id="evidence-loop" aria-labelledby="evidence-loop-title">
+      <div className="evidence-loop-intro">
+        <div className="evidence-loop-shell">
+          <svg
+            className="evidence-loop-thread"
+            viewBox="0 0 100 100"
+            fill="none"
+            aria-hidden="true"
+            focusable="false"
+          >
+            <path
+              d="M92 0 V54 Q92 68 78 68 H22 Q8 68 8 82 V100"
+              stroke="currentColor"
+              strokeWidth="1"
+              vectorEffect="non-scaling-stroke"
+            />
+          </svg>
+          <p className="evidence-loop-kicker">The evidence loop</p>
+          <h2 id="evidence-loop-title" className="evidence-loop-title">
+            One issue. Five accountable handoffs.
+          </h2>
+          <p className="evidence-loop-lede">
+            The finding never loses its source, owner, approval state, or proof.
+          </p>
+          <a className="evidence-loop-link" href="/how-it-works">
+            Follow one contrast issue
+            <ArrowRight size={17} weight="bold" aria-hidden="true" />
+          </a>
+        </div>
+      </div>
+
+      <div className="evidence-loop-field">
+        <div className="evidence-loop-shell">
+          <ol className="evidence-ribbon">
+            {EVIDENCE_LOOP_STAGES.map((stage) => (
+              <li className="ribbon-stage" key={stage.id} data-stage={stage.id}>
+                <div className="ribbon-head">
+                  <p className="ribbon-step">
+                    <span className="ribbon-index" aria-hidden="true">{stage.index}</span>
+                    {stage.label}
+                  </p>
+                  <ul className="ribbon-facts">
+                    {stage.facts.map((fact) => (
+                      <li key={fact}>{fact}</li>
+                    ))}
+                  </ul>
+                </div>
+                <span className="ribbon-tie" aria-hidden="true">
+                  <span className="ribbon-bracket" />
+                  <span className="ribbon-drop" />
+                  <span className="ribbon-node" />
+                </span>
+                <div className="ribbon-panel" aria-hidden="true">
+                  <EvidenceSpecimen stage={stage.id} />
+                </div>
+              </li>
+            ))}
+          </ol>
+          <p className="sr-only">
+            The strip above is an illustration of one example contrast issue. It is not a
+            measurement of a real website.
+          </p>
+
+          <ul className="evidence-loop-captions">
+            {EVIDENCE_LOOP_CAPTIONS.map((caption) => (
+              <li key={caption.title}>
+                <strong>{caption.title}</strong>
+                <span>{caption.detail}</span>
+              </li>
+            ))}
+          </ul>
+
+          <p className="evidence-loop-boundary">
+            Agents cannot approve repairs or attest deployment.
+          </p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function Landing({
   value,
   setValue,
@@ -310,160 +485,168 @@ function Landing({
     ? focusAreas.map((area) => AUDIT_FOCUS_COPY[area]?.label ?? area).join(" + ")
     : "Full frontend audit";
   return (
-    <section className="landing" aria-labelledby="landing-title">
-      <div className="landing-copy">
-        <p className="kicker">Provider evidence + agent-observed browser review</p>
-        <h1 id="landing-title">Where does your site break?</h1>
-        <p className="landing-intro">
-          Paste a public URL. Frontmend combines live measurement with rendered-browser evidence,
-          then carries the strongest accessibility and SEO issues into reviewable fixes and fresh proof.
-        </p>
+    <>
+      <section className="hero" aria-labelledby="landing-title">
+        <div className="hero-inner">
+          <div className="hero-copy">
+            <h1 id="landing-title" className="hero-title">
+              From audit finding<span className="editorial-break"> </span>to verified fix.
+            </h1>
+            <p className="hero-lede">
+              Measure the public site. Investigate what automation misses.
+              <span className="editorial-break"> </span>
+              Review the repair. Prove the deployed outcome.
+            </p>
 
-        <form className="site-search" onSubmit={onSubmit} noValidate>
-          <Browser size={23} weight="regular" aria-hidden="true" />
-          <label className="sr-only" htmlFor="site-url">
-            Public website URL
-          </label>
-          <input
-            ref={inputRef}
-            id="site-url"
-            inputMode="url"
-            value={value}
-            onChange={(event) => setValue(event.target.value)}
-            placeholder="removemyexif.com"
-            autoComplete="url"
-            spellCheck="false"
-            aria-invalid={Boolean(error)}
-            aria-describedby="site-url-message"
-          />
-          <button
-            className="search-submit"
-            type="submit"
-            aria-label={isSubmitting ? "Starting website audit" : "Audit this website"}
-            disabled={isSubmitting}
-          >
-            <ArrowRight size={23} weight="bold" />
-          </button>
-        </form>
-
-        <details className="audit-composer">
-          <summary>
-            <span>
-              <strong>Shape this assessment</strong>
-              <small>Optional · the full evidence record stays available</small>
-            </span>
-            <em>{focusSummary} · {scope === "bounded-site" ? "bounded site" : "page"} · top {maxPriorities}</em>
-          </summary>
-          <div className="audit-composer-body">
-            <fieldset>
-              <legend>
-                Focus areas
-                <small>Choose up to three</small>
-              </legend>
-              <div className="audit-focus-options">
-                {HUMAN_AUDIT_FOCUS_OPTIONS.map((option) => {
-                  const selected = focusAreas.includes(option.id);
-                  const unavailable = !selected && focusAreas.length >= 3;
-                  return (
-                    <label key={option.id} data-selected={selected ? "true" : "false"}>
-                      <input
-                        type="checkbox"
-                        value={option.id}
-                        checked={selected}
-                        disabled={unavailable || isSubmitting}
-                        onChange={() => onToggleFocus(option.id)}
-                      />
-                      <span>
-                        <strong>{option.label}</strong>
-                        <small>{option.detail}</small>
-                      </span>
-                    </label>
-                  );
-                })}
+            <form className="site-search" onSubmit={onSubmit} noValidate>
+              <div className="site-search-field">
+                <label htmlFor="site-url">Public site URL</label>
+                <input
+                  ref={inputRef}
+                  id="site-url"
+                  inputMode="url"
+                  value={value}
+                  onChange={(event) => setValue(event.target.value)}
+                  placeholder="https://example.com"
+                  autoComplete="url"
+                  spellCheck="false"
+                  aria-invalid={Boolean(error)}
+                  aria-describedby="site-url-message"
+                />
               </div>
-            </fieldset>
-            <label className="priority-limit" htmlFor="priority-limit">
-              <span>
-                <strong>Mission shortlist</strong>
-                <small>Rank this many priorities for the shared workspace</small>
-              </span>
-              <select
-                id="priority-limit"
-                value={maxPriorities}
-                disabled={isSubmitting}
-                onChange={(event) => onMaxPrioritiesChange(Number(event.target.value))}
+              <button className="search-submit" type="submit" disabled={isSubmitting}>
+                Start site audit
+                <ArrowRight size={19} weight="bold" aria-hidden="true" />
+              </button>
+            </form>
+
+            <p
+              id="site-url-message"
+              className={`search-message ${error ? "error" : ""}`}
+              role={error ? "alert" : "status"}
+              aria-live={error ? "assertive" : "polite"}
+              aria-atomic="true"
+            >
+              {error ||
+                (isSubmitting ? "Starting the live audit…" : "No account needed for the first audit.")}
+            </p>
+
+            <p className="hero-trust">No login · Public pages only · Human approval stays required</p>
+
+            <details className="audit-composer">
+              <summary>
+                <span>
+                  <strong>Shape this assessment</strong>
+                  <small>Optional · the full evidence record stays available</small>
+                </span>
+                <em>{focusSummary} · {scope === "bounded-site" ? "bounded site" : "page"} · top {maxPriorities}</em>
+              </summary>
+              <div className="audit-composer-body">
+                <fieldset>
+                  <legend>
+                    Focus areas
+                    <small>Choose up to three</small>
+                  </legend>
+                  <div className="audit-focus-options">
+                    {HUMAN_AUDIT_FOCUS_OPTIONS.map((option) => {
+                      const selected = focusAreas.includes(option.id);
+                      const unavailable = !selected && focusAreas.length >= 3;
+                      return (
+                        <label key={option.id} data-selected={selected ? "true" : "false"}>
+                          <input
+                            type="checkbox"
+                            value={option.id}
+                            checked={selected}
+                            disabled={unavailable || isSubmitting}
+                            onChange={() => onToggleFocus(option.id)}
+                          />
+                          <span>
+                            <strong>{option.label}</strong>
+                            <small>{option.detail}</small>
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </fieldset>
+                <label className="priority-limit" htmlFor="priority-limit">
+                  <span>
+                    <strong>Mission shortlist</strong>
+                    <small>Rank this many priorities for the shared workspace</small>
+                  </span>
+                  <select
+                    id="priority-limit"
+                    value={maxPriorities}
+                    disabled={isSubmitting}
+                    onChange={(event) => onMaxPrioritiesChange(Number(event.target.value))}
+                  >
+                    {[1, 2, 3, 4, 5].map((count) => (
+                      <option value={count} key={count}>Top {count}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="priority-limit" htmlFor="audit-scope">
+                  <span>
+                    <strong>Assessment scope</strong>
+                    <small>Bounded site retains up to three observed same-site routes</small>
+                  </span>
+                  <select
+                    id="audit-scope"
+                    value={scope}
+                    disabled={isSubmitting}
+                    onChange={(event) => onScopeChange(event.target.value)}
+                  >
+                    <option value="page">This page</option>
+                    <option value="bounded-site">Bounded site</option>
+                  </select>
+                </label>
+              </div>
+            </details>
+
+            <div className="hero-actions">
+              <a className="hero-loop-link" href="#evidence-loop">
+                See how the evidence loop works
+                <ArrowRight size={17} weight="bold" aria-hidden="true" />
+              </a>
+              <button
+                type="button"
+                className="hero-example"
+                onClick={() => setValue("removemyexif.com")}
               >
-                {[1, 2, 3, 4, 5].map((count) => (
-                  <option value={count} key={count}>Top {count}</option>
-                ))}
-              </select>
-            </label>
-            <label className="priority-limit" htmlFor="audit-scope">
-              <span>
-                <strong>Assessment scope</strong>
-                <small>Bounded site retains up to three observed same-site routes</small>
-              </span>
-              <select
-                id="audit-scope"
-                value={scope}
-                disabled={isSubmitting}
-                onChange={(event) => onScopeChange(event.target.value)}
-              >
-                <option value="page">This page</option>
-                <option value="bounded-site">Bounded site</option>
-              </select>
-            </label>
+                <Sparkle size={13} weight="fill" aria-hidden="true" />
+                Try removemyexif.com
+              </button>
+            </div>
           </div>
-        </details>
 
-        <div className="example-row">
-          <button
-            type="button"
-            className="example-chip"
-            onClick={() => setValue("removemyexif.com")}
-          >
-            <Sparkle size={14} weight="fill" aria-hidden="true" />
-            Try removemyexif.com
-          </button>
-          <span className="privacy-note">
-            <ShieldCheck size={14} weight="duotone" aria-hidden="true" />
-            Public pages only
-          </span>
-          <a className="guide-link" href="/how-it-works">
-            <Info size={14} weight="bold" aria-hidden="true" />
-            How Frontmend works
-          </a>
+          <figure className="specimen-stack" aria-labelledby="specimen-stack-caption">
+            <figcaption className="sr-only" id="specimen-stack-caption">
+              Illustration of one example contrast issue moving through the five Frontmend evidence
+              stages. It is not a measurement of a real website.
+            </figcaption>
+            <span className="specimen-thread" aria-hidden="true" />
+            <ol className="specimen-list">
+              {HERO_SPECIMENS.map((specimen) => (
+                <li className="specimen" key={specimen.id} data-stage={specimen.id}>
+                  <span className="specimen-accent" aria-hidden="true" />
+                  <div className="specimen-label">
+                    <p className="specimen-name">{specimen.label}</p>
+                    {specimen.facts.map((fact) => (
+                      <p key={fact}>{fact}</p>
+                    ))}
+                  </div>
+                  <div className="specimen-visual" aria-hidden="true">
+                    <EvidenceSpecimen stage={specimen.id} />
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </figure>
         </div>
+      </section>
 
-        <p
-          id="site-url-message"
-          className={`search-message ${error ? "error" : ""}`}
-          role={error ? "alert" : "status"}
-          aria-live={error ? "assertive" : "polite"}
-          aria-atomic="true"
-        >
-          {error ||
-            (isSubmitting ? "Starting the live audit…" : "No account needed for the first audit.")}
-        </p>
-      </div>
-
-      <ul className="signal-stage" aria-label="Frontmend audit capabilities">
-        {LANDING_SIGNALS.map((signal, index) => {
-          const Icon = signal.icon;
-          return (
-            <li className={`signal-card signal-${index + 1}`} key={signal.label}>
-              <span className={`signal-icon ${signal.state}`}>
-                <Icon size={18} weight="duotone" aria-hidden="true" />
-              </span>
-              <span>
-                <strong>{signal.label}</strong>
-                <small>{signal.detail}</small>
-              </span>
-            </li>
-          );
-        })}
-      </ul>
-    </section>
+      <EvidenceLoop />
+    </>
   );
 }
 
@@ -974,13 +1157,6 @@ export function App() {
       <header className="site-header">
         <Brand onClick={reset} />
         <div className="header-actions">
-          <WebMcpStatus
-            buttonRef={webMcpTriggerRef}
-            status={webMcp}
-            expanded={showWebMcp}
-            restoring={Boolean(restorationAuditId)}
-            onClick={() => setShowWebMcp(true)}
-          />
           <button
             className="agent-activity-trigger"
             type="button"
@@ -1003,6 +1179,13 @@ export function App() {
             <Info size={17} weight="bold" aria-hidden="true" />
             How it works
           </button>
+          <WebMcpStatus
+            buttonRef={webMcpTriggerRef}
+            status={webMcp}
+            expanded={showWebMcp}
+            restoring={Boolean(restorationAuditId)}
+            onClick={() => setShowWebMcp(true)}
+          />
         </div>
       </header>
 

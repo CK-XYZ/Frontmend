@@ -1,0 +1,1568 @@
+/*
+ * Frontmend landing surface — mineral-cobalt hero + evidence-loop section.
+ *
+ * Scoped to the marketing route only. The audit progress, restoration, and
+ * report workspaces keep the warm-white system defined in styles.css.
+ */
+
+:root {
+  /* Sampled from design/assets/backgrounds + design/assets/refs. */
+  --fm-cobalt: #00268a;
+  --fm-cobalt-deep: #001d73;
+  --fm-cobalt-line: rgba(197, 213, 255, 0.26);
+  --fm-bone: #f5f3f1;
+  --fm-bone-muted: #c3cfeb;
+  --fm-paper: #f2eee9;
+  --fm-ink: #12161c;
+  --fm-ink-muted: #4b535f;
+  --fm-lime: #dcef3b;
+  --fm-lime-deep: #b9cf14;
+  --fm-orange: #ff7a29;
+  --fm-orange-paper: #b23c0b;
+  --fm-orange-burnt: #ad4b21;
+  --fm-page: min(1440px, 100%);
+  --fm-gutter: clamp(20px, 5vw, 78px);
+}
+
+/* ------------------------------------------------------------------ shell */
+
+.app-shell.landing {
+  overflow: visible;
+  background: var(--fm-cobalt-deep);
+}
+
+.app-shell.landing .site-header {
+  color: var(--fm-bone);
+}
+
+.app-shell.landing .brand {
+  color: var(--fm-bone);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+
+.app-shell.landing .text-button {
+  color: var(--fm-bone);
+  font-weight: 560;
+}
+
+.app-shell.landing .text-button:hover {
+  color: var(--fm-lime);
+}
+
+.app-shell.landing .text-button svg {
+  display: none;
+}
+
+.app-shell.landing .webmcp-status {
+  color: var(--fm-bone);
+  font-weight: 560;
+  font-size: 14px;
+}
+
+.app-shell.landing .webmcp-status:hover,
+.app-shell.landing .webmcp-status[aria-expanded="true"],
+.app-shell.landing .webmcp-status:focus-visible {
+  background: rgba(245, 243, 241, 0.12);
+  color: var(--fm-bone);
+}
+
+.app-shell.landing .webmcp-status.ready {
+  color: var(--fm-bone);
+}
+
+.app-shell.landing .webmcp-status.ready .status-dot {
+  background: var(--fm-lime);
+  box-shadow: 0 0 0 4px rgba(220, 239, 59, 0.2);
+}
+
+.app-shell.landing .webmcp-status.error {
+  color: var(--fm-orange);
+}
+
+.app-shell.landing .webmcp-status.error .status-dot {
+  background: var(--fm-orange);
+  box-shadow: 0 0 0 4px rgba(255, 122, 41, 0.22);
+}
+
+.app-shell.landing .agent-activity-trigger {
+  border-color: rgba(245, 243, 241, 0.32);
+  background: transparent;
+  color: var(--fm-bone);
+}
+
+.app-shell.landing .agent-activity-trigger:hover {
+  border-color: var(--fm-lime);
+  color: var(--fm-lime);
+}
+
+.app-shell.landing .agent-activity-trigger span {
+  background: var(--fm-lime);
+  color: var(--fm-cobalt-deep);
+}
+
+.app-shell.landing :is(button, a, input, select, summary):focus-visible {
+  outline: 3px solid var(--fm-lime);
+  outline-offset: 3px;
+}
+
+.app-shell.landing .site-footer {
+  position: static;
+  width: var(--fm-page);
+  margin: 0 auto;
+  padding: 26px var(--fm-gutter) 30px;
+  border-top: 1px solid var(--fm-cobalt-line);
+  color: var(--fm-bone-muted);
+}
+
+/* Shared line-break helper: an editorial break that collapses on narrow screens. */
+.editorial-break {
+  display: block;
+  height: 0;
+  overflow: hidden;
+}
+
+/* -------------------------------------------------------------------- hero */
+
+.hero {
+  position: relative;
+  z-index: 4;
+  display: flex;
+  min-height: 100svh;
+  align-items: center;
+  isolation: isolate;
+  background-color: var(--fm-cobalt);
+  background-image: url("/backgrounds/frontmend-hero-signal-terrain.webp");
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  background-size: 100% auto;
+  color: var(--fm-bone);
+}
+
+.hero::after {
+  /* Keeps the headline readable where the terrain rises into the copy column. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  background: linear-gradient(
+    100deg,
+    rgba(0, 30, 116, 0.58) 0%,
+    rgba(0, 32, 122, 0.44) 38%,
+    rgba(0, 34, 128, 0.06) 66%,
+    rgba(0, 34, 128, 0) 80%
+  );
+  pointer-events: none;
+}
+
+.hero-inner {
+  display: grid;
+  width: var(--fm-page);
+  margin: 0 auto;
+  padding: clamp(112px, 14vh, 152px) var(--fm-gutter) clamp(72px, 9vh, 104px);
+  gap: clamp(28px, 3vw, 52px);
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  align-items: center;
+}
+
+.hero-copy {
+  max-width: 760px;
+}
+
+.hero-title {
+  margin: 0;
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(40px, 4.9vw, 74px);
+  font-weight: 600;
+  letter-spacing: -0.032em;
+  line-height: 0.96;
+}
+
+.hero-lede {
+  margin: clamp(22px, 3vh, 32px) 0 0;
+  max-width: 60ch;
+  color: var(--fm-bone);
+  font-size: clamp(16px, 1.35vw, 19px);
+  font-weight: 450;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------- url form */
+
+.site-search {
+  display: flex;
+  width: min(660px, 100%);
+  margin: clamp(24px, 3.4vh, 38px) 0 0;
+  align-items: stretch;
+  gap: 0;
+  border-radius: 4px;
+  background: var(--fm-paper);
+  box-shadow: 0 24px 60px rgba(0, 12, 48, 0.32);
+}
+
+.site-search-field {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  gap: 3px;
+  padding: 13px 20px 15px;
+}
+
+.site-search-field label {
+  color: var(--fm-ink-muted);
+  font-size: 12px;
+  font-weight: 620;
+  letter-spacing: 0.01em;
+}
+
+.site-search-field input {
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--fm-ink);
+  font-size: clamp(17px, 1.5vw, 20px);
+  outline: 0;
+}
+
+.site-search-field input::placeholder {
+  color: #7d8794;
+}
+
+.site-search:focus-within {
+  box-shadow:
+    0 0 0 3px var(--fm-lime),
+    0 24px 60px rgba(0, 12, 48, 0.32);
+}
+
+.site-search-field input:focus-visible {
+  outline: 0;
+}
+
+.search-submit {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 11px;
+  padding: 0 clamp(20px, 2.2vw, 30px);
+  border: 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--fm-lime);
+  color: var(--fm-ink);
+  font-size: clamp(15px, 1.2vw, 17px);
+  font-weight: 660;
+  letter-spacing: -0.01em;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+
+.search-submit:hover {
+  background: #e6f75a;
+}
+
+.search-submit:disabled {
+  cursor: wait;
+  opacity: 0.66;
+}
+
+.search-message {
+  min-height: 20px;
+  margin: 12px 0 0;
+  color: var(--fm-bone-muted);
+  font-size: 13px;
+}
+
+.search-message.error {
+  color: #ffc9a3;
+  font-weight: 600;
+}
+
+.hero-trust {
+  margin: 10px 0 0;
+  color: var(--fm-bone);
+  font-size: clamp(13px, 1.05vw, 15px);
+}
+
+/* The optional composer stays available, but reads as a quiet disclosure. */
+.app-shell.landing .audit-composer {
+  width: min(660px, 100%);
+  margin: 18px 0 0;
+  border-color: rgba(245, 243, 241, 0.24);
+  border-radius: 4px;
+  background: rgba(0, 21, 88, 0.4);
+  color: var(--fm-bone);
+  box-shadow: none;
+}
+
+.app-shell.landing .audit-composer > summary {
+  min-height: 52px;
+}
+
+.app-shell.landing .audit-composer > summary strong,
+.app-shell.landing .audit-composer legend,
+.app-shell.landing .audit-composer .priority-limit strong {
+  color: var(--fm-bone);
+}
+
+.app-shell.landing .audit-composer :is(small, em) {
+  color: var(--fm-bone-muted);
+}
+
+.app-shell.landing .audit-composer > summary::after {
+  color: var(--fm-bone-muted);
+}
+
+.app-shell.landing .audit-composer-body {
+  border-top-color: rgba(245, 243, 241, 0.18);
+}
+
+.app-shell.landing .audit-focus-options label {
+  border-color: rgba(245, 243, 241, 0.24);
+  background: rgba(0, 18, 74, 0.5);
+  color: var(--fm-bone);
+}
+
+.app-shell.landing .audit-focus-options label[data-selected="true"] {
+  border-color: var(--fm-lime);
+  background: rgba(220, 239, 59, 0.16);
+}
+
+.app-shell.landing .audit-composer select {
+  border-color: rgba(245, 243, 241, 0.3);
+  background: rgba(0, 18, 74, 0.6);
+  color: var(--fm-bone);
+}
+
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 22px;
+  margin-top: 20px;
+}
+
+.hero-loop-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: var(--fm-bone);
+  font-size: clamp(14px, 1.1vw, 16px);
+  font-weight: 560;
+  text-decoration-color: rgba(245, 243, 241, 0.55);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+}
+
+.hero-loop-link:hover {
+  color: var(--fm-lime);
+  text-decoration-color: currentColor;
+}
+
+.hero-example {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 12px;
+  border: 1px solid rgba(245, 243, 241, 0.28);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--fm-bone-muted);
+  font-size: 12px;
+  font-weight: 560;
+  cursor: pointer;
+}
+
+.hero-example:hover {
+  border-color: var(--fm-lime);
+  color: var(--fm-lime);
+}
+
+/* --------------------------------------------------------- hero specimens */
+
+/*
+ * A stack of physical evidence, not a list of cards: each specimen sets its own
+ * width, offset, and tilt, and consecutive specimens tuck under the one above.
+ * The lime thread runs behind them with a node at every handoff.
+ */
+.specimen-stack {
+  position: relative;
+  margin: 0;
+  --thread-x: 63%;
+}
+
+.specimen-thread {
+  position: absolute;
+  z-index: 0;
+  top: -5%;
+  bottom: -11%;
+  left: var(--thread-x);
+  width: 1px;
+  background-image: linear-gradient(to bottom, var(--fm-lime), var(--fm-lime));
+  background-repeat: no-repeat;
+  background-position: top;
+  background-size: 100% 100%;
+  pointer-events: none;
+}
+
+.specimen-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  gap: clamp(18px, 2.4vh, 30px);
+  list-style: none;
+}
+
+.specimen {
+  position: relative;
+  display: grid;
+  align-items: start;
+  gap: clamp(10px, 1.2vw, 20px);
+  grid-template-columns: minmax(0, 0.56fr) minmax(0, 1fr);
+}
+
+/* Handoff node where the thread meets each specimen. */
+.specimen::after {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  top: calc(clamp(18px, 2.4vh, 30px) / -2 - 3px);
+  left: var(--thread-x);
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fm-lime);
+  transform: translateX(-3px);
+}
+
+.specimen[data-stage="measured"]::after {
+  background: #fe6b07;
+}
+
+.specimen-label {
+  padding-top: 14px;
+  text-align: left;
+}
+
+.specimen-label p {
+  margin: 0;
+  color: var(--fm-bone);
+  font-size: clamp(11px, 0.86vw, 13px);
+  line-height: 1.5;
+}
+
+.specimen-name {
+  margin-bottom: 2px !important;
+  font-weight: 680;
+}
+
+.specimen[data-stage="measured"] .specimen-name {
+  color: var(--fm-orange);
+}
+
+.specimen[data-stage="verification"] .specimen-name {
+  color: var(--fm-lime);
+}
+
+.specimen-visual {
+  position: relative;
+  z-index: 2;
+  isolation: isolate;
+  width: var(--specimen-width, 100%);
+  margin-left: var(--specimen-shift, 0);
+  transform: rotate(var(--specimen-tilt, 0deg));
+  transform-origin: 50% 40%;
+}
+
+.specimen[data-stage="measured"] {
+  --specimen-delay: 0ms;
+  --specimen-width: 104%;
+  --specimen-shift: -3%;
+  --specimen-tilt: -1.8deg;
+}
+
+.specimen[data-stage="investigation"] {
+  --specimen-delay: 280ms;
+  --specimen-width: 95%;
+  --specimen-shift: 7%;
+  --specimen-tilt: 1.2deg;
+}
+
+.specimen[data-stage="diagnosis"] {
+  --specimen-delay: 560ms;
+  --specimen-width: 89%;
+  --specimen-shift: 2%;
+  --specimen-tilt: -0.9deg;
+}
+
+.specimen[data-stage="review"] {
+  --specimen-delay: 840ms;
+  --specimen-width: 101%;
+  --specimen-shift: 3%;
+  --specimen-tilt: 1.3deg;
+}
+
+.specimen[data-stage="verification"] {
+  --specimen-delay: 1120ms;
+  --specimen-width: 97%;
+  --specimen-shift: -2%;
+  --specimen-tilt: -1.7deg;
+}
+
+/*
+ * Hover: the pointed-at stage squares up to be read, its own length of thread
+ * lights, its node rings, and the rest of the run recedes. Transition-driven,
+ * so it is fully reversible and the global reduced-motion rule flattens it to
+ * an instant state change rather than removing the affordance.
+ */
+.specimen-accent {
+  /*
+   * Spans into the gaps so the hovered stage lights the length of thread that
+   * is actually visible. No specimen carries a z-index, so the whole stack
+   * shares one stacking context and the layer order is absolute: thread (0)
+   * and accents/nodes (1) are always behind every card (2), including the
+   * hovered one (4). The line can never paint over anything.
+   */
+  position: absolute;
+  z-index: 1;
+  top: calc(clamp(18px, 2.4vh, 30px) / -2);
+  bottom: calc(clamp(18px, 2.4vh, 30px) / -2);
+  left: var(--thread-x);
+  width: 2px;
+  margin-left: -0.5px;
+  background: var(--fm-lime);
+  opacity: 0;
+  transform: scaleY(0.24);
+  transform-origin: 50% 0;
+  pointer-events: none;
+  transition:
+    opacity 240ms ease,
+    transform 340ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.specimen-visual > * {
+  transition:
+    transform 340ms cubic-bezier(0.19, 1, 0.3, 1),
+    box-shadow 340ms ease,
+    filter 260ms ease;
+}
+
+.specimen-label p {
+  transition:
+    color 240ms ease,
+    transform 340ms cubic-bezier(0.19, 1, 0.3, 1);
+}
+
+.specimen::after {
+  transition:
+    box-shadow 300ms cubic-bezier(0.34, 1.4, 0.5, 1),
+    background-color 240ms ease;
+}
+
+.specimen:hover .specimen-accent {
+  opacity: 1;
+  transform: scaleY(1);
+}
+
+/* Only the card is raised, never the thread layer it belongs to. */
+.specimen:hover .specimen-visual,
+.specimen:focus-within .specimen-visual {
+  z-index: 4;
+}
+
+/* Straightens against its own tilt, so every specimen lands level when read. */
+.specimen:hover .specimen-visual > * {
+  transform: translateY(-7px) scale(1.025) rotate(calc(var(--specimen-tilt, 0deg) * -0.55));
+  box-shadow: 0 30px 64px rgba(0, 8, 38, 0.46);
+}
+
+.specimen:hover::after {
+  box-shadow: 0 0 0 7px rgba(220, 239, 59, 0.2);
+}
+
+.specimen:hover .specimen-label p {
+  transform: translateX(3px);
+}
+
+/*
+ * The rest of the run recedes so the pointed-at stage reads on its own.
+ * Dimmed with a filter, never opacity: the cards must stay fully opaque or the
+ * thread running behind them shows through and reads as a line drawn on top.
+ */
+.specimen-stack:hover .specimen:not(:hover) .specimen-visual > * {
+  filter: brightness(0.62) saturate(0.85);
+}
+
+.specimen-stack:hover .specimen:not(:hover) .specimen-label p {
+  color: var(--fm-bone-muted);
+}
+
+/*
+ * Entrance motion.
+ *
+ * The sequence tells the same story the section does: the thread stitches down
+ * the stack and PAUSES at each specimen while that piece of evidence lands, its
+ * node lights, and its own detail resolves — the contrast flag, the inspector
+ * frame snapping onto .hero__title, line 42 highlighting, the approval control
+ * arriving, the verification seal. Five beats, in the order the evidence is
+ * actually produced.
+ *
+ * Every rule is inside the no-preference opt-in, so a reduced-motion visitor
+ * gets the finished composition with nothing hidden and nothing moving.
+ */
+@keyframes specimen-thread-stitch {
+  0% {
+    background-size: 100% 0%;
+  }
+
+  7% {
+    background-size: 100% 10%;
+  }
+
+  14% {
+    background-size: 100% 10%;
+  }
+
+  24% {
+    background-size: 100% 29%;
+  }
+
+  31% {
+    background-size: 100% 29%;
+  }
+
+  41% {
+    background-size: 100% 48%;
+  }
+
+  48% {
+    background-size: 100% 48%;
+  }
+
+  58% {
+    background-size: 100% 66%;
+  }
+
+  65% {
+    background-size: 100% 66%;
+  }
+
+  75% {
+    background-size: 100% 85%;
+  }
+
+  82% {
+    background-size: 100% 85%;
+  }
+
+  100% {
+    background-size: 100% 100%;
+  }
+}
+
+/* Evidence is placed onto the stack, not faded in. */
+@keyframes specimen-place {
+  0% {
+    opacity: 0;
+    transform: rotate(calc(var(--specimen-tilt, 0deg) * 3.4)) translate3d(46px, 10px, 0) scale(0.94);
+  }
+
+  /* Reaches full opacity early: while the card is translucent the thread
+     behind it would otherwise show through. */
+  32% {
+    opacity: 1;
+  }
+
+  100% {
+    opacity: 1;
+    transform: rotate(var(--specimen-tilt, 0deg)) translate3d(0, 0, 0) scale(1);
+  }
+}
+
+@keyframes specimen-label-in {
+  from {
+    opacity: 0;
+    transform: translateX(-12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes specimen-node-in {
+  0% {
+    opacity: 0;
+    transform: translateX(-3px) scale(0.2);
+  }
+
+  55% {
+    opacity: 1;
+    transform: translateX(-3px) scale(1.55);
+  }
+
+  100% {
+    opacity: 1;
+    transform: translateX(-3px) scale(1);
+  }
+}
+
+/* A control or seal arriving: small overshoot, no bounce-back past the target. */
+@keyframes specimen-detail-in {
+  0% {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  60% {
+    opacity: 1;
+    transform: scale(1.12);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* The inspector frame snaps onto the measured element. */
+@keyframes specimen-frame-snap {
+  0% {
+    border-color: transparent;
+  }
+
+  40% {
+    border-color: transparent;
+  }
+
+  100% {
+    border-color: #2f6bd8;
+  }
+}
+
+/* The offending declaration is located, left to right. */
+@keyframes specimen-finding-wipe {
+  from {
+    background-size: 0% 100%;
+  }
+
+  to {
+    background-size: 100% 100%;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .specimen-thread {
+    animation: specimen-thread-stitch 1700ms linear both;
+  }
+
+  .specimen-label {
+    animation: specimen-label-in 520ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(var(--specimen-delay, 0ms) + 170ms);
+  }
+
+  .specimen::after {
+    animation: specimen-node-in 360ms cubic-bezier(0.34, 1.4, 0.5, 1) both;
+    animation-delay: calc(var(--specimen-delay, 0ms) + 120ms);
+  }
+
+  .specimen-visual {
+    animation: specimen-place 700ms cubic-bezier(0.19, 1, 0.3, 1) both;
+    animation-delay: calc(var(--specimen-delay, 0ms) + 200ms);
+  }
+
+  /* Per-specimen detail beats, each after its own card has settled. */
+  .specimen[data-stage] :is(.specimen-flag, .specimen-selection-tag, .specimen-seal),
+  .specimen[data-stage="review"] .specimen-pill.is-primary,
+  .specimen[data-stage="review"] .specimen-review-seal {
+    animation: specimen-detail-in 400ms cubic-bezier(0.34, 1.4, 0.5, 1) both;
+    animation-delay: calc(var(--specimen-delay, 0ms) + 620ms);
+  }
+
+  .specimen[data-stage="investigation"] .specimen-selection {
+    animation: specimen-frame-snap 520ms ease-out both;
+    animation-delay: calc(var(--specimen-delay, 0ms) + 480ms);
+  }
+
+  .specimen[data-stage="diagnosis"] .specimen-code-line.is-active {
+    animation: specimen-finding-wipe 460ms cubic-bezier(0.22, 1, 0.36, 1) both;
+    animation-delay: calc(var(--specimen-delay, 0ms) + 520ms);
+  }
+
+}
+
+/* ---------------------------------------------------- specimen primitives */
+
+.specimen-site,
+.specimen-code,
+.specimen-review {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  border-radius: 5px;
+  box-shadow: 0 18px 44px rgba(0, 10, 44, 0.34);
+}
+
+.specimen-site {
+  background: var(--fm-paper);
+}
+
+.specimen-chrome {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 11px 5px;
+  color: #6d7684;
+  font-size: 7px;
+  font-weight: 640;
+  letter-spacing: 0.02em;
+}
+
+.specimen-chrome-mark::before {
+  content: "\25CF";
+  margin-right: 3px;
+  color: #9aa3af;
+}
+
+.specimen-site-body {
+  display: block;
+  padding: 10px 14px 16px;
+}
+
+.specimen-site-title {
+  display: block;
+  color: var(--fm-ink);
+  font-family: var(--fm-display);
+  font-size: clamp(13px, 1.35vw, 20px);
+  font-weight: 500;
+  letter-spacing: -0.022em;
+  line-height: 1.14;
+}
+
+.specimen-site-copy {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  color: var(--fm-ink-muted);
+  font-size: clamp(6px, 0.58vw, 8px);
+  line-height: 1.4;
+}
+
+.specimen-site.is-unresolved {
+  background: var(--fm-orange-burnt);
+}
+
+.specimen-site.is-unresolved .specimen-chrome {
+  color: #6d7684;
+  background: var(--fm-paper);
+}
+
+/* The failing state: low-contrast text on the burnt panel is the finding. */
+.specimen-site.is-unresolved .specimen-site-title,
+.specimen-site.is-unresolved .specimen-site-copy {
+  color: #d8b7a5;
+}
+
+.specimen-site.is-inspecting .specimen-site-title,
+.specimen-site.is-resolved .specimen-site-title {
+  font-style: normal;
+  color: var(--fm-ink);
+}
+
+.specimen-selection {
+  position: relative;
+  display: block;
+  padding: 7px 9px 9px;
+  border: 1.5px dashed #2f6bd8;
+}
+
+.specimen-selection-tag {
+  position: absolute;
+  right: -1px;
+  bottom: -9px;
+  padding: 2px 5px;
+  border-radius: 2px;
+  background: #2f6bd8;
+  color: #fff;
+  font-family: var(--fm-mono);
+  font-size: 7px;
+  letter-spacing: 0.01em;
+}
+
+.specimen-flag,
+.specimen-seal {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.specimen-flag {
+  background: #fe6b07;
+  color: #fff;
+}
+
+.specimen-seal {
+  background: var(--fm-lime);
+  color: var(--fm-ink);
+}
+
+.specimen-code {
+  display: grid;
+  padding: 10px 0;
+  background: #14161a;
+  font-family: var(--fm-mono);
+  font-size: clamp(7px, 0.66vw, 10px);
+  line-height: 1.7;
+}
+
+.specimen-code-line {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  grid-template-columns: 26px minmax(0, 1fr);
+  padding-right: 12px;
+  color: #dfe3ea;
+}
+
+.specimen-code-line .specimen-code-number {
+  padding-right: 6px;
+  color: #6b7280;
+  text-align: right;
+}
+
+.specimen-code-line.is-active {
+  background-image: linear-gradient(rgba(255, 122, 41, 0.16), rgba(255, 122, 41, 0.16));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.specimen-code-line.is-active .specimen-code-number {
+  background: #b45309;
+  color: #fff;
+}
+
+.specimen-code-line.is-active .specimen-code-text {
+  color: #ffcf9e;
+}
+
+.specimen-code-text {
+  display: block;
+  white-space: pre;
+}
+
+.specimen-review {
+  display: grid;
+  gap: 10px;
+  padding: 12px 14px;
+  background: var(--fm-paper);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.92fr);
+  font-family: var(--fm-mono);
+  font-size: clamp(6.5px, 0.62vw, 9px);
+  line-height: 1.65;
+}
+
+.specimen-review-diff,
+.specimen-review-rationale {
+  display: grid;
+  gap: 1px;
+  align-content: start;
+  color: var(--fm-ink);
+}
+
+.specimen-review-rationale {
+  gap: 4px;
+  font-family: inherit;
+}
+
+.specimen-review-title {
+  display: block;
+  margin-bottom: 4px;
+  font-family: var(--fm-sans);
+  font-size: clamp(7px, 0.66vw, 9.5px);
+  font-weight: 680;
+}
+
+.specimen-review-rationale > span:not(.specimen-review-title):not(.specimen-review-actions) {
+  font-family: var(--fm-sans);
+  color: var(--fm-ink-muted);
+}
+
+.specimen-code-text.is-removed {
+  color: #b02c2c;
+}
+
+.specimen-code-text.is-added {
+  color: #1f7a3d;
+}
+
+.specimen-review-actions {
+  display: flex;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.specimen-pill {
+  display: inline-block;
+  padding: 4px 7px;
+  border: 1px solid #cfd4cf;
+  border-radius: 2px;
+  background: #fff;
+  color: var(--fm-ink);
+  font-family: var(--fm-sans);
+  font-size: clamp(6.5px, 0.6vw, 9px);
+  font-weight: 620;
+}
+
+.specimen-pill.is-primary {
+  border-color: var(--fm-lime-deep);
+  background: var(--fm-lime);
+}
+
+.specimen-review-seal {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--fm-lime);
+  color: var(--fm-ink);
+}
+
+/* ------------------------------------------------------ evidence loop */
+
+.evidence-loop {
+  position: relative;
+  z-index: 4;
+}
+
+.evidence-loop-intro {
+  position: relative;
+  overflow: hidden;
+  background-color: var(--fm-paper);
+  background-image: url("/backgrounds/frontmend-evidence-paper.webp");
+  background-position: center top;
+  background-repeat: no-repeat;
+  background-size: cover;
+  color: var(--fm-ink);
+}
+
+.evidence-loop-shell {
+  position: relative;
+  width: var(--fm-page);
+  margin-inline: auto;
+  padding-inline: var(--fm-gutter);
+}
+
+.evidence-loop-intro .evidence-loop-shell {
+  padding-block: clamp(52px, 8vh, 88px) clamp(48px, 7vh, 78px);
+}
+
+/* The hero thread reappears here and drops into the human-review handoff. */
+.evidence-loop-thread {
+  position: absolute;
+  right: 16%;
+  bottom: 0;
+  width: clamp(140px, 16vw, 230px);
+  height: clamp(140px, 16vw, 230px);
+  color: var(--fm-lime-deep);
+  pointer-events: none;
+}
+
+.evidence-loop-kicker {
+  margin: 0;
+  color: var(--fm-orange-paper);
+  font-size: 12px;
+  font-weight: 740;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.evidence-loop-title {
+  margin: 16px 0 0;
+  max-width: 12.2em;
+  color: var(--fm-ink);
+  font-family: var(--fm-display);
+  font-size: clamp(36px, 4.7vw, 70px);
+  font-weight: 600;
+  letter-spacing: -0.032em;
+  line-height: 0.98;
+}
+
+.evidence-loop-lede {
+  margin: 20px 0 0;
+  max-width: 52ch;
+  color: var(--fm-ink-muted);
+  font-size: clamp(15px, 1.2vw, 17px);
+  line-height: 1.55;
+}
+
+.evidence-loop-link {
+  display: inline-flex;
+  margin-top: 22px;
+  align-items: center;
+  gap: 9px;
+  color: #1c3fa8;
+  font-size: clamp(14px, 1.1vw, 16px);
+  font-weight: 620;
+  text-decoration-color: rgba(28, 63, 168, 0.4);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 5px;
+}
+
+.evidence-loop-link:hover {
+  color: var(--fm-ink);
+  text-decoration-color: currentColor;
+}
+
+.evidence-loop-field {
+  background-color: var(--fm-cobalt-deep);
+  background-image: url("/backgrounds/frontmend-evidence-field.webp");
+  background-position: right center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  color: var(--fm-bone);
+}
+
+/* ------------------------------------------------------ evidence ribbon */
+
+.evidence-ribbon {
+  display: grid;
+  margin: 0;
+  padding-top: clamp(44px, 6vh, 70px);
+  gap: 0 clamp(14px, 1.6vw, 30px);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-rows: auto 34px auto;
+  list-style: none;
+}
+
+.ribbon-stage {
+  display: grid;
+  grid-row: span 3;
+  grid-template-rows: auto 34px auto;
+  gap: 0;
+}
+
+@supports (grid-template-rows: subgrid) {
+  .ribbon-stage {
+    grid-template-rows: subgrid;
+  }
+}
+
+.ribbon-head {
+  align-content: start;
+}
+
+.ribbon-step {
+  margin: 0 0 10px;
+  color: var(--fm-bone);
+  font-size: clamp(11px, 0.86vw, 13px);
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.ribbon-index {
+  margin-right: 6px;
+  color: var(--fm-lime);
+}
+
+.ribbon-index::after {
+  content: " \00B7";
+  color: var(--fm-bone-muted);
+}
+
+.ribbon-facts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.ribbon-facts li {
+  color: var(--fm-bone);
+  font-size: clamp(12px, 0.94vw, 14px);
+  line-height: 1.55;
+}
+
+.ribbon-stage[data-stage="diagnosis"] .ribbon-facts li:first-child,
+.ribbon-stage[data-stage="investigation"] .ribbon-facts li:first-child {
+  font-family: var(--fm-mono);
+  font-size: clamp(11px, 0.86vw, 13px);
+}
+
+/* The tie is the visible handoff: bracket, drop line, and state node. */
+.ribbon-tie {
+  position: relative;
+  display: block;
+}
+
+.ribbon-bracket,
+.ribbon-drop,
+.ribbon-node {
+  position: absolute;
+  display: block;
+}
+
+.ribbon-bracket {
+  top: 6px;
+  right: 4px;
+  left: 4px;
+  height: 12px;
+  border: 1px solid var(--fm-cobalt-line);
+  border-bottom: 0;
+  border-radius: 4px 4px 0 0;
+}
+
+.ribbon-drop {
+  top: 17px;
+  left: 50%;
+  width: 1px;
+  height: 17px;
+  background: var(--fm-cobalt-line);
+}
+
+.ribbon-node {
+  bottom: -5px;
+  left: 50%;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--fm-cobalt-deep);
+  border-radius: 50%;
+  background: var(--fm-bone);
+  transform: translateX(-50%);
+}
+
+.ribbon-stage[data-stage="measured"] .ribbon-bracket {
+  border-color: var(--fm-orange);
+}
+
+.ribbon-stage[data-stage="measured"] .ribbon-drop {
+  background: var(--fm-orange);
+}
+
+.ribbon-stage[data-stage="measured"] .ribbon-node {
+  background: #fe6b07;
+}
+
+.ribbon-stage[data-stage="review"] .ribbon-bracket {
+  border-color: var(--fm-lime);
+}
+
+.ribbon-stage[data-stage="review"] .ribbon-drop,
+.ribbon-stage[data-stage="verification"] .ribbon-drop {
+  background: var(--fm-lime);
+}
+
+.ribbon-stage[data-stage="review"] .ribbon-node,
+.ribbon-stage[data-stage="verification"] .ribbon-node {
+  background: var(--fm-lime);
+}
+
+.ribbon-stage[data-stage="verification"] .ribbon-bracket {
+  border-color: var(--fm-lime);
+}
+
+/* One continuous strip: the panels butt together into a single ribbon. */
+.evidence-ribbon .ribbon-panel {
+  position: relative;
+  margin-inline: calc(clamp(14px, 1.6vw, 30px) / -2);
+  overflow: hidden;
+  background: var(--fm-paper);
+  box-shadow: 0 22px 52px rgba(0, 10, 44, 0.36);
+}
+
+.ribbon-stage:first-child .ribbon-panel {
+  margin-left: 0;
+  border-radius: 5px 0 0 5px;
+}
+
+.ribbon-stage:last-child .ribbon-panel {
+  margin-right: 0;
+  border-radius: 0 5px 5px 0;
+}
+
+.ribbon-panel :is(.specimen-site, .specimen-code, .specimen-review) {
+  height: 100%;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.ribbon-panel .specimen-site-title {
+  font-size: clamp(12px, 1.15vw, 17px);
+}
+
+.ribbon-panel .specimen-review {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.85fr);
+}
+
+.ribbon-panel .specimen-flag,
+.ribbon-panel .specimen-seal,
+.ribbon-panel .specimen-review-seal {
+  display: none;
+}
+
+.ribbon-stage[data-stage="measured"] .ribbon-panel .specimen-chrome {
+  background: var(--fm-paper);
+}
+
+/* --------------------------------------------------- supporting captions */
+
+.evidence-loop-captions {
+  display: grid;
+  margin: 0;
+  padding-top: clamp(38px, 5vh, 58px);
+  gap: clamp(20px, 3vw, 48px);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  list-style: none;
+}
+
+.evidence-loop-captions li {
+  display: grid;
+  gap: 8px;
+  padding-top: 18px;
+  border-top: 1px solid var(--fm-cobalt-line);
+  align-content: start;
+}
+
+.evidence-loop-captions strong {
+  color: var(--fm-bone);
+  font-size: clamp(16px, 1.4vw, 21px);
+  font-weight: 640;
+  letter-spacing: -0.015em;
+}
+
+.evidence-loop-captions span {
+  color: var(--fm-bone-muted);
+  font-size: clamp(13px, 1.05vw, 15px);
+  line-height: 1.55;
+}
+
+.evidence-loop-boundary {
+  margin: clamp(40px, 6vh, 68px) auto 0;
+  padding-top: 22px;
+  padding-bottom: clamp(46px, 6vh, 72px);
+  border-top: 1px solid var(--fm-cobalt-line);
+  color: var(--fm-bone);
+  font-size: clamp(13px, 1.05vw, 15px);
+  text-align: center;
+}
+
+/* ---------------------------------------------------------- responsive */
+
+@media (max-width: 1180px) {
+  .hero-inner {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.86fr);
+  }
+
+  .specimen {
+    grid-template-columns: minmax(0, 0.52fr) minmax(0, 1fr);
+  }
+
+  .specimen-stack {
+    --thread-x: 66%;
+  }
+}
+
+@media (max-width: 960px) {
+  .hero {
+    background-position: right bottom;
+  }
+
+  .hero::after {
+    background: linear-gradient(
+      180deg,
+      rgba(0, 32, 122, 0.5) 0%,
+      rgba(0, 32, 122, 0.78) 46%,
+      rgba(0, 28, 112, 0.9) 100%
+    );
+  }
+
+  .hero-inner {
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: clamp(38px, 6vh, 56px);
+  }
+
+  .hero-copy {
+    max-width: none;
+  }
+
+  .specimen-stack {
+    --thread-x: 46%;
+    max-width: 640px;
+  }
+
+  .specimen {
+    grid-template-columns: minmax(0, 0.46fr) minmax(0, 1fr);
+  }
+
+  .evidence-ribbon {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: none;
+    gap: 26px clamp(14px, 2vw, 24px);
+  }
+
+  .ribbon-stage,
+  .evidence-ribbon .ribbon-stage {
+    grid-row: auto;
+    grid-template-rows: auto 34px auto;
+  }
+
+  .evidence-ribbon .ribbon-panel {
+    margin-inline: 0;
+    border-radius: 5px;
+  }
+
+  .evidence-loop-captions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .app-shell.landing .text-button svg {
+    display: block;
+  }
+
+  .app-shell.landing .webmcp-status {
+    font-size: 0;
+  }
+
+  .editorial-break {
+    display: inline;
+  }
+
+  .hero-loop-link,
+  .evidence-loop-link {
+    min-height: 44px;
+  }
+
+  .hero-inner {
+    padding-top: 104px;
+  }
+
+  .hero-title {
+    font-size: clamp(34px, 10.5vw, 48px);
+  }
+
+  .hero-lede {
+    font-size: 16px;
+  }
+
+  .site-search {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .site-search-field input {
+    font-size: 16px;
+  }
+
+  .search-submit {
+    min-height: 52px;
+    justify-content: center;
+    border-radius: 0 0 4px 4px;
+  }
+
+  /* Stacked: the exhibit becomes a single rail-led column. */
+  .specimen {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .specimen + .specimen {
+    margin-top: 22px;
+  }
+
+  .specimen-stack {
+    --thread-x: 8px;
+  }
+
+  .specimen::after {
+    top: 6px;
+  }
+
+  .specimen-label,
+  .specimen + .specimen .specimen-label {
+    padding-top: 0;
+    padding-left: 26px;
+  }
+
+  .specimen[data-stage] .specimen-visual {
+    width: 100%;
+    margin-left: 26px;
+    transform: none;
+  }
+
+  .specimen-site-title {
+    font-size: 17px;
+  }
+
+  .specimen-code,
+  .specimen-review,
+  .specimen-site-copy {
+    font-size: 9px;
+  }
+
+  /* One stacked ribbon: a continuous rail keeps the five handoffs one loop. */
+  .evidence-ribbon {
+    position: relative;
+    padding-left: 26px;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+  }
+
+  .evidence-ribbon::before {
+    content: "";
+    position: absolute;
+    top: calc(clamp(44px, 6vh, 70px) + 7px);
+    bottom: 10px;
+    left: 4px;
+    width: 1px;
+    background: var(--fm-cobalt-line);
+  }
+
+  .ribbon-stage {
+    position: relative;
+    grid-template-rows: auto 12px auto;
+  }
+
+  .ribbon-stage::before {
+    content: "";
+    position: absolute;
+    top: 5px;
+    left: -26px;
+    width: 9px;
+    height: 9px;
+    border: 2px solid var(--fm-cobalt-deep);
+    border-radius: 50%;
+    background: var(--fm-bone);
+  }
+
+  .ribbon-stage[data-stage="measured"]::before {
+    background: #fe6b07;
+  }
+
+  .ribbon-stage[data-stage="review"]::before,
+  .ribbon-stage[data-stage="verification"]::before {
+    background: var(--fm-lime);
+  }
+
+  .ribbon-tie {
+    display: none;
+  }
+
+  .evidence-loop-title {
+    font-size: clamp(31px, 9.6vw, 42px);
+  }
+}
