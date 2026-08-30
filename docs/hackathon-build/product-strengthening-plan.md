@@ -560,6 +560,39 @@ A completed top-level job is not enough to expose a mission: its auxiliary recor
 - Register no contextual tools and expose no mission inspector until the coherent snapshot is authoritative.
 - Preserve the light single-job path for running audits, Human-only fallback, and the twenty-one-tool library.
 
+## Freeform Product Round — Truthful Cross-Page Exploration Recovery
+
+An exploration mission remains authoritative even when its next browser read fails. Treat collection and detail availability separately from the durable mission outcome.
+
+- Retain the last confirmed exploration and never convert a rejected read into `failed`, `partial`, or `complete` state.
+- Announce the read interruption separately, retry the same collection or mission detail automatically, and expose one immediate read-only retry.
+- Validate the requested root audit on exploration start, collection, and detail responses, plus the requested mission ID on detail responses, before changing the shared cache.
+- Reject cross-audit or wrong-mission responses without clearing the retained mission or publishing the foreign payload.
+- Preserve the existing Human start action, contextual exploration tools, mission revision behaviour, Worker/local runtime contract, and twenty-one-tool library.
+- Keep the recovery control accessible and reflow-safe at 390 px.
+
+## Freeform Product Round — Coherent Mounted-Report Refresh
+
+A restored report can become inconsistent again if each auxiliary workspace publishes independently. Reuse the authoritative checkpoint boundary after mount rather than treating repair, diagnosis, and browser review as unrelated reads.
+
+- Replace independent background reads with one checkpoint-bracketed mission refresh covering job, repair/policy, diagnosis, browser review, and exploration state.
+- Add a complete-only publication mode that leaves the last coherent cache untouched whenever one read is unavailable or the client generation changes.
+- Retain the existing partial safe-refresh mode for stale Human-write recovery, where available current records are intentionally useful and the action is never replayed.
+- Validate both top-level and nested audit identities for repair, diagnosis, and browser-review workspaces before publication.
+- Announce background refresh failures without hiding the report, retry automatically after a bounded delay, and provide one immediate read-only retry.
+- Preserve Human-only fallback, contextual registration, every authority boundary, and the twenty-one-tool library.
+
+## Freeform Product Round — Fail-Closed Verification-Scope Recovery
+
+A reviewed verification matrix cannot be truthful if a transient candidate read silently becomes an empty optional scope. Treat candidate availability as a staging prerequisite rather than a permissive enhancement.
+
+- Make the server projection identify the root audit and retained finding, with deterministic read-time fallback for older impact records.
+- Reject a candidate response for another audit or finding before changing shared client state.
+- Clear stale candidate choices whenever the repair intent changes or the exact scope is reloaded.
+- Announce unavailable scope separately, retry only the read after a bounded delay, and offer one immediate read-only retry.
+- Keep repair staging disabled until the current candidate projection is authoritative; never convert read failure into an empty reviewed selection.
+- Preserve automatic required routes, Human-only fallback, Worker/local parity, all authority boundaries, and the twenty-one-tool library.
+
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
@@ -580,9 +613,12 @@ A completed top-level job is not enough to expose a mission: its auxiliary recor
 - [x] **16. Retry-safe, cross-audit-isolated fresh-session restoration** — implemented and locally verified on 30 August 2026; failed reads retain the stable URL, mismatched responses cannot become active, cached contextual tools are absent, and retry performs only the authoritative GET
 - [x] **17. Non-terminal active-status recovery** — implemented and locally verified on 30 August 2026; interrupted polling preserves authoritative job state and retries only the existing read
 - [x] **18. Coherent fresh-session mission hydration** — implemented and locally verified on 30 August 2026; completed workspaces expose tools only after all audit-scoped records share revision and identity
-- [ ] **19. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **19. Truthful cross-page exploration recovery** — implemented and locally verified on 30 August 2026; interrupted reads preserve the retained mission and mismatched payloads fail before caching
+- [x] **20. Coherent mounted-report mission refresh** — implemented and locally verified on 30 August 2026; partial background reads retain the last complete mission snapshot and expose a read-only retry
+- [x] **21. Fail-closed verification-scope recovery** — implemented and locally verified on 30 August 2026; candidate reads are audit/finding-bound and repair staging waits for the exact current scope
+- [ ] **22. Fresh current-candidate browser proof after explicit deployment/server authority**
 
-Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, and accessibility rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
+Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, accessibility, and fail-closed scope-recovery rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 
 ## Full Regression Gate
 
