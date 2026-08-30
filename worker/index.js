@@ -497,7 +497,16 @@ async function startRelatedAudit(request, env, baselineAuditId) {
     }),
   });
   const payload = await response.json();
-  return json(payload, {
+  const responsePayload = response.ok && payload?.ok !== false
+    ? {
+        ok: true,
+        data: {
+          ...payload.data,
+          missionCheckpoint: related.missionCheckpoint,
+        },
+      }
+    : payload;
+  return json(responsePayload, {
     status: response.status === 202 ? 202 : admission.reused ? 200 : 202,
     headers: { location: `/api/audits/${encodeURIComponent(admission.jobId)}` },
   });

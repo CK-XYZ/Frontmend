@@ -125,6 +125,7 @@ test("stamps the reviewed matrix and aggregates one existing audit assignment pe
   ], 300);
   assert.equal(run.assignments.length, 3);
   assert.equal(aggregate.status, "still-present");
+  assert.equal(aggregate.auditId, "root-audit");
   assert.equal(aggregate.summary.resolved, 3);
   assert.equal(aggregate.summary.stillPresent, 1);
   assert.equal(aggregate.receiptAvailable, true);

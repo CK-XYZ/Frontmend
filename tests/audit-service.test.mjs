@@ -272,6 +272,349 @@ test("rejects mismatched top-level mission workspaces before direct cache public
   assert.equal(service.getBrowserReview(AUDIT_ID), null);
 });
 
+test("rejects mismatched result, checkpoint, and aggregate identities before publication", async () => {
+  const foreignAuditId = "95b52d88-0ed2-49df-a740-0f548065dadd";
+  const repairId = "repair-1";
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        status: "queued",
+        progress: 4,
+      }),
+      results: async () => ({
+        auditId: foreignAuditId,
+        findings: [],
+        missionCheckpoint: { auditId: foreignAuditId, missionRevision: 2 },
+      }),
+      checkpoint: async () => ({ auditId: foreignAuditId, missionRevision: 2 }),
+      repairVerification: async () => ({
+        id: "run-1",
+        auditId: foreignAuditId,
+        repairId,
+        status: "resolved",
+        rows: [],
+      }),
+    },
+  });
+
+  await service.startAudit({ url: "https://example.com/" });
+  await assert.rejects(
+    () => service.getResults(AUDIT_ID),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.loadMissionCheckpoint(AUDIT_ID),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.getRepairVerification(AUDIT_ID, repairId),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getActiveAudit().id, AUDIT_ID);
+  assert.equal(service.getActiveAudit().status, "queued");
+  assert.equal(service.getMissionCheckpoint(AUDIT_ID).missionRevision, 1);
+  assert.deepEqual(service.getRepairs(AUDIT_ID), []);
+  assert.deepEqual(service.getRepairs(foreignAuditId), []);
+});
+
+test("rejects foreign mutation records before changing shared mission caches", async () => {
+  const foreignAuditId = "95b52d88-0ed2-49df-a740-0f548065dadd";
+  const reviewId = "review-1";
+  const missionId = "mission-1";
+  const repairId = "repair-1";
+  const service = createAuditService({
+    transport: {
+      openBrowserReview: async () => ({ id: reviewId, auditId: foreignAuditId }),
+      submitDiagnosticEvidence: async () => ({ id: missionId, auditId: foreignAuditId }),
+      stageRepair: async () => ({ id: repairId, auditId: foreignAuditId }),
+    },
+  });
+
+  await assert.rejects(
+    () => service.openBrowserReview(AUDIT_ID),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.submitDiagnosticEvidence(AUDIT_ID, missionId, {
+      summary: "Bounded diagnosis.",
+      reproduction: "Reload the public route.",
+      observations: [{ kind: "console", detail: "The retained failure reproduces." }],
+      sourceLocations: [{ file: "src/runtime.js", reason: "Owns the initialiser." }],
+      verificationChecks: ["bun test"],
+      confidence: "medium",
+    }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.stageRepair(AUDIT_ID, { findingId: "finding-1", source: "agent" }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getBrowserReview(AUDIT_ID), null);
+  assert.equal(service.getBrowserReview(foreignAuditId), null);
+  assert.deepEqual(service.getDiagnosticMissions(AUDIT_ID), []);
+  assert.deepEqual(service.getDiagnosticMissions(foreignAuditId), []);
+  assert.deepEqual(service.getRepairs(AUDIT_ID), []);
+  assert.deepEqual(service.getRepairs(foreignAuditId), []);
+});
+
+test("rejects wrong retained IDs and continuation lineage before changing workspaces", async () => {
+  const reviewId = "review-1";
+  const missionId = "mission-1";
+  const repairId = "repair-1";
+  const childId = "c45d54ea-6884-4c86-b82d-b9048cff697f";
+  const foreignAuditId = "95b52d88-0ed2-49df-a740-0f548065dadd";
+  const service = createAuditService({
+    transport: {
+      recordBrowserReviewCheck: async () => ({ id: "review-2", auditId: AUDIT_ID }),
+      recordDiagnosticBlocker: async () => ({ id: "mission-2", auditId: AUDIT_ID }),
+      approveRepair: async () => ({ id: "repair-2", auditId: AUDIT_ID }),
+      startRelated: async () => ({
+        id: childId,
+        status: "queued",
+        exploration: {
+          rootAuditId: foreignAuditId,
+          parentAuditId: foreignAuditId,
+          observedPath: "/privacy",
+        },
+        missionCheckpoint: { auditId: AUDIT_ID, missionRevision: 2 },
+      }),
+      startVerification: async () => ({
+        id: childId,
+        baselineAuditId: foreignAuditId,
+        repairId,
+        verificationAuditIds: [childId],
+        status: "queued",
+        missionCheckpoint: { auditId: AUDIT_ID, missionRevision: 2 },
+      }),
+    },
+  });
+
+  await assert.rejects(
+    () => service.recordBrowserReviewCheck(AUDIT_ID, reviewId, {
+      checkId: "rendered-structure",
+      outcome: "passed",
+      summary: "Checked the retained structure.",
+      observations: ["The page has one primary heading."],
+    }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.recordDiagnosticBlocker(AUDIT_ID, missionId, {
+      reason: "repository-unavailable",
+      summary: "The authorised repository is not available in this session.",
+    }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.approveRepair(AUDIT_ID, repairId),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.startRelatedAudit(AUDIT_ID, "/privacy"),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.startVerification(AUDIT_ID, repairId),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getActiveAudit(), null);
+  assert.equal(service.getBrowserReview(AUDIT_ID), null);
+  assert.deepEqual(service.getDiagnosticMissions(AUDIT_ID), []);
+  assert.deepEqual(service.getRepairs(AUDIT_ID), []);
+});
+
+test("rejects a foreign mutation checkpoint even when the returned record is otherwise current", async () => {
+  const foreignAuditId = "95b52d88-0ed2-49df-a740-0f548065dadd";
+  const childId = "c45d54ea-6884-4c86-b82d-b9048cff697f";
+  const service = createAuditService({
+    transport: {
+      setRepairPolicy: async () => ({
+        version: 1,
+        mode: "auto-low-risk",
+        remainingAutoApprovals: 3,
+        deploymentAttestation: "person-only",
+        missionCheckpoint: { auditId: foreignAuditId, missionRevision: 2 },
+      }),
+      startRelated: async () => ({
+        id: childId,
+        status: "queued",
+        exploration: {
+          rootAuditId: AUDIT_ID,
+          parentAuditId: AUDIT_ID,
+          observedPath: "/privacy",
+        },
+        missionCheckpoint: { auditId: foreignAuditId, missionRevision: 2 },
+      }),
+    },
+  });
+
+  await assert.rejects(
+    () => service.setRepairPolicy(AUDIT_ID, "auto-low-risk"),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.startRelatedAudit(AUDIT_ID, "/privacy"),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getRepairPolicy(AUDIT_ID).mode, "review");
+  assert.equal(service.getActiveAudit(), null);
+});
+
+test("binds same-audit diagnosis and repair continuations to the exact requested finding", async () => {
+  const requestedFindingId = "finding-1";
+  const otherFindingId = "finding-2";
+  const missionId = "mission-1";
+  const repairId = "repair-1";
+  let retainedAudit;
+  let returnedFindingId = otherFindingId;
+  const preparedMission = () => ({
+    ...retainedAudit.mission,
+    intent: "prepare-fix",
+    repairPreparation: {
+      findingId: returnedFindingId,
+      requestedBy: "agent",
+      requestedAt: 20,
+    },
+  });
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => {
+        retainedAudit = {
+          id: AUDIT_ID,
+          url,
+          source,
+          mission,
+          status: "complete",
+          progress: 100,
+          report: { auditId: AUDIT_ID, findings: [] },
+        };
+        return retainedAudit;
+      },
+      prepareRepair: async () => ({
+        audit: { ...retainedAudit, mission: preparedMission() },
+        mission: preparedMission(),
+        missionState: { status: "action-available" },
+      }),
+      openDiagnosticMission: async () => ({
+        id: missionId,
+        auditId: AUDIT_ID,
+        findingId: returnedFindingId,
+      }),
+      stageRepair: async () => ({
+        id: repairId,
+        auditId: AUDIT_ID,
+        findingId: returnedFindingId,
+        status: "draft",
+      }),
+    },
+  });
+
+  await service.startAudit({ url: "https://example.com/" });
+  await assert.rejects(
+    () => service.prepareRepair(AUDIT_ID, requestedFindingId, "human"),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.openDiagnosticMission(AUDIT_ID, requestedFindingId),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  await assert.rejects(
+    () => service.stageRepair(AUDIT_ID, { findingId: requestedFindingId, source: "agent" }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getActiveAudit().mission.repairPreparation, null);
+  assert.deepEqual(service.getDiagnosticMissions(AUDIT_ID), []);
+  assert.deepEqual(service.getRepairs(AUDIT_ID), []);
+
+  returnedFindingId = requestedFindingId;
+  await service.prepareRepair(AUDIT_ID, requestedFindingId, "human");
+  await service.openDiagnosticMission(AUDIT_ID, requestedFindingId);
+  await service.stageRepair(AUDIT_ID, { findingId: requestedFindingId, source: "agent" });
+  assert.equal(service.getActiveAudit().mission.repairPreparation.findingId, requestedFindingId);
+  assert.equal(service.getActiveAudit().mission.repairPreparation.requestedBy, "agent");
+  assert.equal(service.getDiagnosticMissions(AUDIT_ID)[0].findingId, requestedFindingId);
+  assert.equal(service.getRepairs(AUDIT_ID)[0].findingId, requestedFindingId);
+
+  await service.prepareRepair(AUDIT_ID, requestedFindingId, "human");
+  assert.equal(service.getActiveAudit().mission.repairPreparation.requestedBy, "agent");
+});
+
+test("binds browser-review and policy acknowledgements to the exact requested action", async () => {
+  const reviewId = "review-1";
+  let returnedFocusAreas = ["seo"];
+  let returnedCheckId = "responsive-reflow";
+  let returnedPolicyMode = "review";
+  const service = createAuditService({
+    transport: {
+      openBrowserReview: async () => ({
+        id: reviewId,
+        auditId: AUDIT_ID,
+        requestedFocusAreas: returnedFocusAreas,
+        results: [],
+      }),
+      recordBrowserReviewCheck: async () => ({
+        id: reviewId,
+        auditId: AUDIT_ID,
+        requestedFocusAreas: ["accessibility"],
+        results: [{ checkId: returnedCheckId, outcome: "passed" }],
+      }),
+      setRepairPolicy: async () => ({
+        version: 1,
+        mode: returnedPolicyMode,
+        remainingAutoApprovals: returnedPolicyMode === "auto-low-risk" ? 3 : 0,
+        deploymentAttestation: "person-only",
+      }),
+    },
+  });
+
+  await assert.rejects(
+    () => service.openBrowserReview(AUDIT_ID, {
+      source: "person",
+      focusAreas: ["accessibility"],
+    }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getBrowserReview(AUDIT_ID), null);
+
+  returnedFocusAreas = ["accessibility"];
+  await service.openBrowserReview(AUDIT_ID, {
+    source: "person",
+    focusAreas: ["accessibility"],
+  });
+  await assert.rejects(
+    () => service.recordBrowserReviewCheck(AUDIT_ID, reviewId, {
+      checkId: "rendered-structure",
+      outcome: "passed",
+      summary: "Checked the retained structure.",
+      observations: ["The page has one primary heading."],
+    }),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.deepEqual(service.getBrowserReview(AUDIT_ID).results, []);
+
+  returnedCheckId = "rendered-structure";
+  await service.recordBrowserReviewCheck(AUDIT_ID, reviewId, {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "Checked the retained structure.",
+    observations: ["The page has one primary heading."],
+  });
+  assert.equal(service.getBrowserReview(AUDIT_ID).results[0].checkId, "rendered-structure");
+
+  await assert.rejects(
+    () => service.setRepairPolicy(AUDIT_ID, "auto-low-risk"),
+    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+  );
+  assert.equal(service.getRepairPolicy(AUDIT_ID).mode, "review");
+  returnedPolicyMode = "auto-low-risk";
+  await service.setRepairPolicy(AUDIT_ID, "auto-low-risk");
+  assert.equal(service.getRepairPolicy(AUDIT_ID).mode, "auto-low-risk");
+});
+
 test("validates mission goals before transport and sends only bounded semantic fields", async () => {
   const calls = [];
   const transport = createHttpAuditTransport({
@@ -406,10 +749,12 @@ test("synchronizes a browser review and records only bounded agent evidence", as
     schemaVersion: 1,
     id: "browser-review-1",
     auditId: AUDIT_ID,
+    requestedFocusAreas: ["accessibility", "seo"],
     state: { status: "in-progress", nextCheck: { id: "rendered-structure" } },
   };
   const completed = {
     ...opened,
+    results: [{ checkId: "rendered-structure", outcome: "passed" }],
     state: { status: "complete", nextCheck: null },
   };
   const service = createAuditService({
@@ -442,7 +787,11 @@ test("synchronizes a browser review and records only bounded agent evidence", as
       },
       withdrawBrowserReview: async (auditId, reviewId, revision) => {
         withdrawalCalls.push({ auditId, reviewId, revision });
-        return { ...opened, state: { status: "withdrawn" }, missionCheckpoint: { missionRevision: 7 } };
+        return {
+          ...opened,
+          state: { status: "withdrawn" },
+          missionCheckpoint: { auditId: AUDIT_ID, missionRevision: 7 },
+        };
       },
     },
   });
@@ -525,6 +874,7 @@ test("refreshes the active verification report after a browser replay contributi
     id: "verification-review-1",
     auditId: AUDIT_ID,
     purpose: "verification",
+    results: [{ checkId: "fresh-browser-replay", outcome: "passed" }],
     state: { status: "complete", complete: true, nextCheck: null },
   };
   let resultReads = 0;
@@ -1087,6 +1437,16 @@ test("starts related audits through the authoritative route transport", async ()
   const calls = [];
   const service = createAuditService({
     transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        missionRevision: 1,
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [] },
+      }),
       startRelated: async (auditId, path, source) => {
         calls.push({ auditId, path, source });
         return {
@@ -1096,10 +1456,20 @@ test("starts related audits through the authoritative route transport", async ()
           status: "queued",
           phase: "queued",
           progress: 4,
+          exploration: {
+            rootAuditId: auditId,
+            parentAuditId: auditId,
+            observedPath: path,
+            depth: 1,
+            trail: [{ auditId, path: "/" }],
+          },
+          missionCheckpoint: { auditId, missionRevision: 2 },
         };
       },
     },
   });
+
+  await service.startAudit({ url: "https://removemyexif.com/" });
 
   await assert.rejects(
     () => service.startRelatedAudit("", "/privacy", "agent"),
@@ -1112,6 +1482,9 @@ test("starts related audits through the authoritative route transport", async ()
   const related = await service.startRelatedAudit(AUDIT_ID, "/privacy", "agent");
   assert.equal(related.url, "https://removemyexif.com/privacy");
   assert.equal(related.source, "agent");
+  assert.equal(related.missionCheckpoint.auditId, AUDIT_ID);
+  assert.equal(service.getMissionCheckpoint(AUDIT_ID).missionRevision, 2);
+  assert.equal(service.getActiveAudit().id, related.id);
   assert.deepEqual(calls, [{ auditId: AUDIT_ID, path: "/privacy", source: "agent" }]);
 });
 
@@ -1421,6 +1794,9 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
   };
   const verification = {
     id: "c45d54ea-6884-4c86-b82d-b9048cff697f",
+    baselineAuditId: AUDIT_ID,
+    repairId,
+    verificationAuditIds: ["c45d54ea-6884-4c86-b82d-b9048cff697f"],
     url: "https://removemyexif.com/",
     source: "verification",
     status: "queued",

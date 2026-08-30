@@ -546,6 +546,7 @@ test("starts a related audit only from the parent job's authoritative route inpu
                     depth: 1,
                     trail: [{ auditId: parentId, path: "/" }],
                   },
+                  missionCheckpoint: { auditId: parentId, missionRevision: 2 },
                 },
               });
             }
@@ -556,6 +557,7 @@ test("starts a related audit only from the parent job's authoritative route inpu
                 url: "https://removemyexif.com/privacy",
                 source: "agent",
                 status: "queued",
+                missionCheckpoint: { auditId: childId, missionRevision: 1 },
               },
             }, { status: 202 });
           },
@@ -566,6 +568,10 @@ test("starts a related audit only from the parent job's authoritative route inpu
 
   assert.equal(response.status, 202);
   assert.equal(response.headers.get("location"), `/api/audits/${childId}`);
+  const payload = await response.json();
+  assert.equal(payload.data.id, childId);
+  assert.equal(payload.data.missionCheckpoint.auditId, parentId);
+  assert.equal(payload.data.missionCheckpoint.missionRevision, 2);
   const childStart = calls.find((call) => call.boundary === childId);
   assert.equal(childStart.pathname, "/start");
   assert.equal(childStart.input.exploration.parentAuditId, parentId);
@@ -1526,6 +1532,7 @@ test("local development persists related-route lineage into snapshots and report
   assert.equal(related.status, 202);
   assert.equal(queued.exploration.parentAuditId, parentId);
   assert.equal(queued.exploration.depth, 1);
+  assert.equal(queued.missionCheckpoint.auditId, parentId);
 
   let complete;
   for (let attempt = 0; attempt < 20; attempt += 1) {

@@ -545,6 +545,7 @@ export function aggregateRepairVerification(impact, run, audits = [], now = Date
   return {
     schemaVersion: 1,
     id: run.id,
+    auditId: impact.rootAuditId ?? impact.targets?.[0]?.auditId ?? null,
     repairId: impact.repairId,
     repairRevision: impact.repairRevision,
     status,
