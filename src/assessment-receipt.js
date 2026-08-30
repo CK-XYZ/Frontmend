@@ -65,6 +65,7 @@ export function createAssessmentReceipt({
   diagnosticMissions = [],
   browserReview: browserReviewValue = null,
   repairs = [],
+  explorations = [],
 }) {
   if (!report?.auditId || !report?.engine?.provider) {
     throw new AuditError(
@@ -83,6 +84,7 @@ export function createAssessmentReceipt({
     diagnosticMissions: diagnostics,
     browserReview,
     repairs,
+    explorations,
   });
   if (!state.assessmentComplete) {
     const action = state.nextAction?.tool
@@ -151,6 +153,8 @@ export function createAssessmentReceipt({
       intent: mission.intent,
       focusAreas: [...mission.focusAreas],
       maxPriorities: mission.maxPriorities,
+      scope: mission.scope,
+      routeLimit: mission.routeLimit,
       requestedBy: mission.requestedBy,
       requestedAt: mission.requestedAt,
     },
@@ -159,6 +163,7 @@ export function createAssessmentReceipt({
       matchingFindingCount: state.matchingFindingCount,
       priorityCount: priorities.length,
       categoryScores: { ...state.categoryScores },
+      siteScope: state.siteScope,
     },
     browserReview: browserReview
       ? {
@@ -219,12 +224,25 @@ export function assessmentReceiptMarkdown(receipt) {
     "## Assessment mission",
     "",
     `- Intent: ${markdownText(receipt.mission?.intent, 40)}`,
+    `- Scope: ${markdownText(receipt.mission?.scope ?? "page", 40)}`,
     `- Focus: ${receipt.mission?.focusAreas?.length ? receipt.mission.focusAreas.map((area) => markdownText(area, 40)).join(", ") : "all supported areas"}`,
     `- Requested by: ${markdownText(receipt.mission?.requestedBy, 40)}`,
     `- Assessment complete: yes`,
     `- Matching findings: ${Number.isFinite(receipt.assessment?.matchingFindingCount) ? receipt.assessment.matchingFindingCount : "—"}`,
     `- Ranked priorities: ${receipt.priorities?.length ?? 0}`,
   ];
+  if (receipt.assessment?.siteScope?.requested) {
+    lines.push(
+      "",
+      "## Bounded-site coverage",
+      "",
+      `- Status: ${markdownText(receipt.assessment.siteScope.status, 40)}`,
+      `- Retained route limit: ${receipt.assessment.siteScope.routeLimit ?? 3}`,
+      `- Pages complete: ${receipt.assessment.siteScope.pagesComplete ?? 0} of ${receipt.assessment.siteScope.pagesRequested ?? 0}`,
+      `- Pages failed: ${receipt.assessment.siteScope.pagesFailed ?? 0}`,
+      `- Limitation: ${receipt.assessment.siteScope.blockedReason ? markdownText(receipt.assessment.siteScope.blockedReason, 500) : "none"}`,
+    );
+  }
   if (receipt.browserReview) {
     lines.push(
       "",

@@ -4,6 +4,7 @@ import {
   aggregateRepairVerification,
   assignRepairVerificationJobs,
   createLegacyRepairVerificationImpact,
+  createRepairPackageVerificationImpact,
   createRepairVerificationImpact,
   createRepairVerificationRun,
   repairVerificationReceiptMarkdown,
@@ -11,7 +12,7 @@ import {
   verificationCandidateProjection,
 } from "../src/verification-impact-contract.js";
 
-const source = (strategy) => ({ provider: "Lighthouse", auditId: "color-contrast", strategy });
+const source = (strategy, auditId = "color-contrast") => ({ provider: "Lighthouse", auditId, strategy });
 const engine = {
   mode: "live-lighthouse",
   provider: "PageSpeed Insights / Lighthouse",
@@ -30,7 +31,7 @@ function report({ auditId, path = "/", outcomes, findings = [] }) {
     findingCount: findings.length,
     checks: { passed: 8, warnings: 0, failed: findings.length },
     findings,
-    ruleOutcomes: outcomes.map(([strategy, status]) => ({ source: source(strategy), status })),
+    ruleOutcomes: outcomes.map(([strategy, status, auditId]) => ({ source: source(strategy, auditId), status })),
   };
 }
 
@@ -75,6 +76,8 @@ test("automatically retains failed routes and exposes only evaluated completed r
     ["/", "mobile"],
     ["/", "desktop"],
     ["/docs", "mobile"],
+    ["/", "all-retained"],
+    ["/docs", "all-retained"],
   ]);
   assert.equal(projection.auditId, "root-audit");
   assert.equal(projection.findingId, "contrast");
@@ -126,7 +129,7 @@ test("stamps the reviewed matrix and aggregates one existing audit assignment pe
   assert.equal(run.assignments.length, 3);
   assert.equal(aggregate.status, "still-present");
   assert.equal(aggregate.auditId, "root-audit");
-  assert.equal(aggregate.summary.resolved, 3);
+  assert.equal(aggregate.summary.resolved, 6);
   assert.equal(aggregate.summary.stillPresent, 1);
   assert.equal(aggregate.receiptAvailable, true);
   assert.match(repairVerificationReceiptMarkdown(aggregate), /\/docs.*still-present/);
@@ -138,6 +141,126 @@ test("stamps the reviewed matrix and aggregates one existing audit assignment pe
     ], 999).completedAt,
     aggregate.completedAt,
   );
+});
+
+test("marks a newly failed provider guardrail as a regression after the repaired rule passes", () => {
+  const baseline = report({
+    auditId: "guardrail-root",
+    outcomes: [
+      ["mobile", "failed", "color-contrast"],
+      ["mobile", "passed", "button-name"],
+    ],
+    findings: [{ id: "contrast", severity: "medium", focusAreas: ["accessibility"], source: source("mobile") }],
+  });
+  const value = createRepairVerificationImpact({
+    repairId: "repair-guardrail",
+    findingId: "contrast",
+    rootReport: baseline,
+    findingSource: source("mobile"),
+    focusAreas: ["accessibility"],
+  });
+  const reviewed = reviewRepairVerificationImpact(value, "person", 200);
+  const run = assignRepairVerificationJobs(createRepairVerificationRun(reviewed, "run-guardrail", 210), [
+    { targetId: "audit:guardrail-root", auditId: "fresh-guardrail" },
+  ]);
+  const fresh = report({
+    auditId: "fresh-guardrail",
+    outcomes: [
+      ["mobile", "passed", "color-contrast"],
+      ["mobile", "failed", "button-name"],
+    ],
+  });
+  const aggregate = aggregateRepairVerification(reviewed, run, [{ id: fresh.auditId, status: "complete", report: fresh }], 300);
+  assert.equal(aggregate.status, "regression");
+  assert.equal(aggregate.rows.find((row) => row.proofKind === "provider-rule").status, "resolved");
+  assert.equal(aggregate.rows.find((row) => row.proofKind === "provider-guardrail").status, "regression");
+  assert.equal(aggregate.summary.regressions, 1);
+  assert.match(repairVerificationReceiptMarkdown(aggregate), /provider-guardrail.*regression/i);
+});
+
+test("marks only newly introduced high or medium retained-focus findings as regressions", () => {
+  const baseline = report({
+    auditId: "finding-root",
+    outcomes: [["mobile", "failed"]],
+    findings: [{ id: "contrast", severity: "medium", focusAreas: ["accessibility"], source: source("mobile") }],
+  });
+  const value = reviewRepairVerificationImpact(createRepairVerificationImpact({
+    repairId: "repair-new-finding",
+    findingId: "contrast",
+    rootReport: baseline,
+    findingSource: source("mobile"),
+    focusAreas: ["accessibility"],
+  }), "person", 200);
+  const run = assignRepairVerificationJobs(createRepairVerificationRun(value, "run-new-finding", 210), [
+    { targetId: "audit:finding-root", auditId: "fresh-finding" },
+  ]);
+  const fresh = report({
+    auditId: "fresh-finding",
+    outcomes: [["mobile", "passed"]],
+    findings: [{
+      id: "new-label",
+      title: "A new control has no label",
+      severity: "high",
+      focusAreas: ["accessibility"],
+      source: source("mobile", "label"),
+    }],
+  });
+  const regression = aggregateRepairVerification(value, run, [{ id: fresh.auditId, status: "complete", report: fresh }]);
+  const newFindingRow = regression.rows.find((row) => row.proofKind === "new-findings-guardrail");
+  assert.equal(regression.status, "regression");
+  assert.equal(newFindingRow.status, "regression");
+  assert.equal(newFindingRow.introducedFindings[0].findingId, "new-label");
+
+  const lowOnly = { ...fresh, findings: [{ ...fresh.findings[0], severity: "low" }] };
+  const resolved = aggregateRepairVerification(value, run, [{ id: fresh.auditId, status: "complete", report: lowOnly }]);
+  assert.equal(resolved.status, "resolved");
+});
+
+test("requires exact replay of retained journey and reflow guardrails", () => {
+  const browserReview = {
+    requestedChecks: [{
+      id: "responsive-reflow",
+      kind: "coverage-gap",
+      label: "Responsive reflow",
+      focusArea: "accessibility",
+      focusAreas: ["accessibility"],
+      target: { viewport: "mobile", path: "/" },
+      assignment: {
+        instructions: "Inspect the retained mobile reflow.",
+        boundary: "Report direct evidence only.",
+        completionCriteria: "Return the fresh reflow outcome.",
+      },
+    }],
+    results: [{ checkId: "responsive-reflow", outcome: "passed", summary: "Content reflowed without clipping." }],
+  };
+  const reviewed = reviewRepairVerificationImpact(createRepairVerificationImpact({
+    repairId: "repair-browser-guardrail",
+    findingId: "contrast",
+    rootReport,
+    findingSource: source("mobile"),
+    focusAreas: ["accessibility"],
+    browserReview,
+  }), "person", 200);
+  const row = reviewed.matrix.rows.find((item) => item.proofKind === "browser-guardrail");
+  assert.equal(row.baseline.checkId, "responsive-reflow");
+  const run = assignRepairVerificationJobs(createRepairVerificationRun(reviewed, "run-browser-guardrail", 210), [
+    { targetId: "audit:root-audit", auditId: "fresh-browser-guardrail" },
+  ]);
+  const fresh = report({ auditId: "fresh-browser-guardrail", outcomes: [["mobile", "passed"], ["desktop", "passed"]] });
+  const missing = aggregateRepairVerification(reviewed, run, [{ id: fresh.auditId, status: "complete", report: fresh }]);
+  assert.equal(missing.status, "inconclusive");
+  assert.equal(missing.rows.find((item) => item.proofKind === "browser-guardrail").comparisonReason, "browser-guardrail-missing");
+
+  fresh.verification = {
+    browserGuardrails: [{ checkId: "responsive-reflow", status: "complete", outcome: "issue" }],
+  };
+  const regression = aggregateRepairVerification(reviewed, run, [{ id: fresh.auditId, status: "complete", report: fresh }]);
+  assert.equal(regression.status, "regression");
+  assert.equal(regression.summary.regressions, 1);
+
+  fresh.verification.browserGuardrails[0].outcome = "passed";
+  const resolved = aggregateRepairVerification(reviewed, run, [{ id: fresh.auditId, status: "complete", report: fresh }]);
+  assert.equal(resolved.status, "resolved");
 });
 
 test("keeps missing, blocked, and incomparable coverage explicitly inconclusive", () => {
@@ -206,4 +329,82 @@ test("projects an approved legacy single-route verification as one reviewed row"
   assert.equal(value.targets.length, 1);
   assert.equal(value.matrix.rows.length, 1);
   assert.equal(value.matrix.rows[0].path, "/");
+});
+
+test("unions exact rows for a frozen package and resolves only when every finding passes", () => {
+  const packageRoot = report({
+    auditId: "package-root",
+    outcomes: [
+      ["mobile", "failed", "color-contrast"],
+      ["desktop", "failed", "color-contrast"],
+      ["mobile", "failed", "errors-in-console"],
+    ],
+    findings: [
+      { id: "contrast", source: source("mobile", "color-contrast") },
+      { id: "console", source: source("mobile", "errors-in-console") },
+    ],
+  });
+  const packageImpact = createRepairPackageVerificationImpact({
+    repairId: "repair-package",
+    repairRevision: 3,
+    rootReport: packageRoot,
+    findings: [
+      {
+        findingId: "contrast",
+        findingSource: source("mobile", "color-contrast"),
+        findingScope: { sources: [source("mobile", "color-contrast"), source("desktop", "color-contrast")] },
+        focusAreas: ["accessibility"],
+      },
+      {
+        findingId: "console",
+        findingSource: source("mobile", "errors-in-console"),
+        findingScope: { sources: [source("mobile", "errors-in-console")] },
+        focusAreas: ["reliability"],
+      },
+    ],
+  });
+  assert.deepEqual(packageImpact.findingIds, ["contrast", "console"]);
+  assert.deepEqual(
+    packageImpact.previewRows.filter((row) => row.proofKind === "provider-rule").map((row) => row.findingId),
+    ["contrast", "contrast", "console"],
+  );
+  assert.equal(
+    packageImpact.previewRows.filter((row) => row.proofKind === "new-findings-guardrail").length,
+    1,
+  );
+
+  const reviewed = reviewRepairVerificationImpact(packageImpact, "person", 400);
+  const run = assignRepairVerificationJobs(
+    createRepairVerificationRun(reviewed, "package-run", 410),
+    [{ targetId: "audit:package-root", auditId: "package-fresh" }],
+  );
+  const passing = report({
+    auditId: "package-fresh",
+    outcomes: [
+      ["mobile", "passed", "color-contrast"],
+      ["desktop", "passed", "color-contrast"],
+      ["mobile", "passed", "errors-in-console"],
+    ],
+  });
+  const resolved = aggregateRepairVerification(reviewed, run, [
+    { id: "package-fresh", status: "complete", report: passing },
+  ], 420);
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.rows.filter((row) => row.proofKind === "provider-rule").every((row) => row.status === "resolved"), true);
+  assert.match(repairVerificationReceiptMarkdown(resolved), /\| console \| \/ \| provider-rule/i);
+
+  const failing = report({
+    auditId: "package-fresh",
+    outcomes: [
+      ["mobile", "passed", "color-contrast"],
+      ["desktop", "passed", "color-contrast"],
+      ["mobile", "failed", "errors-in-console"],
+    ],
+    findings: [{ id: "console-fresh", source: source("mobile", "errors-in-console") }],
+  });
+  const stillPresent = aggregateRepairVerification(reviewed, run, [
+    { id: "package-fresh", status: "complete", report: failing },
+  ], 430);
+  assert.equal(stillPresent.status, "still-present");
+  assert.equal(stillPresent.rows.find((row) => row.findingId === "console" && row.proofKind === "provider-rule").status, "still-present");
 });

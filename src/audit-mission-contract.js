@@ -8,6 +8,7 @@ import {
 } from "./browser-review-contract.js";
 import { AuditError } from "./url-policy.js";
 import { reconcileAssessmentEvidence } from "./evidence-reconciliation-contract.js";
+import { createSiteRouteCandidates } from "./site-exploration-contract.js";
 
 export const AUDIT_FOCUS_AREAS = Object.freeze([
   "accessibility",
@@ -17,17 +18,20 @@ export const AUDIT_FOCUS_AREAS = Object.freeze([
   "reliability",
 ]);
 export const AUDIT_MISSION_INTENTS = Object.freeze(["assess", "prepare-fix"]);
+export const AUDIT_MISSION_SCOPES = Object.freeze(["page", "bounded-site"]);
 
 const MISSION_FIELDS = Object.freeze([
   "schemaVersion",
   "intent",
   "focusAreas",
   "maxPriorities",
+  "scope",
+  "routeLimit",
   "requestedBy",
   "requestedAt",
   "repairPreparation",
 ]);
-const CREATE_FIELDS = Object.freeze(["intent", "focusAreas", "maxPriorities"]);
+const CREATE_FIELDS = Object.freeze(["intent", "focusAreas", "maxPriorities", "scope", "routeLimit"]);
 const SEVERITY_ORDER = Object.freeze({ high: 0, medium: 1, low: 2 });
 
 function inputObject(value, allowed, label) {
@@ -83,6 +87,20 @@ function maxPriorities(value = 3) {
   return value;
 }
 
+function missionScope(value = "page") {
+  if (!AUDIT_MISSION_SCOPES.includes(value)) {
+    throw new AuditError("INVALID_INPUT", "scope must be page or bounded-site.");
+  }
+  return value;
+}
+
+function routeLimit(value = 3) {
+  if (!Number.isInteger(value) || value < 1 || value > 3) {
+    throw new AuditError("INVALID_INPUT", "routeLimit must be an integer from one to three.");
+  }
+  return value;
+}
+
 function findingId(value) {
   if (typeof value !== "string" || !value.trim() || value.length > 160) {
     throw new AuditError("INVALID_INPUT", "findingId must contain 1 to 160 characters.");
@@ -90,15 +108,39 @@ function findingId(value) {
   return value.trim();
 }
 
+function findingIds(value, fallback = null) {
+  const values = Array.isArray(value) ? value : fallback == null ? [] : [fallback];
+  if (values.length < 1 || values.length > 3) {
+    throw new AuditError("INVALID_INPUT", "findingIds must contain between one and three finding IDs.");
+  }
+  const result = values.map(findingId);
+  if (new Set(result).size !== result.length) {
+    throw new AuditError("INVALID_INPUT", "findingIds must contain unique finding IDs.");
+  }
+  return result;
+}
+
+export function normalizeRepairFindingIds(primaryFindingId, values = undefined) {
+  const retained = findingIds(values, primaryFindingId);
+  const primary = findingId(primaryFindingId ?? retained[0]);
+  if (retained[0] !== primary) {
+    throw new AuditError("INVALID_INPUT", "findingId must be the first retained finding ID.");
+  }
+  return retained;
+}
+
 function repairPreparation(value) {
   if (value === null) return null;
   const preparation = inputObject(
     value,
-    ["findingId", "requestedBy", "requestedAt"],
+    ["findingId", "findingIds", "requestedBy", "requestedAt"],
     "repairPreparation",
   );
+  const retainedFindingIds = normalizeRepairFindingIds(preparation.findingId, preparation.findingIds);
+  const primaryFindingId = retainedFindingIds[0];
   return {
-    findingId: findingId(preparation.findingId),
+    findingId: primaryFindingId,
+    findingIds: retainedFindingIds,
     requestedBy: actor(preparation.requestedBy),
     requestedAt: timestamp(preparation.requestedAt, "repairPreparation.requestedAt"),
   };
@@ -106,14 +148,16 @@ function repairPreparation(value) {
 
 export function auditMissionSnapshot(value) {
   const mission = inputObject(value, MISSION_FIELDS, "mission");
-  if (mission.schemaVersion !== 1) {
-    throw new AuditError("INVALID_INPUT", "mission.schemaVersion must be 1.");
+  if (![1, 2].includes(mission.schemaVersion)) {
+    throw new AuditError("INVALID_INPUT", "mission.schemaVersion must be 1 or 2.");
   }
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     intent: intent(mission.intent),
     focusAreas: focusAreas(mission.focusAreas),
     maxPriorities: maxPriorities(mission.maxPriorities),
+    scope: mission.schemaVersion === 1 ? "page" : missionScope(mission.scope),
+    routeLimit: mission.schemaVersion === 1 ? 3 : routeLimit(mission.routeLimit),
     requestedBy: actor(mission.requestedBy),
     requestedAt: timestamp(mission.requestedAt, "mission.requestedAt"),
     repairPreparation: repairPreparation(mission.repairPreparation),
@@ -123,10 +167,12 @@ export function auditMissionSnapshot(value) {
 export function createAuditMission(input = {}, source = "human", now = Date.now()) {
   const value = inputObject(input, CREATE_FIELDS, "mission");
   return auditMissionSnapshot({
-    schemaVersion: 1,
+    schemaVersion: 2,
     intent: intent(value.intent),
     focusAreas: focusAreas(value.focusAreas),
     maxPriorities: maxPriorities(value.maxPriorities),
+    scope: missionScope(value.scope),
+    routeLimit: routeLimit(value.routeLimit),
     requestedBy: actor(source),
     requestedAt: timestamp(now, "mission.requestedAt"),
     repairPreparation: null,
@@ -139,18 +185,20 @@ export function auditMissionSignature(value) {
     intent: mission.intent,
     focusAreas: [...mission.focusAreas].sort(),
     maxPriorities: mission.maxPriorities,
-    repairFindingId: mission.repairPreparation?.findingId ?? null,
+    scope: mission.scope,
+    routeLimit: mission.routeLimit,
+    repairFindingIds: mission.repairPreparation?.findingIds ?? [],
   });
 }
 
 export function prepareRepairIntent(missionValue, selectedFindingId, source = "human", now = Date.now()) {
   const mission = auditMissionSnapshot(missionValue);
-  const selected = findingId(selectedFindingId);
+  const selected = findingIds(selectedFindingId, selectedFindingId);
   if (mission.repairPreparation) {
-    if (mission.repairPreparation.findingId !== selected) {
+    if (JSON.stringify(mission.repairPreparation.findingIds) !== JSON.stringify(selected)) {
       throw new AuditError(
         "REPAIR_INTENT_CONFLICT",
-        "This audit mission is already preparing a different finding for repair.",
+        "This audit mission is already preparing a different frozen finding package for repair.",
       );
     }
     return mission;
@@ -159,7 +207,8 @@ export function prepareRepairIntent(missionValue, selectedFindingId, source = "h
     ...mission,
     intent: "prepare-fix",
     repairPreparation: {
-      findingId: selected,
+      findingId: selected[0],
+      findingIds: selected,
       requestedBy: actor(source),
       requestedAt: timestamp(now, "repairPreparation.requestedAt"),
     },
@@ -173,16 +222,51 @@ export function assessmentFindings(report, browserReview = null) {
   ];
 }
 
+function explorationEvidenceReport(report, explorations) {
+  const findings = [];
+  for (const retained of Array.isArray(explorations) ? explorations.slice(0, 10) : []) {
+    const exploration = retained?.currentSnapshot ?? retained;
+    if (exploration?.status !== "complete") continue;
+    for (const issue of Array.isArray(exploration?.issues) ? exploration.issues : []) {
+      for (const occurrence of Array.isArray(issue?.occurrences) ? issue.occurrences : []) {
+        findings.push({
+          id: occurrence.findingId || `site:${exploration.id}:${issue.ruleId}`,
+          title: issue.title,
+          severity: issue.severity,
+          category: issue.category,
+          focusAreas: Array.isArray(issue.focusAreas) ? issue.focusAreas : [],
+          evidence: `${occurrence.path}: ${occurrence.evidence || "Retained cross-page occurrence."}`,
+          repair: issue.suggestedRepair,
+          source: {
+            provider: issue.provider,
+            auditId: issue.ruleId,
+            strategy: occurrence.strategy || "document",
+          },
+          route: {
+            auditId: occurrence.auditId,
+            path: occurrence.path,
+            explorationId: exploration.id,
+          },
+        });
+      }
+    }
+  }
+  return findings.length
+    ? { ...report, findings: [...(report?.findings ?? []), ...findings] }
+    : report;
+}
+
 export function focusedAuditPriorities(
   report,
   missionValue,
   diagnosticMissions = [],
   browserReview = null,
   repairs = [],
+  explorations = [],
 ) {
   const mission = auditMissionSnapshot(missionValue);
   const reconciled = reconcileAssessmentEvidence({
-    report,
+    report: explorationEvidenceReport(report, explorations),
     browserReview,
     diagnosticMissions,
     repairs,
@@ -254,7 +338,7 @@ export function focusedAuditPriorities(
     .map(({ sourceIndex: _sourceIndex, ...priority }, index) => ({
       rank: index + 1,
       ...priority,
-      whyPrioritized: `${priority.severity} severity${priority.occurrenceCount > 1 ? ` across ${priority.occurrenceCount} measured strategies` : ""}`,
+      whyPrioritized: `${priority.severity} severity${priority.occurrenceCount > 1 ? ` across ${priority.occurrenceCount} retained occurrences` : ""}`,
     }));
 
   const categoryScores = {};
@@ -276,6 +360,72 @@ export function focusedAuditPriorities(
     }, 0),
     categoryScores,
     priorities,
+  };
+}
+
+function boundedSiteState(report, mission, explorations) {
+  const routeCandidates = report
+    ? createSiteRouteCandidates(report).slice(0, mission.routeLimit)
+    : [];
+  if (mission.scope !== "bounded-site") {
+    return {
+      requested: false,
+      status: "not-requested",
+      routeLimit: mission.routeLimit,
+      routeCandidates,
+      explorationId: null,
+      pagesRequested: 0,
+      pagesComplete: 0,
+      pagesFailed: 0,
+      terminal: true,
+      blockedReason: null,
+    };
+  }
+  const exploration = [...(Array.isArray(explorations) ? explorations : [])]
+    .map((retained) => retained?.currentSnapshot ?? retained)
+    .sort((left, right) => (right?.createdAt ?? 0) - (left?.createdAt ?? 0))[0] ?? null;
+  if (!routeCandidates.length) {
+    return {
+      requested: true,
+      status: "blocked",
+      routeLimit: mission.routeLimit,
+      routeCandidates,
+      explorationId: null,
+      pagesRequested: 0,
+      pagesComplete: 0,
+      pagesFailed: 0,
+      terminal: true,
+      blockedReason: "The root document produced no eligible retained same-site route candidates.",
+    };
+  }
+  if (!exploration) {
+    return {
+      requested: true,
+      status: "not-started",
+      routeLimit: mission.routeLimit,
+      routeCandidates,
+      explorationId: null,
+      pagesRequested: 0,
+      pagesComplete: 0,
+      pagesFailed: 0,
+      terminal: false,
+      blockedReason: null,
+    };
+  }
+  const terminal = ["complete", "partial", "failed"].includes(exploration.status);
+  return {
+    requested: true,
+    status: exploration.status,
+    routeLimit: mission.routeLimit,
+    routeCandidates,
+    explorationId: exploration.id,
+    pagesRequested: exploration.summary?.pagesRequested ?? exploration.children?.length ?? 0,
+    pagesComplete: exploration.summary?.pagesComplete ?? 0,
+    pagesFailed: exploration.summary?.pagesFailed ?? 0,
+    terminal,
+    blockedReason: ["partial", "failed"].includes(exploration.status)
+      ? "One or more retained route audits failed, so bounded-site coverage is explicitly incomplete."
+      : null,
   };
 }
 
@@ -307,9 +457,18 @@ export function deriveAuditMissionState({
   diagnosticMissions = [],
   repairs = [],
   browserReview = null,
+  explorations = [],
 }) {
   const mission = auditMissionSnapshot(missionValue);
-  const projection = focusedAuditPriorities(report, mission, diagnosticMissions, browserReview, repairs);
+  const projection = focusedAuditPriorities(
+    report,
+    mission,
+    diagnosticMissions,
+    browserReview,
+    repairs,
+    explorations,
+  );
+  const siteScope = boundedSiteState(report, mission, explorations);
   const reviewRequired = browserReviewRequired(mission, browserReview);
   const reviewAdoptionAvailable = browserReviewAdoptionAvailable(mission, browserReview);
   const reviewState = browserReview ? browserReviewState(browserReview) : null;
@@ -368,40 +527,77 @@ export function deriveAuditMissionState({
     nextAction = null;
   }
 
-  const assessmentComplete = auditComplete && !reviewOutstanding && !unresolved && !blocked;
-  if (auditComplete && !reviewOutstanding && mission.intent === "prepare-fix" && !mission.repairPreparation) {
+  if (auditComplete && !reviewOutstanding && !unresolved && !blocked && siteScope.requested) {
+    if (siteScope.status === "not-started") {
+      status = "action-available";
+      nextActor = "agent";
+      nextAction = {
+        tool: "start_site_exploration",
+        input: { routeCandidateIds: siteScope.routeCandidates.map((candidate) => candidate.id) },
+        reason: "The bounded-site mission must retain its server-issued route coverage before the assessment can finish.",
+      };
+    } else if (!siteScope.terminal) {
+      status = "in-progress";
+      nextActor = "agent";
+      nextAction = {
+        tool: "get_site_exploration",
+        input: { missionId: siteScope.explorationId },
+        reason: "The retained route audits are still running.",
+      };
+    } else if (siteScope.status !== "complete") {
+      status = "blocked";
+      nextActor = null;
+      nextAction = null;
+    }
+  }
+
+  const siteScopeSettled = !siteScope.requested || siteScope.terminal;
+  const assessmentComplete = auditComplete && !reviewOutstanding && !unresolved && !blocked && siteScopeSettled;
+  const siteScopeSuccessful = !siteScope.requested || siteScope.status === "complete";
+  if (assessmentComplete && siteScopeSuccessful && mission.intent === "prepare-fix" && !mission.repairPreparation) {
     status = "awaiting-repair-preparation";
     nextActor = "person";
     nextAction = null;
   }
 
-  if (auditComplete && mission.repairPreparation && !reviewOutstanding && !unresolved && !blocked) {
-    const selected = projection.priorities.find(
-      (priority) => priority.findingId === mission.repairPreparation.findingId,
-    );
-    const selectedEvidence = selected
-      ? {
-          evidenceState: selected.evidenceState,
-          diagnosticMissionId: selected.diagnosticMissionId,
-          nextAction: selected.nextAction,
-        }
-      : { evidenceState: "unsupported-continuation", diagnosticMissionId: null, nextAction: null };
-    const repair = repairs.find((item) => item?.findingId === mission.repairPreparation.findingId);
+  if (assessmentComplete && siteScopeSuccessful && mission.repairPreparation && !reviewOutstanding && !unresolved && !blocked) {
+    const selectedIds = mission.repairPreparation.findingIds;
+    const selectedPriorities = selectedIds.map((selectedId) => projection.priorities.find(
+      (priority) => priority.findingId === selectedId,
+    )).filter(Boolean);
+    const diagnosticPriority = selectedPriorities.find((priority) => diagnosticNextAction({
+      findingId: priority.findingId,
+      evidenceState: priority.evidenceState,
+      diagnosticMissionId: priority.diagnosticMissionId,
+      nextAction: priority.nextAction,
+    }));
+    const repair = repairs.find((item) => {
+      const repairIds = item?.findingIds ?? (item?.findingId ? [item.findingId] : []);
+      return JSON.stringify(repairIds) === JSON.stringify(selectedIds);
+    });
     status = "action-available";
     nextActor = "agent";
-    nextAction = diagnosticNextAction({
-      findingId: mission.repairPreparation.findingId,
-      ...selectedEvidence,
-    }) ?? (repair
+    nextAction = diagnosticPriority
+      ? diagnosticNextAction({
+          findingId: diagnosticPriority.findingId,
+          evidenceState: diagnosticPriority.evidenceState,
+          diagnosticMissionId: diagnosticPriority.diagnosticMissionId,
+          nextAction: diagnosticPriority.nextAction,
+        })
+      : (repair
       ? {
           tool: "get_repair_workspace",
           input: { repairId: repair.id },
-          reason: "Continue the existing reviewed repair mission for the selected finding.",
+          reason: "Continue the existing reviewed repair mission for the frozen finding package.",
         }
       : {
           tool: "stage_site_repair",
-          input: { findingId: selected?.findingId ?? mission.repairPreparation.findingId },
-          reason: "Prepare a bounded repair draft for the explicitly selected finding.",
+          input: selectedIds.length > 1
+            ? { findingId: selectedIds[0], findingIds: selectedIds }
+            : { findingId: selectedIds[0] },
+          reason: selectedIds.length > 1
+            ? "Prepare one bounded repair package for the explicitly selected diagnosed findings."
+            : "Prepare a bounded repair draft for the explicitly selected finding.",
         });
   }
 
@@ -433,6 +629,7 @@ export function deriveAuditMissionState({
       withdrawal: reviewState?.withdrawal ?? null,
       provenance: browserReview ? browserReviewProvenance(browserReview) : null,
     },
+    siteScope,
     nextActor,
     nextAction,
     authority: {

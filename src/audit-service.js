@@ -3,6 +3,7 @@ import {
   auditMissionSnapshot,
   createAuditMission,
   deriveAuditMissionState,
+  normalizeRepairFindingIds,
 } from "./audit-mission-contract.js";
 import { createAssessmentReceipt } from "./assessment-receipt.js";
 import { auditMissionRevision, createMissionCheckpoint } from "./mission-checkpoint-contract.js";
@@ -45,6 +46,8 @@ export function createHttpAuditTransport(options = {}) {
             intent: mission.intent,
             focusAreas: mission.focusAreas,
             maxPriorities: mission.maxPriorities,
+            scope: mission.scope,
+            routeLimit: mission.routeLimit,
           }
         : undefined;
       return responsePayload(
@@ -66,7 +69,7 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async prepareRepair(auditId, findingId, source, expectedMissionRevision) {
+    async prepareRepair(auditId, findingId, source, expectedMissionRevision, findingIds = undefined) {
       return responsePayload(
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/mission/prepare-repair`,
@@ -75,6 +78,7 @@ export function createHttpAuditTransport(options = {}) {
             headers: { accept: "application/json", "content-type": "application/json" },
             body: JSON.stringify({
               findingId,
+              findingIds: findingIds?.length > 1 ? findingIds : undefined,
               source: source === "agent" ? "agent" : "human",
               expectedMissionRevision,
             }),
@@ -83,12 +87,13 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async startExploration(auditId, paths, source, expectedMissionRevision) {
+    async startExploration(auditId, selection, source, expectedMissionRevision) {
+      const routeSelection = Array.isArray(selection) ? { paths: selection } : selection;
       return responsePayload(
         await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations`, {
           method: "POST",
           headers: { accept: "application/json", "content-type": "application/json" },
-          body: JSON.stringify({ paths, source, expectedMissionRevision }),
+          body: JSON.stringify({ ...routeSelection, source, expectedMissionRevision }),
         }),
       );
     },
@@ -152,10 +157,12 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async verificationCandidates(auditId, findingId) {
+    async verificationCandidates(auditId, findingId, findingIds = undefined) {
+      const params = new URLSearchParams({ findingId });
+      for (const id of (findingIds?.length ?? 0) > 1 ? findingIds : []) params.append("findingIds", id);
       return responsePayload(
         await fetchImpl(
-          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/verification-candidates?${params}`,
           { headers: { accept: "application/json" } },
         ),
       );
@@ -483,6 +490,7 @@ export function createAuditService(options = {}) {
             diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
             repairs: repairs.get(auditId) ?? [],
             browserReview: browserReviews.get(auditId) ?? null,
+            explorations: explorations.get(auditId) ?? [],
           })
         : null,
       diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
@@ -908,13 +916,11 @@ export function createAuditService(options = {}) {
       return audit;
     },
 
-    async prepareRepair(auditId, findingId, source = "human", expectedMissionRevision) {
+    async prepareRepair(auditId, findingId, source = "human", expectedMissionRevision, findingIds = undefined) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
-      if (typeof findingId !== "string" || !findingId || findingId.length > 160) {
-        throw new AuditError("INVALID_INPUT", "findingId must contain 1 to 160 characters.");
-      }
+      const requestedFindingIds = normalizeRepairFindingIds(findingId, findingIds);
       const expectedGeneration = generation;
       const result = assertMissionCheckpointIdentity(
         await transport.prepareRepair(
@@ -922,11 +928,15 @@ export function createAuditService(options = {}) {
           findingId,
           source === "agent" ? "agent" : "human",
           revisionFor(auditId, expectedMissionRevision),
+          requestedFindingIds,
         ),
         auditId,
         true,
       );
       assertResponseIdentity(result?.mission?.repairPreparation, "findingId", findingId);
+      if (JSON.stringify(result?.mission?.repairPreparation?.findingIds ?? [result?.mission?.repairPreparation?.findingId]) !== JSON.stringify(requestedFindingIds)) {
+        throw new AuditError("AUDIT_RESPONSE_MISMATCH", "The repair preparation returned a different finding package.");
+      }
       if (result.audit) {
         assertResponseIdentity(result.audit, "id", auditId);
         assertResponseIdentity(result.audit?.mission?.repairPreparation, "findingId", findingId);
@@ -946,18 +956,21 @@ export function createAuditService(options = {}) {
       return result;
     },
 
-    async startSiteExploration(auditId, paths, source = "human", expectedMissionRevision) {
+    async startSiteExploration(auditId, selection, source = "human", expectedMissionRevision) {
       if (typeof auditId !== "string" || !auditId) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
-      if (!Array.isArray(paths) || paths.length < 1 || paths.length > 3) {
+      const values = Array.isArray(selection)
+        ? selection
+        : selection?.routeCandidateIds;
+      if (!Array.isArray(values) || values.length < 1 || values.length > 3) {
         throw new AuditError("INVALID_INPUT", "Choose between 1 and 3 observed routes.");
       }
       const expectedGeneration = generation;
       const exploration = assertResponseIdentity(
         await transport.startExploration(
           auditId,
-          paths,
+          selection,
           source === "agent" ? "agent" : "human",
           revisionFor(auditId, expectedMissionRevision),
         ),
@@ -1137,17 +1150,21 @@ export function createAuditService(options = {}) {
       return workspace;
     },
 
-    async getVerificationCandidates(auditId, findingId) {
+    async getVerificationCandidates(auditId, findingId, findingIds = undefined) {
       if (typeof auditId !== "string" || !auditId || typeof findingId !== "string" || !findingId) {
         throw new AuditError("INVALID_INPUT", "auditId and findingId must be non-empty strings.");
       }
+      const requestedFindingIds = normalizeRepairFindingIds(findingId, findingIds);
       const expectedGeneration = generation;
       const scope = assertResponseIdentity(
-        await transport.verificationCandidates(auditId, findingId),
+        await transport.verificationCandidates(auditId, findingId, requestedFindingIds),
         "auditId",
         auditId,
       );
       assertResponseIdentity(scope, "findingId", findingId);
+      if (JSON.stringify(scope.findingIds ?? [scope.findingId]) !== JSON.stringify(requestedFindingIds)) {
+        throw new AuditError("AUDIT_RESPONSE_MISMATCH", "The verification candidates returned a different finding package.");
+      }
       assertMissionCheckpointIdentity(scope, auditId, true);
       if (await reconcileAdvancedDirectRead(auditId, scope, expectedGeneration)) {
         return scope;
@@ -1426,21 +1443,17 @@ export function createAuditService(options = {}) {
     },
 
     async stageRepair(auditId, input, expectedMissionRevision) {
-      if (
-        typeof auditId !== "string"
-        || !auditId
-        || typeof input?.findingId !== "string"
-        || !input.findingId
-        || input.findingId.length > 160
-      ) {
-        throw new AuditError("INVALID_INPUT", "auditId must be non-empty and findingId must contain 1 to 160 characters.");
-      }
+      if (typeof auditId !== "string" || !auditId) throw new AuditError("INVALID_INPUT", "auditId must be non-empty.");
+      const requestedFindingIds = normalizeRepairFindingIds(input?.findingId, input?.findingIds);
       const expectedGeneration = generation;
       const repair = assertAuditScopedResponse(
         await transport.stageRepair(auditId, input, revisionFor(auditId, expectedMissionRevision)),
         auditId,
       );
       assertResponseIdentity(repair, "findingId", input.findingId);
+      if (JSON.stringify(repair.findingIds ?? [repair.findingId]) !== JSON.stringify(requestedFindingIds)) {
+        throw new AuditError("AUDIT_RESPONSE_MISMATCH", "The staged repair returned a different frozen finding package.");
+      }
       return rememberRepair(
         repair,
         expectedGeneration,
@@ -1642,6 +1655,7 @@ export function createAuditService(options = {}) {
         mission: audit?.mission,
         diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
         browserReview: browserReviews.get(auditId) ?? null,
+        explorations: explorations.get(auditId) ?? [],
         repairs: repairs.get(auditId) ?? [],
       });
     },
@@ -1678,6 +1692,7 @@ export function createAuditService(options = {}) {
         diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
         repairs: repairs.get(auditId) ?? [],
         browserReview: browserReviews.get(auditId) ?? null,
+        explorations: explorations.get(auditId) ?? [],
       });
     },
 
@@ -1691,6 +1706,7 @@ export function createAuditService(options = {}) {
         diagnosticMissions: diagnosticMissions.get(activeAuditId) ?? [],
         repairs: repairs.get(activeAuditId) ?? [],
         browserReview: browserReviews.get(activeAuditId) ?? null,
+        explorations: explorations.get(activeAuditId) ?? [],
       });
     },
 

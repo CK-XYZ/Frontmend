@@ -380,8 +380,8 @@ test("site-exploration tools start and read one durable cross-page mission", asy
   const service = {
     getActiveAudit: () => ({ id: "audit-1", status: "complete" }),
     getSiteExplorations: () => [exploration],
-    startSiteExploration: async (auditId, paths, source) => {
-      calls.push(["start", auditId, paths, source]);
+    startSiteExploration: async (auditId, selection, source) => {
+      calls.push(["start", auditId, selection, source]);
       return exploration;
     },
     getSiteExploration: async (auditId, missionId) => {
@@ -391,11 +391,17 @@ test("site-exploration tools start and read one durable cross-page mission", asy
   };
   const tools = createFrontmendTools(service);
   const started = await findTool(tools, "start_site_exploration").execute({
-    paths: ["/privacy", "/terms"],
+    routeCandidateIds: ["route-11111111", "route-22222222"],
+    expectedMissionRevision: 1,
   });
   assert.equal(started.ok, true);
   assert.equal(started.data.explorationId, exploration.id);
-  assert.deepEqual(calls[0], ["start", "audit-1", ["/privacy", "/terms"], "agent"]);
+  assert.deepEqual(calls[0], [
+    "start",
+    "audit-1",
+    { routeCandidateIds: ["route-11111111", "route-22222222"] },
+    "agent",
+  ]);
 
   const read = await findTool(tools, "get_site_exploration").execute({});
   assert.equal(read.ok, true);
@@ -1136,7 +1142,7 @@ test("a withdrawn untouched handoff returns contextual WebMCP to read-only asses
   assert.equal(createFrontmendTools(service).length, 21);
 });
 
-test("contextual WebMCP withholds a browser-finding receipt until one exact fresh replay completes", async () => {
+test("contextual WebMCP withholds a verification receipt until exact replay and browser guardrails complete", async () => {
   const auditId = "c1de4f26-c222-4e44-a7e5-884ba6d9fe9a";
   const verificationContext = {
     browserReplay: {
@@ -1163,6 +1169,13 @@ test("contextual WebMCP withholds a browser-finding receipt until one exact fres
         },
       },
     },
+    browserGuardrails: [{
+      checkId: "primary-journey",
+      label: "Primary journey",
+      focusArea: "accessibility",
+      viewport: "desktop",
+      summary: "The primary journey completed before repair.",
+    }],
   };
   let review = null;
   const audit = {
@@ -1174,6 +1187,11 @@ test("contextual WebMCP withholds a browser-finding receipt until one exact fres
       verification: {
         status: "inconclusive",
         browserReplay: verificationContext.browserReplay,
+        browserGuardrails: verificationContext.browserGuardrails.map((guardrail) => ({
+          ...guardrail,
+          status: "not-opened",
+          outcome: null,
+        })),
       },
     },
   };
@@ -1194,14 +1212,27 @@ test("contextual WebMCP withholds a browser-finding receipt until one exact fres
     },
     recordBrowserReviewCheck: async (_auditId, _reviewId, input, source) => {
       review = recordBrowserReviewCheck(review, input, source, 30);
+      const exact = review.results.find((result) => result.checkId === "fresh-browser-replay");
+      const guardrail = review.results.find((result) => result.checkId === "fresh-browser-guardrail-1");
       audit.report.verification = {
         ...audit.report.verification,
-        status: input.outcome === "passed" ? "resolved" : "still-present",
+        status: !review.state.complete
+          ? "inconclusive"
+          : exact?.outcome === "issue"
+            ? "still-present"
+            : guardrail?.outcome === "issue"
+              ? "regression"
+              : "resolved",
         browserReplay: {
           ...verificationContext.browserReplay,
-          status: "complete",
-          outcome: input.outcome,
+          status: exact ? "complete" : "in-progress",
+          outcome: exact?.outcome ?? null,
         },
+        browserGuardrails: verificationContext.browserGuardrails.map((baseline) => ({
+          ...baseline,
+          status: guardrail ? "complete" : "in-progress",
+          outcome: guardrail?.outcome ?? null,
+        })),
       };
       return review;
     },
@@ -1227,8 +1258,23 @@ test("contextual WebMCP withholds a browser-finding receipt until one exact fres
     summary: "The entire primary action is visible at the retained mobile viewport.",
     observations: ["No horizontal clipping is visible around the primary action."],
   });
-  assert.equal(completed.data.verificationComplete, true);
-  assert.equal(completed.data.nextAction.tool, "get_verification_receipt");
+  assert.equal(completed.data.verificationComplete, false);
+  assert.equal(completed.data.nextAction.tool, "record_browser_review_check");
+  assert.equal(completed.data.nextAction.input.checkId, "fresh-browser-guardrail-1");
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_site_audit_results",
+    "record_browser_review_check",
+  ]);
+
+  const guarded = await findTool(tools, "record_browser_review_check").execute({
+    reviewId: review.id,
+    checkId: "fresh-browser-guardrail-1",
+    outcome: "passed",
+    summary: "The primary journey still reaches completion.",
+    observations: ["The original primary action reaches the same completion state."],
+  });
+  assert.equal(guarded.data.verificationComplete, true);
+  assert.equal(guarded.data.nextAction.tool, "get_verification_receipt");
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
     "get_verification_receipt",
@@ -1280,6 +1326,87 @@ test("prepare repair tool records only explicit finding intent", async () => {
   assert.equal(rejected.ok, false);
   assert.equal(rejected.error.code, "INVALID_INPUT");
   assert.equal(calls.length, 1);
+});
+
+test("repair tools preserve an exact multi-finding package without broadening authority", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const findingIds = ["mobile-errors-in-console", "mobile-color-contrast"];
+  const prepareCalls = [];
+  const stageCalls = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    prepareRepair: async (...args) => {
+      prepareCalls.push(args);
+      return {
+        mission: {
+          schemaVersion: 2,
+          intent: "prepare-fix",
+          focusAreas: ["reliability", "accessibility"],
+          maxPriorities: 3,
+          scope: "page",
+          routeLimit: 3,
+          requestedBy: "agent",
+          requestedAt: 10,
+          repairPreparation: {
+            findingId: findingIds[0],
+            findingIds,
+            requestedBy: "agent",
+            requestedAt: 20,
+          },
+        },
+        missionState: {
+          status: "action-available",
+          nextAction: { tool: "stage_site_repair", input: { findingId: findingIds[0], findingIds } },
+        },
+      };
+    },
+    stageRepair: async (_auditId, input) => {
+      stageCalls.push(input);
+      return {
+        id: "repair-package",
+        auditId,
+        findingId: findingIds[0],
+        findingIds,
+        findingPackage: {
+          schemaVersion: 1,
+          primaryFindingId: findingIds[0],
+          items: findingIds.map((findingId) => ({ findingId })),
+        },
+        findingScope: { sources: [] },
+        status: "draft",
+        revision: 1,
+        summary: "Repair both diagnosed symptoms in one reviewed change.",
+        patchType: "guidance",
+        risk: "medium",
+        requiresHumanReview: true,
+        approval: null,
+        automation: {
+          eligible: false,
+          reasons: ["multi-finding packages require explicit review"],
+          policyMode: "auto-low-risk",
+        },
+      };
+    },
+  };
+  const tools = createFrontmendTools(service);
+  const prepared = await findTool(tools, "prepare_site_repair").execute({
+    findingId: findingIds[0],
+    findingIds,
+  });
+  assert.equal(prepared.ok, true);
+  assert.deepEqual(prepareCalls, [[auditId, findingIds[0], "agent", 1, findingIds]]);
+  assert.deepEqual(prepared.data.findingIds, findingIds);
+
+  const staged = await findTool(tools, "stage_site_repair").execute({
+    findingId: findingIds[0],
+    findingIds,
+  });
+  assert.equal(staged.ok, true);
+  assert.deepEqual(stageCalls[0].findingIds, findingIds);
+  assert.deepEqual(staged.data.findingIds, findingIds);
+  assert.equal(staged.data.requiresHumanReview, true);
+  assert.equal(staged.data.approval, null);
+  assert.match(staged.data.automation.reasons.join(" "), /multi-finding packages require explicit review/i);
 });
 
 test("repair preparation updates contextual tools without exposing person-only authority", async () => {

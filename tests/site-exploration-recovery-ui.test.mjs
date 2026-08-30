@@ -7,7 +7,7 @@ const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8
 
 function explorationSource() {
   const match = report.match(
-    /function SiteExploration\(\{ report \}\) \{[\s\S]*?\n\}\n\nexport default function ReportWorkspace/,
+    /function SiteExploration\(\{ report, mission \}\) \{[\s\S]*?\n\}\n\nexport default function ReportWorkspace/,
   );
   assert.ok(match, "expected the site exploration workspace");
   return match[0];

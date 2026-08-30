@@ -220,7 +220,8 @@ function reconciliationRecord(group, { report, diagnosticMissions, repairs }) {
     ...(group.browser?.findings ?? []).map((finding) => finding.findingId),
   ]);
   const diagnostic = diagnosticMissions.find((mission) => findingIds.has(mission?.findingId)) ?? null;
-  const repair = repairs.find((item) => findingIds.has(item?.findingId)) ?? null;
+  const repair = repairs.find((item) =>
+    (item?.findingIds ?? [item?.findingId]).some((findingId) => findingIds.has(findingId))) ?? null;
   const repository = repositoryRecord(diagnostic);
   const verification = verificationRecord(report, repair, findingIds);
   const relationship = relationshipFor({

@@ -319,6 +319,67 @@ test("replays the exact retained browser issue after deployment without creating
   assert.equal(review.verificationBaseline.findingId, "browser:responsive-reflow:01");
 });
 
+test("compiles one exact sequential replay per browser finding in a repair package", () => {
+  const baseline = (findingId, title, auditId, strategy, evidence) => ({
+    required: true,
+    status: "not-opened",
+    baseline: {
+      findingId,
+      title,
+      category: "Accessibility",
+      focusArea: "accessibility",
+      selector: strategy === "mobile" ? "button.primary" : "nav.primary",
+      evidence,
+      repair: "Repair the retained rendered symptom.",
+      source: { provider: "Frontmend browser review", auditId, strategy },
+      browserReviewEvidence: {
+        reviewId: "baseline-review",
+        checkId: auditId.split(":")[0],
+        checkLabel: title,
+        provenance: "agent-reported-browser",
+        reportedAt: 5,
+      },
+    },
+  });
+  let review = createBrowserVerificationReview({
+    auditId: AUDIT_ID,
+    target: "https://example.com/",
+    verification: {
+      browserReplays: [
+        baseline("browser:reflow:01", "Primary action reflow", "responsive-reflow:01", "mobile", "The primary action clipped."),
+        baseline("browser:journey:01", "Primary journey feedback", "primary-journey:01", "desktop", "The completion feedback was absent."),
+      ],
+    },
+    now: 10,
+  });
+  assert.deepEqual(review.requestedChecks.map((check) => check.id), [
+    "fresh-browser-replay",
+    "fresh-browser-replay-2",
+  ]);
+  assert.deepEqual(review.verificationBaselines.map((item) => item.findingId), [
+    "browser:reflow:01",
+    "browser:journey:01",
+  ]);
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay",
+    outcome: "passed",
+    summary: "The primary action now remains inside the viewport.",
+    observations: ["The retained action is fully visible at the mobile viewport."],
+  }, "agent", 20);
+  assert.equal(review.state.nextCheck.id, "fresh-browser-replay-2");
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay-2",
+    outcome: "issue",
+    summary: "The completion feedback is still absent.",
+    observations: ["The retained journey reaches completion without visible feedback."],
+  }, "agent", 30);
+  assert.equal(review.state.status, "complete");
+  assert.deepEqual(review.results.map((result) => result.taskTrigger.findingId), [
+    "browser:reflow:01",
+    "browser:journey:01",
+  ]);
+});
+
 test("keeps a blocked verification replay resumable until the exact comparison passes", () => {
   const verification = {
     browserReplay: {
@@ -364,6 +425,59 @@ test("keeps a blocked verification replay resumable until the exact comparison p
   assert.equal(review.state.status, "complete");
   assert.equal(review.history[0].blockerReason, "authentication-required");
   assert.equal(review.results[0].revision, 2);
+});
+
+test("compiles and records guardrail-only browser verification sequentially", () => {
+  const verification = {
+    browserGuardrails: [
+      {
+        checkId: "primary-journey",
+        label: "Primary journey",
+        focusArea: "accessibility",
+        viewport: "desktop",
+        summary: "The primary journey completed before repair.",
+      },
+      {
+        checkId: "responsive-reflow",
+        label: "Responsive reflow",
+        focusArea: "accessibility",
+        viewport: "mobile",
+        summary: "The page reflowed without clipping before repair.",
+      },
+    ],
+  };
+  let review = createBrowserVerificationReview({
+    auditId: AUDIT_ID,
+    verification,
+    target: "https://example.com/",
+    now: 10,
+  });
+  assert.equal(review.purpose, "verification");
+  assert.equal(review.verificationBaseline, null);
+  assert.deepEqual(review.requestedChecks.map((check) => check.kind), [
+    "verification-guardrail",
+    "verification-guardrail",
+  ]);
+  assert.equal(review.state.nextCheck.id, "fresh-browser-guardrail-1");
+
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-guardrail-1",
+    outcome: "passed",
+    summary: "The primary journey still completes.",
+    observations: ["The retained action reaches the same completion state."],
+  }, "agent", 20);
+  assert.equal(review.state.nextCheck.id, "fresh-browser-guardrail-2");
+
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-guardrail-2",
+    outcome: "issue",
+    summary: "The mobile page now clips horizontally.",
+    observations: ["The retained content extends beyond the 390 px viewport."],
+  }, "person", 30);
+  assert.equal(review.state.status, "complete");
+  assert.equal(review.results[0].taskTrigger.auditId, "primary-journey");
+  assert.equal(review.results[1].taskTrigger.auditId, "responsive-reflow");
+  assert.equal(review.results[1].source, "person");
 });
 
 test("rejects skipped checks and unsupported outcome payloads", () => {

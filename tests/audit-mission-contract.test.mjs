@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  auditMissionSnapshot,
   auditMissionSignature,
   createAuditMission,
   deriveAuditMissionState,
@@ -58,10 +59,12 @@ const report = {
 
 test("creates a bounded Assess mission without retaining prompt text", () => {
   assert.deepEqual(createAuditMission({}, "human", 10), {
-    schemaVersion: 1,
+    schemaVersion: 2,
     intent: "assess",
     focusAreas: [],
     maxPriorities: 3,
+    scope: "page",
+    routeLimit: 3,
     requestedBy: "human",
     requestedAt: 10,
     repairPreparation: null,
@@ -72,6 +75,70 @@ test("creates a bounded Assess mission without retaining prompt text", () => {
   );
   assert.throws(() => createAuditMission({ focusAreas: ["seo", "seo"] }), /unique supported/);
   assert.throws(() => createAuditMission({ maxPriorities: 6 }), /one to five/);
+  assert.throws(() => createAuditMission({ scope: "crawl" }), /page or bounded-site/);
+});
+
+test("projects legacy v1 missions as page-scoped v2 missions", () => {
+  const projected = auditMissionSnapshot({
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["seo"],
+    maxPriorities: 2,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  });
+  assert.equal(projected.schemaVersion, 2);
+  assert.equal(projected.scope, "page");
+  assert.equal(projected.routeLimit, 3);
+});
+
+test("holds bounded-site completion for server-issued routes and folds recurrence into priorities", () => {
+  const scopedReport = {
+    ...report,
+    documentProfile: { routes: ["/privacy", "/terms", "/about", "/omitted"] },
+  };
+  const mission = createAuditMission({
+    scope: "bounded-site",
+    routeLimit: 2,
+    focusAreas: ["accessibility"],
+  }, "human", 10);
+  const waiting = deriveAuditMissionState({ report: scopedReport, mission });
+  assert.equal(waiting.assessmentComplete, false);
+  assert.equal(waiting.nextAction.tool, "start_site_exploration");
+  assert.equal(waiting.siteScope.routeCandidates.length, 2);
+  assert.deepEqual(
+    waiting.nextAction.input.routeCandidateIds,
+    waiting.siteScope.routeCandidates.map((candidate) => candidate.id),
+  );
+
+  const exploration = {
+    id: "232d593c-6c81-48c3-b137-a3df269454ff",
+    rootAuditId: report.auditId,
+    status: "complete",
+    createdAt: 20,
+    summary: { pagesRequested: 2, pagesComplete: 2, pagesFailed: 0 },
+    issues: [{
+      provider: "Lighthouse",
+      ruleId: "color-contrast",
+      title: "Controls have insufficient contrast",
+      severity: "medium",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      suggestedRepair: "Correct the foreground and background tokens.",
+      occurrences: [{
+        auditId: "route-audit-1",
+        findingId: "route-color-contrast",
+        path: "/privacy",
+        strategy: "mobile",
+        evidence: "The same control failed on the retained route.",
+      }],
+    }],
+  };
+  const complete = deriveAuditMissionState({ report: scopedReport, mission, explorations: [exploration] });
+  assert.equal(complete.assessmentComplete, true);
+  assert.equal(complete.siteScope.status, "complete");
+  assert.equal(complete.priorities[0].occurrenceCount, 2);
 });
 
 test("uses semantic mission values for stable admission signatures", () => {
@@ -301,6 +368,7 @@ test("freezes explicit repair intent idempotently and rejects replacement", () =
   assert.equal(prepared.intent, "prepare-fix");
   assert.deepEqual(prepared.repairPreparation, {
     findingId: "mobile-color-contrast",
+    findingIds: ["mobile-color-contrast"],
     requestedBy: "human",
     requestedAt: 20,
   });
@@ -325,4 +393,40 @@ test("names repair staging only after an explicit selected finding transition", 
   });
   assert.equal(state.authority.mayDeploy, false);
   assert.equal(state.authority.mayAttestDeployment, false);
+});
+
+test("freezes one to three repair findings and advances only when every required diagnosis is ready", () => {
+  const selected = ["mobile-errors-in-console", "mobile-color-contrast"];
+  const mission = prepareRepairIntent(
+    createAuditMission({ focusAreas: ["reliability", "accessibility"] }, "human", 10),
+    selected,
+    "human",
+    20,
+  );
+  assert.deepEqual(mission.repairPreparation.findingIds, selected);
+  assert.deepEqual(prepareRepairIntent(mission, selected, "agent", 30), mission);
+  assert.throws(
+    () => prepareRepairIntent(mission, [...selected].reverse(), "human", 30),
+    (error) => error.code === "REPAIR_INTENT_CONFLICT",
+  );
+
+  const waiting = deriveAuditMissionState({ report, mission });
+  assert.equal(waiting.nextAction.tool, "open_diagnostic_mission");
+  assert.equal(waiting.nextAction.input.findingId, selected[0]);
+
+  const diagnostic = createDiagnosticMission({ auditId: report.auditId, finding: report.findings[0], now: 40 });
+  const diagnosed = submitDiagnosticEvidence(diagnostic, {
+    summary: "The owned runtime reads a vendor global before the script is ready.",
+    reproduction: "Open the audited route and inspect the first retained console error.",
+    observations: [{ kind: "console", detail: "ReferenceError occurs during route startup." }],
+    sourceLocations: [{ file: "src/runtime.js", line: 42, reason: "Owns the early global read." }],
+    verificationChecks: ["bun test", "bun run build"],
+    confidence: "high",
+  }, "agent", 50);
+  const ready = deriveAuditMissionState({ report, mission, diagnosticMissions: [diagnosed] });
+  assert.equal(ready.nextAction.tool, "stage_site_repair");
+  assert.deepEqual(ready.nextAction.input, {
+    findingId: selected[0],
+    findingIds: selected,
+  });
 });

@@ -16,6 +16,7 @@ import {
   auditMissionSnapshot,
   createAuditMission,
   deriveAuditMissionState,
+  normalizeRepairFindingIds,
 } from "./audit-mission-contract.js";
 import {
   BROWSER_REVIEW_BLOCKER_REASONS,
@@ -184,18 +185,26 @@ export function contextualFrontmendToolNames(service) {
   const repairs = service?.getRepairs?.(audit.id) ?? [];
   const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
   const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
-  const missionState = audit.mission?.schemaVersion === 1
+  const missionState = [1, 2].includes(audit.mission?.schemaVersion)
     ? deriveAuditMissionState({
         report: audit.report,
         mission: audit.mission,
         diagnosticMissions,
         repairs,
         browserReview,
+        explorations,
       })
     : null;
   const verificationReplay = audit.report?.verification?.browserReplay ?? null;
-  const verificationReplayRequired = verificationReplay?.required === true;
-  const verificationReplayComplete = !verificationReplayRequired || verificationReplay.status === "complete";
+  const verificationReplays = audit.report?.verification?.browserReplays?.length
+    ? audit.report.verification.browserReplays
+    : verificationReplay?.required
+      ? [verificationReplay]
+      : [];
+  const verificationGuardrails = audit.report?.verification?.browserGuardrails ?? [];
+  const verificationReplayRequired = verificationReplays.length > 0 || verificationGuardrails.length > 0;
+  const verificationReplayComplete = verificationReplays.every((replay) => replay.status === "complete")
+    && verificationGuardrails.every((guardrail) => guardrail.status === "complete");
   const browserReviewComplete = !missionState?.browserReview?.required || missionState.browserReview.status === "complete";
 
   if (audit.report?.verification && verificationReplayComplete) available.add("get_verification_receipt");
@@ -342,6 +351,17 @@ export function createFrontmendTools(service) {
             maximum: 5,
             description: "Maximum deduplicated mission priorities. Defaults to 3.",
           },
+          scope: {
+            type: "string",
+            enum: ["page", "bounded-site"],
+            description: "Page audits retain the target only. Bounded-site audits also retain up to three server-issued same-site route candidates before completion.",
+          },
+          routeLimit: {
+            type: "integer",
+            minimum: 1,
+            maximum: 3,
+            description: "Maximum retained routes for bounded-site scope. Defaults to 3.",
+          },
         },
         required: ["url"],
         additionalProperties: false,
@@ -349,7 +369,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["url", "intent", "focusAreas", "maxPriorities"]);
+        noExtra(value, ["url", "intent", "focusAreas", "maxPriorities", "scope", "routeLimit"]);
         if (typeof value.url !== "string") {
           throw new AuditError("INVALID_INPUT", "url must be a string.");
         }
@@ -360,6 +380,8 @@ export function createFrontmendTools(service) {
             intent: value.intent,
             focusAreas: value.focusAreas,
             maxPriorities: value.maxPriorities,
+            scope: value.scope,
+            routeLimit: value.routeLimit,
           },
         });
         return {
@@ -480,6 +502,7 @@ export function createFrontmendTools(service) {
           diagnosticMissions: service?.getDiagnosticMissions?.(auditId) ?? [],
           repairs: service?.getRepairs?.(auditId) ?? [],
           browserReview: service?.getBrowserReview?.(auditId) ?? null,
+          explorations: service?.getSiteExplorations?.(auditId) ?? [],
         });
         const overridden = value.focusAreas !== undefined || value.maxPriorities !== undefined;
         return {
@@ -640,7 +663,7 @@ export function createFrontmendTools(service) {
               ? {
                   tool: "get_verification_receipt",
                   input: { auditId },
-                  reason: "The exact fresh browser comparison is complete, so Frontmend can now return the bounded verification receipt.",
+                  reason: "Every required exact replay and browser guardrail is complete, so Frontmend can now return the bounded verification receipt.",
                 }
               : {
                   tool: "get_site_audit_results",
@@ -692,12 +715,20 @@ export function createFrontmendTools(service) {
       name: "get_repository_fix_brief",
       title: "Prepare repository fix brief",
       description:
-        "Translate one completed Frontmend finding into a bounded, source-safe implementation contract for a coding agent with repository access. It returns measured evidence, repository search hints, acceptance criteria, and authority boundaries. It does not inspect files, upload source, stage a repair, change the repository, or deploy the target.",
+        "Translate one completed Frontmend finding, plus an optional frozen package of up to three findings, into a bounded source-safe implementation contract for a coding agent with repository access. It returns measured evidence, package scope, repository search hints, shared verification candidates, acceptance criteria, and authority boundaries. It does not inspect files, upload source, stage a repair, change the repository, or deploy the target.",
       inputSchema: {
         type: "object",
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
           findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact finding ID from the completed report." },
+          findingIds: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 160 },
+            description: "Optional exact prepared package; findingId must be first.",
+          },
         },
         required: ["findingId"],
         additionalProperties: false,
@@ -705,12 +736,13 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId"]);
+        noExtra(value, ["auditId", "findingId", "findingIds"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
+        const findingIds = normalizeRepairFindingIds(findingId, value.findingIds);
         const report = await coherentResultsForTool(service, auditId);
         const verificationCandidates = await (
-          service?.getVerificationCandidates?.(auditId, findingId) ?? null
+          service?.getVerificationCandidates?.(auditId, findingId, findingIds) ?? null
         );
         const reportCheckpoint = report?.missionCheckpoint ?? null;
         const candidateCheckpoint = verificationCandidates?.missionCheckpoint ?? null;
@@ -734,6 +766,12 @@ export function createFrontmendTools(service) {
         );
         return {
           ...brief,
+          findingIds,
+          repairPackage: {
+            primaryFindingId: findingId,
+            findingIds,
+            findingCount: findingIds.length,
+          },
           missionCheckpoint:
             candidateCheckpoint
             ?? reportCheckpoint
@@ -951,31 +989,36 @@ export function createFrontmendTools(service) {
       name: "start_site_exploration",
       title: "Explore selected site routes",
       description:
-        "Start a bounded multi-page exploration for one to three exact same-site paths observed in the completed root audit. Each path becomes a separate live audit under one durable exploration ID; this is not an exhaustive crawl.",
+        "Start a bounded multi-page exploration for one to three server-issued route candidates from the completed root audit. Each candidate becomes a separate live audit under one durable exploration ID; raw arbitrary paths are not accepted for bounded-site missions and this is not an exhaustive crawl.",
       inputSchema: {
         type: "object",
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed root audit ID; defaults to the visible audit." },
-          paths: {
+          routeCandidateIds: {
             type: "array",
             minItems: 1,
             maxItems: 3,
             uniqueItems: true,
-            items: { type: "string", minLength: 1, maxLength: 256 },
-            description: "One to three exact paths from documentProfile.routes.",
+            items: { type: "string", minLength: 1, maxLength: 80 },
+            description: "One to three IDs from missionState.siteScope.routeCandidates.",
           },
+          expectedMissionRevision: expectedMissionRevisionProperty,
         },
-        required: ["paths"],
+        required: ["routeCandidateIds", "expectedMissionRevision"],
         additionalProperties: false,
       },
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "paths", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "routeCandidateIds", "expectedMissionRevision"]);
         const rootAuditId = auditIdForTool(service, value.auditId);
         const exploration = await service.startSiteExploration(
           rootAuditId,
-          observedPaths(value.paths),
+          {
+            routeCandidateIds: Array.isArray(value.routeCandidateIds)
+              ? value.routeCandidateIds.map((id, index) => requiredString(id, `routeCandidateIds[${index}]`, 80))
+              : value.routeCandidateIds,
+          },
           "agent",
           expectedMissionRevisionForTool(service, rootAuditId, value.expectedMissionRevision),
         );
@@ -1068,12 +1111,20 @@ export function createFrontmendTools(service) {
       name: "prepare_site_repair",
       title: "Prepare site repair",
       description:
-        "Record that the person explicitly asked to prepare or fix one assessed finding. Call this only after that explicit request. It freezes the finding and enables a separate bounded repair proposal when diagnosis is ready; it is not approval, does not consume auto-mode allowance, accepts no plan or code, and cannot implement, deploy, or attest anything.",
+        "Record that the person explicitly asked to prepare one assessed finding or a cohesive package of up to three assessed findings. Call this only after that explicit request. It freezes the exact ordered finding IDs and enables one bounded repair proposal when required diagnoses are ready; it is not approval, does not consume auto-mode allowance, accepts no plan or code, and cannot implement, deploy, or attest anything.",
       inputSchema: {
         type: "object",
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
           findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact retained finding the person asked to prepare for repair." },
+          findingIds: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 160 },
+            description: "Optional exact ordered package; findingId must be first. Omit for a one-finding repair.",
+          },
         },
         required: ["findingId"],
         additionalProperties: false,
@@ -1081,18 +1132,18 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "findingId", "findingIds", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
-        const prepared = await service.prepareRepair(
-          auditId,
-          findingId,
-          "agent",
-          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
-        );
+        const findingIds = normalizeRepairFindingIds(findingId, value.findingIds);
+        const expectedMissionRevision = expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision);
+        const prepared = await (findingIds.length > 1
+          ? service.prepareRepair(auditId, findingId, "agent", expectedMissionRevision, findingIds)
+          : service.prepareRepair(auditId, findingId, "agent", expectedMissionRevision));
         return {
           auditId,
           findingId,
+          findingIds,
           mission: prepared.mission,
           missionState: prepared.missionState,
           workspacePath: `/audits/${encodeURIComponent(auditId)}`,
@@ -1111,12 +1162,20 @@ export function createFrontmendTools(service) {
       name: "stage_site_repair",
       title: "Stage site repair",
       description:
-        "Submit a bounded repository repair mission for one completed audit finding, freezing every measured strategy sharing that failed rule and optionally attaching source-safe repository-relative target files plus planned checks. In review mode it waits for visible human approval. If a person previously enabled delegated auto mode, an eligible low-risk HTML or CSS mission with a complete repository plan is auto-authorised under that recorded grant. This never changes the target site, deploys, or bypasses the person-only deployment attestation.",
+        "Submit one bounded repository repair mission for the exact frozen one-to-three-finding package, retaining every measured strategy, diagnosis, and reviewed verification row plus optional source-safe repository-relative files and checks. Multi-finding packages always wait for explicit review; a one-finding eligible low-risk HTML or CSS mission may consume an existing human auto grant. This never changes the target site, deploys, or bypasses person-only deployment attestation.",
       inputSchema: {
         type: "object",
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
           findingId: { type: "string", minLength: 1, description: "Finding ID from the completed report." },
+          findingIds: {
+            type: "array",
+            minItems: 1,
+            maxItems: 3,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 160 },
+            description: "Optional exact prepared package; findingId must be first. Omit for a one-finding repair.",
+          },
           summary: { type: "string", minLength: 1, maxLength: 300, description: "Concise implementation rationale." },
           patchType: {
             type: "string",
@@ -1156,9 +1215,10 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "findingId", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "verificationTargetIds", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "findingId", "findingIds", "summary", "patchType", "patch", "verificationPlan", "risk", "repositoryFiles", "repositoryChecks", "verificationTargetIds", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const findingId = requiredString(value.findingId, "findingId", 160);
+        const findingIds = normalizeRepairFindingIds(findingId, value.findingIds);
         const patchTypes = ["html", "css", "javascript", "headers", "configuration", "guidance"];
         const risks = ["low", "medium", "high"];
         if (value.patchType !== undefined && !patchTypes.includes(value.patchType)) {
@@ -1171,6 +1231,7 @@ export function createFrontmendTools(service) {
           auditId,
           {
             findingId,
+            findingIds,
             source: "agent",
             summary: optionalString(value.summary, "summary", 300),
             patchType: value.patchType,
@@ -1187,6 +1248,8 @@ export function createFrontmendTools(service) {
           auditId,
           repairId: repair.id,
           findingId: repair.findingId,
+          findingIds: repair.findingIds ?? [repair.findingId],
+          findingPackage: repair.findingPackage ?? null,
           status: repair.status,
           revision: repair.revision ?? 1,
           summary: repair.summary,

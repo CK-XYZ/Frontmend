@@ -25,6 +25,7 @@ import {
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "../audit-service.js";
 import { assessmentFindings, deriveAuditMissionState } from "../audit-mission-contract.js";
+import { createSiteRouteCandidates } from "../site-exploration-contract.js";
 import { findingRequiresDiagnosticMission } from "../diagnostic-contract.js";
 import { createFreshAgentHandoff } from "../mission-handoff-contract.js";
 import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSummary.jsx";
@@ -351,12 +352,34 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
   const [confirmWithdrawal, setConfirmWithdrawal] = useState(false);
   const [actionNotice, setActionNotice] = useState("");
   const replay = verification?.browserReplay;
-  const verificationReplay = replay?.required === true;
+  const replays = verification?.browserReplays?.length
+    ? verification.browserReplays
+    : replay?.required ? [replay] : [];
+  const verificationGuardrails = verification?.browserGuardrails ?? [];
+  const exactReplay = replays.length > 0;
+  const verificationReplay = exactReplay || verificationGuardrails.length > 0;
+  const verificationChecks = [
+    ...replays,
+    ...verificationGuardrails,
+  ];
+  const completedVerificationChecks = verificationChecks.filter((check) => check.status === "complete").length;
+  const verificationFallbackState = {
+    required: verificationReplay,
+    status: verificationChecks.length && completedVerificationChecks === verificationChecks.length
+      ? "complete"
+      : verificationChecks.some((check) => check.status === "blocked")
+        ? "blocked"
+        : verificationChecks.some((check) => check.status === "in-progress")
+          ? "in-progress"
+          : "not-opened",
+    requestedCheckCount: verificationChecks.length,
+    completedCheckCount: completedVerificationChecks,
+  };
   const webMcpReady = webMcp?.supported === true && webMcp?.status === "ready";
   const reviewState = verificationReplay
     ? review?.purpose === "verification"
       ? { required: true, ...review.state }
-      : { required: true, ...replay }
+      : verificationFallbackState
     : state?.browserReview;
   if (!reviewState?.required && reviewState?.status !== "withdrawn") return null;
   const adoptedFromHumanMission = !verificationReplay && (
@@ -368,9 +391,9 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
   const withdrawn = reviewState.status === "withdrawn";
   const statusLabel = complete
     ? verificationReplay
-      ? review?.results?.[0]?.outcome === "passed"
-        ? "Exact comparison passed"
-        : "Exact issue observed again"
+      ? review?.results?.some((result) => result.outcome === "issue")
+        ? "Rendered regression observed"
+        : "Rendered comparisons passed"
       : "Browser contribution complete"
     : withdrawn
       ? "Handoff withdrawn · no evidence"
@@ -445,7 +468,9 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
           </p>
           <h2 id={titleId}>
             {verificationReplay
-              ? "Recheck the exact rendered issue"
+              ? exactReplay
+                ? "Recheck the retained rendered evidence"
+                : "Recheck retained browser guardrails"
               : adoptedFromHumanMission
                 ? withdrawn
                   ? "Person-started evidence remains provider-only"
@@ -454,7 +479,7 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
           </h2>
           <p>
             {verificationReplay
-              ? "Frontmend preserved the original observation and now asks the agent for one fresh, like-for-like rendered comparison after deployment."
+              ? "Frontmend preserved the original browser evidence and now asks for fresh, like-for-like comparisons after deployment, including every retained journey or reflow guardrail."
               : adoptedFromHumanMission
                 ? withdrawn
                   ? "The person ended this untouched handoff before any rendered evidence was recorded. Frontmend retained the record and restored the original completed assessment."
@@ -464,7 +489,7 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
         </div>
         <div className="browser-review-state">
           <strong>{statusLabel}</strong>
-          <span>{reviewState.completedCheckCount ?? 0} / {reviewState.requestedCheckCount || (verificationReplay ? 1 : "—")} checks</span>
+          <span>{reviewState.completedCheckCount ?? 0} / {reviewState.requestedCheckCount || (verificationReplay ? verificationChecks.length : "—")} checks</span>
         </div>
       </header>
 
@@ -480,8 +505,8 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
         <div className="browser-review-next" role="status">
           {webMcpReady ? <Robot size={18} weight="fill" aria-hidden="true" /> : <Browser size={18} weight="duotone" aria-hidden="true" />}
           <div>
-            <strong>{verificationReplay ? "Fresh provider evidence is ready. One rendered comparison remains." : "Provider evidence is ready. Rendered review is next."}</strong>
-            <p>{webMcpReady ? <>An agent can call <code>open_browser_review</code>, or you can complete the same task yourself.</> : <>WebMCP is not ready in this browser. Open the bounded task here and complete it yourself.</>} The {verificationReplay ? "verification receipt" : "completed assessment"} stays locked until the exact check is recorded.</p>
+            <strong>{verificationReplay ? `Fresh provider evidence is ready. ${verificationChecks.length} rendered ${verificationChecks.length === 1 ? "comparison remains" : "comparisons remain"}.` : "Provider evidence is ready. Rendered review is next."}</strong>
+            <p>{webMcpReady ? <>An agent can call <code>open_browser_review</code>, or you can complete the same task yourself.</> : <>WebMCP is not ready in this browser. Open the bounded task here and complete it yourself.</>} The {verificationReplay ? "verification receipt" : "completed assessment"} stays locked until every required browser check is recorded.</p>
             {!review ? (
               <button type="button" onClick={openHumanReview} disabled={opening}>
                 <Browser size={15} weight="duotone" aria-hidden="true" />
@@ -511,7 +536,7 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
         </div>
       ) : null}
 
-      {verificationReplay && replay?.baseline ? (
+      {exactReplay && replay?.baseline ? (
         <div className="browser-replay-baseline">
           <span>Original observation</span>
           <strong>{replay.baseline.title}</strong>
@@ -603,11 +628,11 @@ function BrowserReviewMission({ auditId, state, review, verification = null, web
       <footer>
         <ShieldCheck size={16} weight="duotone" aria-hidden="true" />
         <span>
-          <strong>{withdrawn ? "No browser evidence recorded" : verificationReplay ? "Exact comparison · separate provenance" : `${reviewState.issueCount} browser-observed ${reviewState.issueCount === 1 ? "issue" : "issues"}`}</strong>
+          <strong>{withdrawn ? "No browser evidence recorded" : verificationReplay ? "Fresh comparisons · separate provenance" : `${reviewState.issueCount} browser-observed ${reviewState.issueCount === 1 ? "issue" : "issues"}`}</strong>
           {withdrawn
             ? "The optional handoff is retained for history but contributes no evidence and grants no authority."
             : verificationReplay
-            ? "Passed means this exact issue was no longer observed; issue means it remained; blocked keeps the receipt locked and the same task resumable."
+            ? "Each exact replay or guardrail must be observed directly. An issue can keep the original finding present or prove a regression; a blocker keeps the receipt locked and the task resumable."
             : "Person- or agent-reported browser facts can become ranked priorities, but still require repository mapping before repair and never prove deployment or resolution."}
         </span>
       </footer>
@@ -788,17 +813,27 @@ function MissionPriorities({ state, selectedFindingId, onSelect, detailId }) {
   );
 }
 
-function PrepareRepairIntent({ auditId, priority, mission, preparedFindingTitle }) {
+function PrepareRepairIntent({ auditId, priority, priorities, mission, preparedFindingTitle }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  if (!priority) return null;
+  const [packageIds, setPackageIds] = useState(() => priority ? [priority.findingId] : []);
+  const selectedPriorityId = priority?.findingId ?? null;
   const preparedFindingId = mission.repairPreparation?.findingId ?? null;
-  const selectedIsPrepared = preparedFindingId === priority.findingId;
+  const preparedFindingIds = mission.repairPreparation?.findingIds ?? (preparedFindingId ? [preparedFindingId] : []);
+  const selectedIsPrepared = preparedFindingIds.includes(selectedPriorityId);
+  const retainedPriorities = priorities ?? (priority ? [priority] : []);
+  useEffect(() => {
+    if (!preparedFindingId && selectedPriorityId) setPackageIds([selectedPriorityId]);
+  }, [preparedFindingId, selectedPriorityId]);
+  if (!priority) return null;
   const prepare = async () => {
     setBusy(true);
     setError("");
     try {
-      await auditService.prepareRepair(auditId, priority.findingId, "human");
+      const retainedIds = packageIds.includes(priority.findingId)
+        ? [priority.findingId, ...packageIds.filter((id) => id !== priority.findingId)]
+        : [priority.findingId];
+      await auditService.prepareRepair(auditId, retainedIds[0], "human", undefined, retainedIds);
     } catch (cause) {
       const failure = await humanMissionMutationFailure(
         cause,
@@ -818,19 +853,45 @@ function PrepareRepairIntent({ auditId, priority, mission, preparedFindingTitle 
         <p className="kicker">Human intent gate</p>
         <strong>
           {selectedIsPrepared
-            ? "This finding is being prepared"
+            ? preparedFindingIds.length > 1
+              ? `This finding is in a ${preparedFindingIds.length}-finding package`
+              : "This finding is being prepared"
             : preparedFindingId
               ? `Already preparing ${preparedFindingTitle ?? "another finding"}`
               : "Want an implementation-ready fix?"}
         </strong>
         <p>
           {selectedIsPrepared
-            ? "The agent may prepare a bounded draft when its evidence is ready. Approval and deployment remain separate."
+            ? "The agent may prepare one bounded package draft when every required diagnosis is ready. Approval and deployment remain separate."
             : preparedFindingId
-              ? "One audit mission freezes one repair target. Start a new assessment to choose a different finding."
-              : "Prepare a fix records this selected priority as your target. It does not approve code, change auto mode, or deploy anything."}
+              ? "One audit mission freezes one exact repair package. Start a new assessment to choose a different scope."
+              : "Prepare a fix records this priority and up to two related priorities as one immutable package. It does not approve code, change auto mode, or deploy anything."}
         </p>
       </div>
+      {!preparedFindingId && retainedPriorities.length > 1 ? (
+        <fieldset className="repair-package-picker">
+          <legend>Optional cohesive package</legend>
+          {retainedPriorities.map((candidate) => {
+            const primary = candidate.findingId === priority.findingId;
+            const checked = primary || packageIds.includes(candidate.findingId);
+            return (
+              <label key={candidate.findingId}>
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  disabled={primary || busy || (!checked && packageIds.length >= 3)}
+                  onChange={() => setPackageIds((current) => checked
+                    ? current.filter((id) => id !== candidate.findingId)
+                    : [...current, candidate.findingId].slice(0, 3))}
+                />
+                <span>{candidate.title}</span>
+                <small>{primary ? "Primary" : candidate.relationship?.replaceAll("-", " ")}</small>
+              </label>
+            );
+          })}
+          <small>Choose only findings owned by one repository change. Package scope freezes when intent is recorded.</small>
+        </fieldset>
+      ) : null}
       {!preparedFindingId ? (
         <button type="button" onClick={prepare} disabled={busy}>
           <ClipboardText size={17} weight="bold" />
@@ -1091,8 +1152,8 @@ function RouteJourney({ exploration, currentPath }) {
   );
 }
 
-function SiteExploration({ report }) {
-  const routes = Array.isArray(report.documentProfile?.routes) ? report.documentProfile.routes : [];
+function SiteExploration({ report, mission }) {
+  const candidates = createSiteRouteCandidates(report).slice(0, mission.routeLimit);
   const [selected, setSelected] = useState([]);
   const [explorations, setExplorations] = useState(() =>
     auditService.getSiteExplorations(report.auditId),
@@ -1149,13 +1210,13 @@ function SiteExploration({ report }) {
     };
   }, [pollAttempt, report.auditId]);
 
-  if (!routes.length) return null;
+  if (!candidates.length) return null;
 
-  const togglePath = (path) => {
+  const toggleCandidate = (candidateId) => {
     setError("");
     setSelected((items) => {
-      if (items.includes(path)) return items.filter((item) => item !== path);
-      return items.length < 3 ? [...items, path] : items;
+      if (items.includes(candidateId)) return items.filter((item) => item !== candidateId);
+      return items.length < mission.routeLimit ? [...items, candidateId] : items;
     });
   };
 
@@ -1164,7 +1225,11 @@ function SiteExploration({ report }) {
     setIsStarting(true);
     setError("");
     try {
-      await auditService.startSiteExploration(report.auditId, selected, "human");
+      await auditService.startSiteExploration(
+        report.auditId,
+        { routeCandidateIds: selected },
+        "human",
+      );
       setSelected([]);
       setReadError("");
       setPollAttempt((attempt) => attempt + 1);
@@ -1207,19 +1272,19 @@ function SiteExploration({ report }) {
       </div>
 
       <div className="site-route-picker" aria-label="Select routes for site exploration">
-        {routes.map((path) => {
-          const active = selected.includes(path);
-          const unavailable = !active && selected.length >= 3;
+        {candidates.map((candidate) => {
+          const active = selected.includes(candidate.id);
+          const unavailable = !active && selected.length >= mission.routeLimit;
           return (
             <button
               type="button"
-              key={path}
+              key={candidate.id}
               aria-pressed={active}
               disabled={unavailable || isStarting}
-              onClick={() => togglePath(path)}
+              onClick={() => toggleCandidate(candidate.id)}
             >
               <span aria-hidden="true">{active ? <Check size={13} weight="bold" /> : null}</span>
-              <code>{path}</code>
+              <code>{candidate.path}</code>
             </button>
           );
         })}
@@ -1315,11 +1380,17 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const report = audit.report;
   const isDocumentAudit = report.engine.mode === "live-document";
   const isHybridAudit = report.engine.mode === "hybrid-lighthouse-document";
+  const isCombinedAudit = report.engine.mode === "live-lighthouse-document";
+  const isDocumentUnavailable = report.engine.mode === "live-lighthouse-document-unavailable";
   const isPartialLighthouse = report.engine.mode === "live-lighthouse-partial";
   const evidenceLabel = isDocumentAudit
     ? "live document evidence"
+    : isCombinedAudit
+      ? "Lighthouse + document evidence"
     : isHybridAudit
       ? "partial Lighthouse + document evidence"
+      : isDocumentUnavailable
+        ? "Lighthouse evidence · document unavailable"
       : isPartialLighthouse
         ? "partial Lighthouse evidence"
         : "live Lighthouse evidence";
@@ -1335,13 +1406,21 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const [repairs, setRepairs] = useState(() => auditService.getRepairs(report.auditId));
   const [diagnosticMissions, setDiagnosticMissions] = useState(() => auditService.getDiagnosticMissions(report.auditId));
   const [browserReview, setBrowserReview] = useState(() => auditService.getBrowserReview(report.auditId));
+  const [siteExplorations, setSiteExplorations] = useState(() => auditService.getSiteExplorations(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
   const [workspaceReadError, setWorkspaceReadError] = useState("");
   const [workspaceUnavailable, setWorkspaceUnavailable] = useState([]);
   const [isRefreshingWorkspace, setIsRefreshingWorkspace] = useState(false);
   const [workspaceRefreshAttempt, setWorkspaceRefreshAttempt] = useState(0);
   const mission = retainedAuditMission(audit);
-  const missionState = deriveAuditMissionState({ report, mission, diagnosticMissions, repairs, browserReview });
+  const missionState = deriveAuditMissionState({
+    report,
+    mission,
+    diagnosticMissions,
+    repairs,
+    browserReview,
+    explorations: siteExplorations,
+  });
   const findings = useMemo(() => assessmentFindings(report, browserReview), [report, browserReview]);
   const [selectedFindingId, setSelectedFindingId] = useState(
     () => missionState.priorities[0]?.findingId ?? findings[0]?.id ?? null,
@@ -1365,18 +1444,22 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
           finding.source?.auditId === selectedFinding.source?.auditId,
       )
     : [];
-  const selectedRepair = repairs.find((repair) => repair.findingId === selectedFinding?.id) ?? null;
+  const selectedRepair = repairs.find((repair) => (repair.findingIds ?? [repair.findingId]).includes(selectedFinding?.id)) ?? null;
   const selectedDiagnosticMission = diagnosticMissions.find((mission) => mission.findingId === selectedFinding?.id) ?? null;
   const selectedPriority = missionState.priorities.find(
     (priority) => priority.findingId === selectedFinding?.id,
   ) ?? null;
   const preparedFindingId = mission.repairPreparation?.findingId ?? null;
+  const preparedFindingIds = mission.repairPreparation?.findingIds ?? (preparedFindingId ? [preparedFindingId] : []);
   const preparedFinding = findings.find((finding) => finding.id === preparedFindingId) ?? null;
-  const selectedRepairPrepared = preparedFindingId === selectedFinding?.id;
-  const selectedDiagnosticReady = selectedFinding
-    ? !findingRequiresDiagnosticMission(selectedFinding) ||
-      selectedDiagnosticMission?.state?.state === "ready-for-repair"
-    : false;
+  const preparedFindings = preparedFindingIds.map((id) => findings.find((finding) => finding.id === id)).filter(Boolean);
+  const selectedRepairPrepared = preparedFindingIds.includes(selectedFinding?.id);
+  const selectedDiagnosticReady = selectedRepairPrepared
+    ? preparedFindings.every((finding) => !findingRequiresDiagnosticMission(finding)
+      || diagnosticMissions.find((item) => item.findingId === finding.id)?.state?.state === "ready-for-repair")
+    : selectedFinding
+      ? !findingRequiresDiagnosticMission(selectedFinding) || selectedDiagnosticMission?.state?.state === "ready-for-repair"
+      : false;
   const omittedFindingCount = Math.max(
     0,
     Number.isFinite(report.findingsOmitted)
@@ -1392,6 +1475,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         setRepairs([...auditService.getRepairs(report.auditId)]);
         setDiagnosticMissions([...auditService.getDiagnosticMissions(report.auditId)]);
         setBrowserReview(auditService.getBrowserReview(report.auditId));
+        setSiteExplorations([...auditService.getSiteExplorations(report.auditId)]);
         setRepairPolicy(auditService.getRepairPolicy(report.auditId));
       }
     };
@@ -1705,6 +1789,42 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         <p>{report.engine.notice}</p>
       </div>
 
+      {report.coverage ? (
+        <section className="evidence-coverage" aria-labelledby="evidence-coverage-title">
+          <div>
+            <span>Evidence coverage</span>
+            <strong id="evidence-coverage-title">{report.coverage.level.replaceAll("-", " ")}</strong>
+          </div>
+          <dl>
+            <div>
+              <dt>Lighthouse</dt>
+              <dd>{report.coverage.sources.lighthouse.status}</dd>
+            </div>
+            <div>
+              <dt>Live document</dt>
+              <dd>{report.coverage.sources.document.status}</dd>
+            </div>
+            <div>
+              <dt>Observed routes</dt>
+              <dd>{report.coverage.routeCandidateCount}</dd>
+            </div>
+          </dl>
+          {report.sourceFailures?.length ? (
+            <ul aria-label="Unavailable evidence sources">
+              {report.sourceFailures.map((failure) => (
+                <li key={`${failure.source}-${failure.code}`}>
+                  <strong>{failure.source}</strong>
+                  <code>{failure.code}</code>
+                  <span>{failure.message}</span>
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <p>Independent viewport and document sources completed. Rendered journeys still require the retained browser review.</p>
+          )}
+        </section>
+      ) : null}
+
       {viewportFailures.length ? (
         <section className="viewport-failures" aria-labelledby="viewport-failures-title">
           <Warning size={19} weight="fill" aria-hidden="true" />
@@ -1725,7 +1845,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             </ul>
             {report.documentSupplement ? (
               <small className="document-supplement-note">
-                {report.documentSupplement.evaluatedRuleCount} non-overlapping document rules added · {report.documentSupplement.overlappingRulesOmitted} overlapping rules omitted from totals. Document evidence does not replace the unavailable viewport.
+                {report.documentSupplement.evaluatedRuleCount} non-overlapping document rules added · {report.documentSupplement.overlappingRulesOmitted} overlapping rules omitted from totals. Document evidence does not replace viewport or rendered-browser evidence.
               </small>
             ) : null}
           </div>
@@ -1766,7 +1886,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         onAuditRoute={onAuditRoute}
       />
 
-      <SiteExploration report={report} />
+      <SiteExploration report={report} mission={mission} />
 
       <div className="workspace-grid">
         <div className="preview-column">
@@ -1878,6 +1998,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
           <PrepareRepairIntent
             auditId={report.auditId}
             priority={selectedPriority}
+            priorities={missionState.priorities}
             mission={mission}
             preparedFindingTitle={preparedFinding?.title}
           />
@@ -1889,7 +2010,8 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
               variant="inline"
               componentProps={{
                 auditId: report.auditId,
-                finding: selectedFinding,
+                finding: selectedRepairPrepared ? preparedFindings[0] : selectedFinding,
+                findings: selectedRepairPrepared ? preparedFindings : [selectedFinding].filter(Boolean),
                 repair: selectedRepair,
                 repairPrepared: selectedRepairPrepared,
                 diagnosticReady: selectedDiagnosticReady,

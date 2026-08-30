@@ -13,6 +13,7 @@ import { createAuditMission, deriveAuditMissionState } from "../audit-mission-co
 function missionActionLabel(state) {
   if (!state.nextAction) {
     if (state.status === "blocked") {
+      if (state.siteScope?.blockedReason) return state.siteScope.blockedReason;
       return "Evidence retained · resume when browser and repository access match";
     }
     return state.assessmentComplete
@@ -27,6 +28,8 @@ function missionActionLabel(state) {
     submit_runtime_diagnosis: "Agent contributes browser and repository diagnosis",
     stage_site_repair: "Agent prepares a bounded repair draft",
     get_repair_workspace: "Agent continues the reviewed repair workspace",
+    start_site_exploration: "Agent starts the server-issued retained route audits",
+    get_site_exploration: "Agent waits for bounded-site route evidence",
   };
   return labels[state.nextAction.tool] ?? `Next: ${state.nextAction.tool.replaceAll("_", " ")}`;
 }
@@ -50,18 +53,38 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
   const titleId = useId();
   const verification = audit?.report?.verification;
   const replay = verification?.browserReplay;
-  if (verification && replay?.required) {
+  const replays = verification?.browserReplays?.length
+    ? verification.browserReplays
+    : replay?.required ? [replay] : [];
+  const guardrails = verification?.browserGuardrails ?? [];
+  const browserVerificationRequired = replays.length > 0 || guardrails.length > 0;
+  if (verification && browserVerificationRequired) {
+    const verificationChecks = [
+      ...replays,
+      ...guardrails,
+    ];
+    const fallbackState = {
+      status: verificationChecks.every((check) => check.status === "complete")
+        ? "complete"
+        : verificationChecks.some((check) => check.status === "blocked")
+          ? "blocked"
+          : verificationChecks.some((check) => check.status === "in-progress")
+            ? "in-progress"
+            : "not-opened",
+    };
     const replayState = browserReview?.purpose === "verification"
       ? browserReview.state
-      : replay;
+      : fallbackState;
     const replayComplete = replayState?.status === "complete";
     const replayBlocked = replayState?.status === "blocked";
     const statusLabel = replayComplete
       ? verification.status === "inconclusive"
         ? "Fresh comparison recorded · updating proof"
         : verification.status === "resolved"
-        ? "Exact rendered issue passed"
-        : "Exact rendered issue still present"
+          ? "Required rendered checks passed"
+          : verification.status === "regression"
+            ? "A retained browser guardrail regressed"
+            : "Exact rendered issue still present"
       : replayBlocked
         ? "Fresh browser replay blocked"
         : replayState?.status === "in-progress"
@@ -73,12 +96,12 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
           <p className="kicker">
             <Robot size={14} weight="fill" aria-hidden="true" />
             Verification
-            <span>Agent browser replay</span>
+            <span>Agent browser verification</span>
           </p>
           <h2 id={titleId}>{verification.findingTitle}</h2>
           <div className="audit-mission-focus" aria-label="Verification evidence">
-            <span>{replay.baseline?.focusArea ?? "rendered issue"}</span>
-            <span>{replay.baseline?.source?.strategy ?? "retained viewport"}</span>
+            <span>{replay?.baseline?.focusArea ?? guardrails[0]?.focusArea ?? "rendered guardrail"}</span>
+            <span>{replay?.baseline?.source?.strategy ?? guardrails[0]?.viewport ?? "retained viewport"}</span>
           </div>
         </div>
         <div className="audit-mission-status">
@@ -93,15 +116,15 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
           </span>
           <div>
             <strong>{statusLabel}</strong>
-            <small>{replayComplete ? "Verification receipt unlocked" : "Agent owns the exact fresh comparison"}</small>
+            <small>{replayComplete ? "Verification receipt unlocked" : "Agent owns the required fresh browser comparisons"}</small>
           </div>
         </div>
         <p className="audit-mission-authority">
           <ShieldCheck size={17} weight="duotone" aria-hidden="true" />
           <span>
             <strong>Claim lock</strong>
-            Provider measurement and the retained browser observation stay separate. Frontmend issues
-            a resolution claim only after the exact rendered comparison is recorded.
+            Provider measurement and retained browser observations stay separate. Frontmend issues
+            a resolution claim only after every exact replay and browser guardrail is recorded.
           </span>
         </p>
       </section>
@@ -136,6 +159,7 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
         </p>
         <h2 id={titleId}>{focusLabel}</h2>
         <div className="audit-mission-focus" aria-label="Mission focus">
+          <span>{retainedMission.scope === "bounded-site" ? "bounded site" : "page"}</span>
           {state.requestedFocusAreas.length ? state.requestedFocusAreas.map((area) => (
             <span key={area}>{area === "seo" ? "SEO" : area}</span>
           )) : <span>All supported areas</span>}

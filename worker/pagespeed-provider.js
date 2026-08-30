@@ -1,4 +1,5 @@
 import { normalizePublicUrl } from "../src/url-policy.js";
+import { mergeAuditEvidence } from "../src/audit-coverage-contract.js";
 
 const ENDPOINT = "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed";
 const STRATEGIES = ["mobile", "desktop"];
@@ -1106,145 +1107,55 @@ export async function runDocumentAudit({
   }
 }
 
-function mergeChecks(left = {}, right = {}) {
-  return {
-    passed: (left.passed ?? 0) + (right.passed ?? 0),
-    warnings: (left.warnings ?? 0) + (right.warnings ?? 0),
-    failed: (left.failed ?? 0) + (right.failed ?? 0),
-  };
-}
-
-const DOCUMENT_RULE_ALIASES = Object.freeze({
-  "html-lang": "html-has-lang",
-});
-
-function canonicalDocumentRuleId(value) {
-  return DOCUMENT_RULE_ALIASES[value] ?? value;
-}
-
-function supplementalDocumentEvidence(lighthouseReport, documentReport) {
-  const measuredLighthouseRules = new Set(
-    (lighthouseReport.ruleOutcomes ?? [])
-      .filter((outcome) => outcome.source?.provider === "Lighthouse")
-      .map((outcome) => outcome.source.auditId),
-  );
-  const isSupplementalRule = (ruleId) =>
-    !measuredLighthouseRules.has(canonicalDocumentRuleId(ruleId));
-  const ruleOutcomes = (documentReport.ruleOutcomes ?? []).filter((outcome) =>
-    isSupplementalRule(outcome.source?.auditId),
-  );
-  const findings = (documentReport.findings ?? []).filter((finding) =>
-    isSupplementalRule(finding.source?.auditId),
-  );
-  const warningRules = new Set(
-    findings
-      .filter((finding) => finding.severity === "low")
-      .map((finding) => finding.source?.auditId),
-  );
-  const checks = { passed: 0, warnings: 0, failed: 0 };
-  for (const outcome of ruleOutcomes) {
-    if (outcome.status === "passed") checks.passed += 1;
-    else if (outcome.status === "failed" && warningRules.has(outcome.source?.auditId)) {
-      checks.warnings += 1;
-    } else if (outcome.status === "failed") checks.failed += 1;
-  }
-  return {
-    findings,
-    ruleOutcomes,
-    checks,
-    overlappingRulesOmitted:
-      (documentReport.ruleOutcomes?.length ?? 0) - ruleOutcomes.length,
-  };
-}
-
-function mergeHybridEvidence(lighthouse, document) {
-  const severityOrder = { high: 0, medium: 1, low: 2 };
-  const supplement = supplementalDocumentEvidence(lighthouse.report, document.report);
-  const retainedFindings = [
-    ...(lighthouse.report.findings ?? []),
-    ...supplement.findings,
-  ].sort((left, right) => severityOrder[left.severity] - severityOrder[right.severity]);
-  const findings = retainedFindings.slice(0, 10);
-  const findingCount =
-    (lighthouse.report.findingCount ?? lighthouse.report.findings?.length ?? 0) +
-    supplement.findings.length;
-  const unavailable = (lighthouse.report.viewportFailures ?? [])
-    .map((failure) => failure.label.toLowerCase())
-    .join(" and ");
-
-  return {
-    screenshots: lighthouse.screenshots,
-    report: {
-      ...lighthouse.report,
-      completedAt: document.report.completedAt,
-      finalUrl: document.report.finalUrl ?? lighthouse.report.finalUrl,
-      hostname: document.report.hostname ?? lighthouse.report.hostname,
-      viewports: [
-        ...(lighthouse.report.viewports ?? []),
-        ...(document.report.viewports ?? []),
-      ],
-      findingCount,
-      findingsOmitted: Math.max(0, findingCount - findings.length),
-      findings,
-      documentProfile: document.report.documentProfile,
-      ruleOutcomes: [
-        ...(lighthouse.report.ruleOutcomes ?? []),
-        ...supplement.ruleOutcomes,
-      ],
-      checks: mergeChecks(lighthouse.report.checks, supplement.checks),
-      documentSupplement: {
-        evaluatedRuleCount: supplement.ruleOutcomes.length,
-        overlappingRulesOmitted: supplement.overlappingRulesOmitted,
-        caveat:
-          "Fetched-document rules already evaluated by the retained Lighthouse strategy were omitted from hybrid totals. Document evidence does not replace the unavailable viewport.",
-      },
-      engine: {
-        mode: "hybrid-lighthouse-document",
-        provider: "PageSpeed Insights + Frontmend document audit",
-        ruleSetVersion: 1,
-        lighthouseVersion: lighthouse.report.engine.lighthouseVersion,
-        notice: `Retained Lighthouse evidence for ${lighthouse.report.viewportCount} of ${STRATEGIES.length} strategies; ${unavailable} unavailable. Non-duplicative live HTML and response-header rules supplement the report without replacing the missing viewport.`,
-        fallbackReason: "PARTIAL_LIGHTHOUSE",
-      },
-    },
-  };
-}
-
 export async function runFrontmendAudit(options) {
-  try {
-    const lighthouse = await runPageSpeedAudit(options);
-    if (lighthouse.report.engine.mode !== "live-lighthouse-partial") return lighthouse;
-    try {
-      const document = await runDocumentAudit({
-        ...options,
-        fallbackReason: "PARTIAL_LIGHTHOUSE",
-        onProgress: async (state) => {
-          const progress = state.progress < 70 ? 86 : 92;
-          await options.onProgress?.({
-            ...state,
-            phaseLabel: "Retaining partial Lighthouse evidence and inspecting live HTML",
-            progress,
-          });
-        },
-      });
-      return mergeHybridEvidence(lighthouse, document);
-    } catch (error) {
-      if (error?.code === "AUDIT_CANCELLED") throw error;
-      return lighthouse;
-    }
-  } catch (error) {
-    const fallbackCodes = new Set([
-      "PROVIDER_RATE_LIMITED",
-      "PROVIDER_FAILED",
-      "PROVIDER_TIMEOUT",
-      "PROVIDER_INVALID_RESPONSE",
-    ]);
-    if (!fallbackCodes.has(error?.code)) throw error;
-    await options.onProgress?.({
-      phase: "inspect",
-      phaseLabel: "Lighthouse unavailable; switching to live document evidence",
-      progress: 42,
-    });
-    return runDocumentAudit({ ...options, fallbackReason: error.code });
+  let lastProgress = 0;
+  const emitProgress = async (state) => {
+    const progress = Math.max(0, Math.min(99, Math.round(state.progress ?? 0)));
+    if (progress < lastProgress) return;
+    lastProgress = progress;
+    await options.onProgress?.({ ...state, progress });
+  };
+  await emitProgress({
+    phase: "capture",
+    phaseLabel: "Running Lighthouse and live document evidence",
+    progress: 18,
+  });
+  const [lighthouseOutcome, documentOutcome] = await Promise.allSettled([
+    runPageSpeedAudit({
+      ...options,
+      onProgress: async (state) => emitProgress({
+        ...state,
+        phaseLabel: state.phase === "capture"
+          ? "Running mobile and desktop Lighthouse with live document inspection"
+          : "Structuring Lighthouse and live document evidence",
+        progress: state.phase === "capture" ? 22 : 76,
+      }),
+    }),
+    runDocumentAudit({
+      ...options,
+      onProgress: async (state) => emitProgress({
+        ...state,
+        phaseLabel: "Inspecting live HTML, response headers, metadata, and routes",
+        progress: 42,
+      }),
+    }),
+  ]);
+  const lighthouseError = lighthouseOutcome.status === "rejected" ? lighthouseOutcome.reason : null;
+  const documentError = documentOutcome.status === "rejected" ? documentOutcome.reason : null;
+  if (
+    options.signal?.aborted
+    || lighthouseError?.code === "AUDIT_CANCELLED"
+    || documentError?.code === "AUDIT_CANCELLED"
+  ) {
+    throw providerError("AUDIT_CANCELLED", "The audit was cancelled.");
   }
+  const lighthouse = lighthouseOutcome.status === "fulfilled" ? lighthouseOutcome.value : null;
+  const document = documentOutcome.status === "fulfilled" ? documentOutcome.value : null;
+  if (!lighthouse && !document) throw lighthouseError ?? documentError;
+  await emitProgress({
+    phase: "inspect",
+    phaseLabel: "Reconciling independent audit evidence",
+    progress: 88,
+  });
+  return mergeAuditEvidence({ lighthouse, document, lighthouseError, documentError });
 }

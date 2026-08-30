@@ -93,10 +93,12 @@ test("uses the remote job transport and synchronizes active state", async () => 
       url: "https://removemyexif.com/",
       source: "human",
       mission: {
-        schemaVersion: 1,
+        schemaVersion: 2,
         intent: "assess",
         focusAreas: [],
         maxPriorities: 3,
+        scope: "page",
+        routeLimit: 3,
         requestedBy: "human",
         requestedAt: 10,
         repairPreparation: null,
@@ -1507,14 +1509,26 @@ test("validates mission goals before transport and sends only bounded semantic f
   await service.startAudit({
     url: "example.com",
     source: "agent",
-    mission: { intent: "assess", focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+    mission: {
+      intent: "assess",
+      focusAreas: ["accessibility", "seo"],
+      maxPriorities: 2,
+      scope: "page",
+      routeLimit: 3,
+    },
   });
 
   assert.equal(calls.length, 1);
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     url: "https://example.com/",
     source: "agent",
-    mission: { intent: "assess", focusAreas: ["accessibility", "seo"], maxPriorities: 2 },
+    mission: {
+      intent: "assess",
+      focusAreas: ["accessibility", "seo"],
+      maxPriorities: 2,
+      scope: "page",
+      routeLimit: 3,
+    },
   });
   assert.equal(calls[0].init.body.includes("requestedAt"), false);
   assert.equal(calls[0].init.body.includes("prompt"), false);
@@ -1546,10 +1560,12 @@ test("starts a focused human assessment through the same bounded mission transpo
     url: "https://example.com/",
     source: "human",
     mission: {
-      schemaVersion: 1,
+      schemaVersion: 2,
       intent: "assess",
       focusAreas: ["accessibility", "seo", "performance"],
       maxPriorities: 5,
+      scope: "page",
+      routeLimit: 3,
       requestedBy: "human",
       requestedAt: 25,
       repairPreparation: null,
@@ -2071,6 +2087,41 @@ test("HTTP transport posts only finding and source to the repair-intent route", 
   assert.deepEqual(JSON.parse(calls[0].init.body), {
     findingId: "document-description",
     source: "agent",
+  });
+});
+
+test("HTTP transport carries an exact repair package through preparation, candidates, and staging", async () => {
+  const calls = [];
+  const findingIds = ["mobile-errors-in-console", "mobile-color-contrast"];
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: {} });
+    },
+  });
+  await transport.prepareRepair(AUDIT_ID, findingIds[0], "agent", 7, findingIds);
+  await transport.verificationCandidates(AUDIT_ID, findingIds[0], findingIds);
+  await transport.stageRepair(AUDIT_ID, {
+    findingId: findingIds[0],
+    findingIds,
+    source: "agent",
+  }, 8);
+  assert.deepEqual(JSON.parse(calls[0].init.body), {
+    findingId: findingIds[0],
+    findingIds,
+    source: "agent",
+    expectedMissionRevision: 7,
+  });
+  assert.equal(
+    calls[1].url,
+    `https://frontmend.test/api/audits/${AUDIT_ID}/verification-candidates?findingId=mobile-errors-in-console&findingIds=mobile-errors-in-console&findingIds=mobile-color-contrast`,
+  );
+  assert.deepEqual(JSON.parse(calls[2].init.body), {
+    findingId: findingIds[0],
+    findingIds,
+    source: "agent",
+    expectedMissionRevision: 8,
   });
 });
 

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createSiteExplorationInputs,
+  createSiteRouteCandidates,
   createSiteExplorationMission,
   siteExplorationLimits,
   siteExplorationMarkdown,
@@ -71,6 +72,26 @@ test("validates a bounded unique set of authoritative observed routes", () => {
     (error) => error.code === "ROUTE_NOT_OBSERVED",
   );
   assert.equal(siteExplorationLimits.maxRoutes, 3);
+});
+
+test("accepts only deterministic server-issued route candidates for bounded-site missions", () => {
+  const report = rootReport();
+  const candidates = createSiteRouteCandidates(report);
+  assert.equal(candidates.length, 3);
+  const inputs = createSiteExplorationInputs(
+    report,
+    { routeCandidateIds: [candidates[0].id, candidates[2].id] },
+    { requireCandidateIds: true },
+  );
+  assert.deepEqual(inputs.routes.map((route) => route.path), ["/privacy", "/tools"]);
+  assert.throws(
+    () => createSiteExplorationInputs(report, { routeCandidateIds: ["route-deadbeef"] }, { requireCandidateIds: true }),
+    (error) => error.code === "ROUTE_CANDIDATE_INVALID",
+  );
+  assert.throws(
+    () => createSiteExplorationInputs(report, ["/privacy"], { requireCandidateIds: true }),
+    /server-issued routeCandidateIds/,
+  );
 });
 
 test("aggregates recurring rule evidence across completed page audits", () => {

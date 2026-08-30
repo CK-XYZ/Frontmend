@@ -12,6 +12,8 @@ const CAPABILITY_BY_TOOL = Object.freeze({
   record_diagnostic_blocker: "repository",
   get_site_audit_results: "read-results",
   get_assessment_receipt: "read-results",
+  start_site_exploration: "public-url",
+  get_site_exploration: "progress",
   prepare_site_repair: "repair-intent",
   stage_site_repair: "repository",
   revise_site_repair: "repository",
@@ -50,6 +52,8 @@ function completionCriteria(nextAction, browserReview) {
     get_repair_workspace: ["Return the authoritative repair state and next allowed action."],
     start_repair_verification: ["Return a stable verification audit assignment for the reviewed scope."],
     get_verification_receipt: ["Return completed fresh proof with its source boundaries."],
+    start_site_exploration: ["Return one durable exploration assignment for the server-issued retained routes."],
+    get_site_exploration: ["Return terminal bounded-site coverage or its explicit partial-source blocker."],
   };
   return byTool[nextAction?.tool] ?? [];
 }
@@ -63,6 +67,9 @@ function retainedEvidenceSummary({ audit, missionState, browserReview, diagnosti
   }
   if (missionState) {
     summary.push(`${missionState.priorityCount ?? 0} ranked priorities; assessment ${missionState.assessmentComplete ? "complete" : "incomplete"}.`);
+    if (missionState.siteScope?.requested) {
+      summary.push(`Bounded-site coverage ${bounded(missionState.siteScope.status, 40)}: ${missionState.siteScope.pagesComplete ?? 0}/${missionState.siteScope.pagesRequested ?? 0} retained routes complete.`);
+    }
     const relationship = missionState.priorities?.[0]?.relationship;
     if (relationship) summary.push(`Highest retained relationship: ${bounded(relationship, 60)}.`);
   }
@@ -86,13 +93,14 @@ export function createMissionCheckpoint({
   if (!audit?.id) {
     throw new AuditError("AUDIT_NOT_FOUND", "A retained audit is required to create its checkpoint.");
   }
-  const missionState = suppliedMissionState ?? (audit.mission?.schemaVersion === 1
+  const missionState = suppliedMissionState ?? ([1, 2].includes(audit.mission?.schemaVersion)
     ? deriveAuditMissionState({
         report: audit.report,
         mission: audit.mission,
         browserReview,
         diagnosticMissions,
         repairs,
+        explorations,
       })
     : null);
   const nextAction = missionState?.nextAction ?? (audit.status === "complete"

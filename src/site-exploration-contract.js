@@ -8,6 +8,15 @@ const MISSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]
 const TERMINAL_STATUSES = new Set(["complete", "failed", "cancelled"]);
 const SEVERITY_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
 
+function routeCandidateId(auditId, path) {
+  let hash = 2_166_136_261;
+  for (const character of `${auditId}\n${path}`) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return `route-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+}
+
 function boundedText(value, limit) {
   return typeof value === "string" ? value.trim().slice(0, limit) : "";
 }
@@ -19,9 +28,49 @@ function assertMissionId(value) {
   return value;
 }
 
-export function createSiteExplorationInputs(report, paths) {
+export function createSiteRouteCandidates(report) {
+  if (!report?.auditId || typeof report.auditId !== "string") {
+    throw new AuditError("AUDIT_NOT_READY", "Finish the root audit before selecting retained routes.");
+  }
+  const paths = Array.isArray(report.documentProfile?.routes)
+    ? report.documentProfile.routes.slice(0, MAX_ROUTES)
+    : [];
+  return paths.map((path) => ({
+    id: routeCandidateId(report.auditId, path),
+    path,
+    source: "observed-document-route",
+  }));
+}
+
+export function createSiteExplorationInputs(report, selection, options = {}) {
+  const candidates = createSiteRouteCandidates(report);
+  const candidateById = new Map(candidates.map((candidate) => [candidate.id, candidate]));
+  const selectedIds = Array.isArray(selection?.routeCandidateIds)
+    ? selection.routeCandidateIds
+    : null;
+  const legacyPaths = Array.isArray(selection) ? selection : selection?.paths;
+  if (options.requireCandidateIds && !selectedIds) {
+    throw new AuditError(
+      "INVALID_INPUT",
+      "bounded-site missions require server-issued routeCandidateIds.",
+    );
+  }
+  const paths = selectedIds
+    ? selectedIds.map((id) => {
+        if (typeof id !== "string" || !candidateById.has(id)) {
+          throw new AuditError(
+            "ROUTE_CANDIDATE_INVALID",
+            "Choose only server-issued route candidates from this completed audit.",
+          );
+        }
+        return candidateById.get(id).path;
+      })
+    : legacyPaths;
   if (!Array.isArray(paths)) {
-    throw new AuditError("INVALID_INPUT", "paths must be an array of observed same-site routes.");
+    throw new AuditError(
+      "INVALID_INPUT",
+      "routeCandidateIds must be an array of server-issued retained routes.",
+    );
   }
   if (paths.length < 1 || paths.length > MAX_ROUTES) {
     throw new AuditError(
@@ -40,7 +89,9 @@ export function createSiteExplorationInputs(report, paths) {
   });
   return {
     rootAuditId: report.auditId,
+    routeCandidateIds: paths.map((path) => routeCandidateId(report.auditId, path)),
     routes,
+    routeCandidates: candidates,
     caveat:
       "Each page is a separate public audit. The aggregate covers only the selected observed routes and does not represent a complete crawl.",
   };
@@ -134,15 +185,26 @@ function aggregateIssues(mission, auditsById) {
         category,
         title,
         severity,
+        focusAreas: [],
+        suggestedRepair: "Diagnose the retained cross-page evidence before repair.",
         occurrenceCount: 0,
         occurrences: [],
       };
       if (SEVERITY_RANK[severity] > SEVERITY_RANK[current.severity]) current.severity = severity;
+      current.focusAreas = [...new Set([
+        ...current.focusAreas,
+        ...(Array.isArray(finding?.focusAreas) ? finding.focusAreas : []),
+      ])].slice(0, 5);
+      if (finding?.suggestedRepair) {
+        current.suggestedRepair = boundedText(finding.suggestedRepair, 500);
+      }
       current.occurrenceCount += 1;
       if (current.occurrences.length < MAX_OCCURRENCES) {
         current.occurrences.push({
           auditId: child.auditId,
           path: child.path,
+          findingId: boundedText(finding?.id, 160),
+          strategy: boundedText(finding?.source?.strategy, 40),
           evidence: boundedText(finding?.evidence ?? finding?.summary, 300),
         });
       }

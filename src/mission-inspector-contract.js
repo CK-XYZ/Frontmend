@@ -80,17 +80,26 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
   }
 
   const replay = audit.report?.verification?.browserReplay;
-  if (replay?.required && replay.status !== "complete") {
+  const replays = audit.report?.verification?.browserReplays?.length
+    ? audit.report.verification.browserReplays
+    : replay?.required ? [replay] : [];
+  const browserGuardrails = audit.report?.verification?.browserGuardrails ?? [];
+  const browserVerificationPending = replays.some((item) => item.status !== "complete")
+    || browserGuardrails.some((guardrail) => guardrail.status !== "complete");
+  if (browserVerificationPending) {
     const opened = Boolean(browserReview);
+    const exactReplayRequired = replays.length > 0;
     return {
       stage: "replay",
       actor: "Browser-capable agent",
-      title: opened ? "Replay the exact retained browser issue" : "Open the exact verification replay",
-      summary: "Fresh provider measurement cannot resolve a browser-observed finding. The retained selector, viewport, and symptom must be compared directly after deployment.",
-      why: "The reviewed repair reached post-deployment verification and still lacks the required direct browser comparison.",
-      mustReturn: checkpointCriteria.length ? checkpointCriteria : ["passed, issue, or an honest blocker", "Bounded observations for the exact retained symptom"],
+      title: opened ? "Complete the retained browser comparisons" : "Open the browser verification review",
+      summary: exactReplayRequired
+        ? "Fresh provider measurement cannot resolve the retained browser issue or prove that important rendered behaviours still hold. Each exact replay and guardrail must be compared directly after deployment."
+        : "Fresh provider measurement cannot prove that retained journeys and reflow behaviours still hold. Each browser guardrail must be repeated directly after deployment.",
+      why: "The reviewed repair reached post-deployment verification and still lacks one or more required direct browser comparisons.",
+      mustReturn: checkpointCriteria.length ? checkpointCriteria : ["passed, issue, or an honest blocker for every retained check", "Bounded observations for each exact replay or guardrail"],
       unlocks: ["A resolved, still-present, or inconclusive verification outcome", "A portable verification receipt when proof is complete"],
-      requiredCapability: "Rendered-browser replay",
+      requiredCapability: "Rendered-browser verification",
       action: checkpointAction ?? {
         tool: opened ? "record_browser_review_check" : "open_browser_review",
         input: opened ? { reviewId: browserReview.id, checkId: browserReview.state?.nextCheck?.id } : {},

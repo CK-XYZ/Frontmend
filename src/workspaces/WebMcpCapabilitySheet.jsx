@@ -24,6 +24,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
         diagnosticMissions: auditService.getDiagnosticMissions(audit.id),
         repairs,
         browserReview,
+        explorations: auditService.getSiteExplorations(audit.id),
       })
     : null;
   const inspector = createMissionInspector({

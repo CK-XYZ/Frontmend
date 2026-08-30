@@ -11,7 +11,7 @@ const workbench = repairFile.slice(
 
 function scopeEffectSource() {
   const match = workbench.match(
-    /useEffect\(\(\) => \{[\s\S]*?getVerificationCandidates\(auditId, finding\.id\)[\s\S]*?\}, \[auditId, diagnosticReady, finding\?\.id, repair, repairPrepared, scopeRefreshRevision\]\);/,
+    /useEffect\(\(\) => \{[\s\S]*?getVerificationCandidates\(auditId, finding\.id, packageFindingIds\)[\s\S]*?\}, \[auditId, diagnosticReady, finding\?\.id, packageFindingIds\.join\("\|"\), repair, repairPrepared, scopeRefreshRevision\]\);/,
   );
   assert.ok(match, "expected the verification-scope read effect");
   return match[0];

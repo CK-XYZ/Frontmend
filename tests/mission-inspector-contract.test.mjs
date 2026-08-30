@@ -180,6 +180,32 @@ test("projects exact browser replay ahead of ordinary mission state", () => {
   assert.match(value.questions.whatMustReturn.join(" "), /honest blocker/i);
 });
 
+test("projects browser-only regression guardrails as required verification", () => {
+  const value = inspector({
+    audit: {
+      ...completeAudit,
+      report: {
+        ...completeAudit.report,
+        verification: {
+          status: "inconclusive",
+          browserGuardrails: [{
+            checkId: "responsive-reflow",
+            label: "Responsive reflow",
+            status: "not-opened",
+            focusArea: "accessibility",
+            viewport: "mobile",
+          }],
+        },
+      },
+    },
+    missionState: { assessmentComplete: true, browserReview: { required: false, status: "not-required" } },
+  });
+  assert.equal(value.stage, "replay");
+  assert.equal(value.questions.whatHappensNow.action.tool, "open_browser_review");
+  assert.equal(value.questions.whatHappensNow.requiredCapability, "Rendered-browser verification");
+  assert.match(value.questions.whatHappensNow.summary, /journeys and reflow behaviours/i);
+});
+
 test("uses checkpoint action and criteria while retaining only the registered tool subset", () => {
   const value = inspector({
     checkpoint: {

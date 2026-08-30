@@ -101,6 +101,13 @@ function RepairImpactMatrix({ repair }) {
   const routeCount = new Set(rows.map((row) => row.targetId)).size;
   const status = aggregate?.status ?? (impact.status === "reviewed" ? "reviewed" : "awaiting review");
   const selectedTargetIds = new Set(impact.selectedTargetIds ?? []);
+  const proofLabels = {
+    "provider-rule": "Exact provider rule",
+    "provider-guardrail": "Provider guardrail",
+    "new-findings-guardrail": "New high/medium findings",
+    "browser-replay": "Browser replay",
+    "browser-guardrail": "Browser guardrail",
+  };
   return (
     <section className="repair-impact-matrix" aria-labelledby={`repair-impact-${repair.id}`}>
       <header>
@@ -123,7 +130,7 @@ function RepairImpactMatrix({ repair }) {
         {rows.map((row) => (
           <div className="repair-impact-row" role="row" key={row.id}>
             <code role="cell">{row.path}</code>
-            <span role="cell">{row.proofKind === "browser-replay" ? "Browser replay" : "Provider rule"}</span>
+            <span role="cell">{proofLabels[row.proofKind] ?? "Bounded evidence"}</span>
             <span role="cell">{row.strategy}</span>
             <strong role="cell" data-status={row.status}>{row.status}</strong>
           </div>
@@ -148,7 +155,7 @@ function RepairImpactMatrix({ repair }) {
         </details>
       ) : null}
       <small>
-        Scope is frozen at approval. Missing, blocked, or incomparable evidence stays inconclusive; deployment remains person-owned.
+        Scope is frozen at approval. A failed exact row stays present; a failed guardrail is a regression; missing, blocked, or incomparable evidence stays inconclusive. Deployment remains person-owned.
       </small>
     </section>
   );
@@ -157,6 +164,7 @@ function RepairImpactMatrix({ repair }) {
 function RepairWorkbench({
   auditId,
   finding,
+  findings = [],
   repair,
   repairPrepared,
   diagnosticReady,
@@ -173,6 +181,8 @@ function RepairWorkbench({
   const [verificationScopeStatus, setVerificationScopeStatus] = useState("idle");
   const [verificationScopeError, setVerificationScopeError] = useState("");
   const [scopeRefreshRevision, setScopeRefreshRevision] = useState(0);
+  const packageFindings = findings.length ? findings : finding ? [finding] : [];
+  const packageFindingIds = packageFindings.map((item) => item.id);
 
   useEffect(() => {
     setReviewConfirmed(false);
@@ -194,7 +204,7 @@ function RepairWorkbench({
     setVerificationTargetIds([]);
     setVerificationScopeStatus("loading");
     setVerificationScopeError("");
-    void auditService.getVerificationCandidates(auditId, finding.id)
+    void auditService.getVerificationCandidates(auditId, finding.id, packageFindingIds)
       .then((scope) => {
         if (!active) return;
         setVerificationScope(scope);
@@ -220,7 +230,7 @@ function RepairWorkbench({
       active = false;
       window.clearTimeout(retryTimer);
     };
-  }, [auditId, diagnosticReady, finding?.id, repair, repairPrepared, scopeRefreshRevision]);
+  }, [auditId, diagnosticReady, finding?.id, packageFindingIds.join("|"), repair, repairPrepared, scopeRefreshRevision]);
 
   if (!finding) return null;
 
@@ -249,6 +259,7 @@ function RepairWorkbench({
       onRepairChange(
         await auditService.stageRepair(auditId, {
           findingId: finding.id,
+          findingIds: packageFindingIds,
           source: "human",
           verificationTargetIds,
         }),
@@ -440,6 +451,27 @@ function RepairWorkbench({
           <span className={`repair-risk risk-${repair.risk}`}>{repair.risk} risk</span>
         </div>
       </div>
+      {(repair.findingPackage?.items?.length ?? repair.findingIds?.length ?? 1) > 1 ? (
+        <section className="repair-package-summary" aria-labelledby={`repair-package-${repair.id}`}>
+          <div>
+            <p className="kicker">Cohesive repair package</p>
+            <strong id={`repair-package-${repair.id}`}>{repair.findingIds.length} frozen findings · one reviewed change</strong>
+          </div>
+          <ol>
+            {(repair.findingPackage?.items ?? []).map((item, index) => (
+              <li key={item.findingId}>
+                <span>{index + 1}</span>
+                <div>
+                  <strong>{item.title}</strong>
+                  <small>{item.category} · {item.source?.auditId ?? item.findingId}</small>
+                </div>
+                <em>{index === 0 ? "Primary" : item.diagnosticMission ? "Diagnosed" : "Retained"}</em>
+              </li>
+            ))}
+          </ol>
+          <small>Package membership is immutable. One approval covers this proposal only; deployment and every verification row remain separate.</small>
+        </section>
+      ) : null}
       <RuleScopeReceipt
         scope={repair.findingScope}
         fallbackSource={repair.findingSource}

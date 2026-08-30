@@ -332,7 +332,7 @@ test("propagates caller cancellation without falling back to another provider", 
     () => operation,
     (error) => error.code === "AUDIT_CANCELLED" && error.recoverable === true,
   );
-  assert.equal(calls, 2);
+  assert.equal(calls, 3);
 });
 
 test("falls back to bounded live document evidence when Lighthouse is rate limited", async () => {
@@ -429,7 +429,7 @@ test("retains one successful Lighthouse viewport and supplements it with documen
   assert.deepEqual(output.report.documentSupplement, {
     evaluatedRuleCount: 9,
     overlappingRulesOmitted: 1,
-    caveat: "Fetched-document rules already evaluated by the retained Lighthouse strategy were omitted from hybrid totals. Document evidence does not replace the unavailable viewport.",
+    caveat: "Fetched-document rules already evaluated by retained Lighthouse evidence were omitted from combined totals. Document evidence does not replace viewport or rendered-browser evidence.",
   });
   assert.deepEqual(output.report.checks, { passed: 8, warnings: 1, failed: 3 });
   assert.equal(output.report.findingCount, 4);
@@ -469,6 +469,55 @@ test("returns partial Lighthouse evidence when the document supplement also fail
   assert.equal(output.report.viewportFailures[0].id, "desktop");
   assert.equal(output.report.viewportFailures[0].code, "PROVIDER_FAILED");
   assert.equal("documentProfile" in output.report, false);
+  assert.equal(output.report.coverage.level, "viewport-only");
+  assert.equal(output.report.coverage.sources.document.status, "unavailable");
+  assert.equal(output.report.sourceFailures[0].source, "document");
+});
+
+test("combines full Lighthouse and live document evidence for every successful audit", async () => {
+  const calls = [];
+  const output = await runFrontmendAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    now: () => 1_787_766_000_000,
+    fetchImpl: async (input) => {
+      const requestUrl = new URL(input);
+      if (requestUrl.hostname === "pagespeedonline.googleapis.com") {
+        const strategy = requestUrl.searchParams.get("strategy");
+        calls.push(strategy);
+        return Response.json(lighthouseFixture(strategy));
+      }
+      calls.push("document");
+      return new Response(
+        '<!doctype html><html lang="en"><head><title>Remove My EXIF</title><meta name="description" content="Remove image metadata privately."><meta name="viewport" content="width=device-width"></head><body><main><h1>Remove metadata</h1><a href="/privacy">Privacy</a></main></body></html>',
+        {
+          status: 200,
+          headers: {
+            "content-type": "text/html; charset=utf-8",
+            "content-security-policy": "default-src 'self'",
+            "x-content-type-options": "nosniff",
+          },
+        },
+      );
+    },
+  });
+
+  assert.deepEqual(calls.sort(), ["desktop", "document", "mobile"]);
+  assert.equal(output.report.engine.mode, "live-lighthouse-document");
+  assert.equal(output.report.engine.provider, "PageSpeed Insights + Frontmend document audit");
+  assert.equal(output.report.viewportCount, 2);
+  assert.deepEqual(output.report.viewports.map((viewport) => viewport.id), ["mobile", "desktop", "document"]);
+  assert.equal(output.report.documentProfile.type, "live-document-profile");
+  assert.deepEqual(output.report.documentProfile.routes, ["/privacy"]);
+  assert.equal(output.report.coverage.level, "page-multi-source");
+  assert.deepEqual(output.report.coverage.sources.lighthouse.measuredStrategies, ["mobile", "desktop"]);
+  assert.equal(output.report.coverage.sources.document.routeCandidateCount, 1);
+  assert.deepEqual(output.report.sourceFailures, []);
+  assert.equal(output.report.documentSupplement.evaluatedRuleCount > 0, true);
+  assert.equal(
+    output.report.ruleOutcomes.filter((outcome) => outcome.source.auditId === "color-contrast").length,
+    2,
+  );
 });
 
 test("builds a bounded static CSP resource inventory without claiming runtime coverage", async () => {

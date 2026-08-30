@@ -2,9 +2,11 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import {
   auditMissionSignature,
+  auditMissionSnapshot,
   assessmentFindings,
   createAuditMission,
   deriveAuditMissionState,
+  normalizeRepairFindingIds,
   prepareRepairIntent,
 } from "../src/audit-mission-contract.js";
 import { createRelatedAuditInput } from "../src/route-contract.js";
@@ -58,8 +60,9 @@ import {
 import {
   aggregateRepairVerification,
   assignRepairVerificationJobs,
+  browserReplaysForVerificationRows,
   createLegacyRepairVerificationImpact,
-  createRepairVerificationImpact,
+  createRepairPackageVerificationImpact,
   createRepairVerificationRun,
   repairVerificationReceiptMarkdown,
   reviewRepairVerificationImpact,
@@ -226,13 +229,14 @@ async function auditJobCheckpoint(ctx, state) {
     ctx.storage.get("browserReview"),
     ctx.storage.get("explorations"),
   ]);
-  const missionState = state.mission?.schemaVersion === 1
+  const missionState = [1, 2].includes(state.mission?.schemaVersion)
     ? deriveAuditMissionState({
         report: state.report,
         mission: state.mission,
         diagnosticMissions: diagnosticMissions ?? [],
         repairs: repairs ?? [],
         browserReview: browserReview ?? null,
+        explorations: explorations ?? [],
       })
     : null;
   return createMissionCheckpoint({
@@ -338,19 +342,37 @@ async function aggregateMission(env, mission) {
   return siteExplorationSnapshot(mission, audits.filter(Boolean));
 }
 
+async function persistExplorationSnapshot(rootJob, mission, snapshot) {
+  if (JSON.stringify(mission.currentSnapshot ?? null) === JSON.stringify(snapshot)) return;
+  const retained = { ...mission, currentSnapshot: snapshot };
+  delete retained.missionCheckpoint;
+  await rootJob.fetch(
+    `https://frontmend.internal/explorations/${encodeURIComponent(mission.id)}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(retained),
+    },
+  );
+}
+
 async function startSiteExploration(request, env, rootAuditId) {
   assertSameOrigin(request);
   const input = await readJsonBody(request);
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new AuditError("INVALID_INPUT", "The request body must be an object.");
   }
-  const extra = Object.keys(input).find((key) => !["paths", "source", "expectedMissionRevision"].includes(key));
+  const extra = Object.keys(input).find((key) => !["paths", "routeCandidateIds", "source", "expectedMissionRevision"].includes(key));
   if (extra) throw new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`);
   const rootJob = jobFromId(env, rootAuditId);
   const inputResponse = await rootJob.fetch("https://frontmend.internal/exploration-inputs", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ paths: input.paths, expectedMissionRevision: input.expectedMissionRevision }),
+    body: JSON.stringify({
+      paths: input.paths,
+      routeCandidateIds: input.routeCandidateIds,
+      expectedMissionRevision: input.expectedMissionRevision,
+    }),
   });
   const inputPayload = await inputResponse.json();
   if (!inputResponse.ok || inputPayload?.ok === false) {
@@ -419,7 +441,10 @@ async function startSiteExploration(request, env, rootAuditId) {
     mission,
     children.map((child) => child.audit).filter(Boolean),
   );
-  return json({ ok: true, data: snapshot }, {
+  return json({
+    ok: true,
+    data: { ...snapshot, missionCheckpoint: inputPayload.data.missionCheckpoint },
+  }, {
     status: 202,
     headers: {
       location: `/api/audits/${encodeURIComponent(rootAuditId)}/explorations/${encodeURIComponent(missionId)}`,
@@ -433,12 +458,26 @@ async function getSiteExplorations(env, rootAuditId, missionId, report = false) 
     return json(stored.payload, { status: stored.response.status });
   }
   if (!missionId) {
-    const explorations = await Promise.all(
-      (stored.payload.data.explorations ?? []).map((mission) => aggregateMission(env, mission)),
-    );
-    return json({ ok: true, data: { rootAuditId, explorations } });
+    const retainedMissions = stored.payload.data.explorations ?? [];
+    const explorations = await Promise.all(retainedMissions.map((mission) => aggregateMission(env, mission)));
+    await Promise.all(retainedMissions.map((mission, index) =>
+      persistExplorationSnapshot(stored.rootJob, mission, explorations[index])
+    ));
+    const checkpointResponse = await stored.rootJob.fetch("https://frontmend.internal/checkpoint");
+    const checkpointPayload = await checkpointResponse.json();
+    return json({
+      ok: true,
+      data: {
+        rootAuditId,
+        explorations,
+        missionCheckpoint: checkpointPayload.data ?? stored.payload.data.missionCheckpoint,
+      },
+    });
   }
   const snapshot = await aggregateMission(env, stored.payload.data);
+  await persistExplorationSnapshot(stored.rootJob, stored.payload.data, snapshot);
+  const checkpointResponse = await stored.rootJob.fetch("https://frontmend.internal/checkpoint");
+  const checkpointPayload = await checkpointResponse.json();
   if (report) {
     if (!["complete", "partial", "failed"].includes(snapshot.status)) {
       return errorResponse(
@@ -454,7 +493,10 @@ async function getSiteExplorations(env, rootAuditId, missionId, report = false) 
       },
     });
   }
-  return json({ ok: true, data: snapshot });
+  return json({
+    ok: true,
+    data: { ...snapshot, missionCheckpoint: checkpointPayload.data ?? stored.payload.data.missionCheckpoint },
+  });
 }
 
 async function startRelatedAudit(request, env, baselineAuditId) {
@@ -614,6 +656,11 @@ async function startRepairVerification(request, env, baselineAuditId, repairId) 
     };
     const verification = {
       ...createVerificationContext(target.baselineReport, scopedRepair),
+      browserReplay: browserReplaysForVerificationRows(target.rows)[0] ?? null,
+      browserReplays: browserReplaysForVerificationRows(target.rows),
+      browserGuardrails: target.rows
+        .filter((row) => row.proofKind === "browser-guardrail")
+        .map((row) => ({ ...row.baseline })),
       aggregateMatrix: {
         schemaVersion: 1,
         runId: run.id,
@@ -791,8 +838,11 @@ async function routeApi(request, env, url) {
     }
     const job = jobFromId(env, verificationCandidateMatch[1]);
     const findingId = url.searchParams.get("findingId") ?? "";
+    const findingIds = url.searchParams.getAll("findingIds");
+    const params = new URLSearchParams({ findingId });
+    for (const id of findingIds) params.append("findingIds", id);
     const response = await job.fetch(
-      `https://frontmend.internal/verification-candidates?findingId=${encodeURIComponent(findingId)}`,
+      `https://frontmend.internal/verification-candidates?${params}`,
     );
     return new Response(response.body, response);
   }
@@ -1086,23 +1136,27 @@ export class FrontmendAuditJob {
       if (!input || typeof input !== "object" || Array.isArray(input)) {
         return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
       }
-      const extra = Object.keys(input).find((key) => !["findingId", "source", "expectedMissionRevision"].includes(key));
+      const extra = Object.keys(input).find((key) => !["findingId", "findingIds", "source", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown mission field: ${extra}.`));
       if (input.source !== "human" && input.source !== "agent") {
         return errorResponse(new AuditError("INVALID_INPUT", "source must be human or agent."));
       }
       const browserReview = await this.ctx.storage.get("browserReview");
-      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input.findingId);
-      if (!finding) {
-        return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
-      }
       try {
-        const currentMission = state.mission ?? createAuditMission(
-          {},
-          state.source === "agent" ? "agent" : "human",
-          Number.isInteger(state.startedAt) ? state.startedAt : Date.now(),
-        );
-        if (currentMission.repairPreparation?.findingId === finding.id) {
+        const requestedFindingIds = normalizeRepairFindingIds(input.findingId, input.findingIds);
+        const retainedFindings = assessmentFindings(state.report, browserReview);
+        const findings = requestedFindingIds.map((id) => retainedFindings.find((item) => item.id === id));
+        if (findings.some((finding) => !finding)) {
+          return errorResponse(new AuditError("FINDING_NOT_FOUND", "Every repair-package finding must belong to this completed audit."));
+        }
+        const currentMission = state.mission
+          ? auditMissionSnapshot(state.mission)
+          : createAuditMission(
+              {},
+              state.source === "agent" ? "agent" : "human",
+              Number.isInteger(state.startedAt) ? state.startedAt : Date.now(),
+            );
+        if (JSON.stringify(currentMission.repairPreparation?.findingIds ?? []) === JSON.stringify(requestedFindingIds)) {
           const missionCheckpoint = await auditJobCheckpoint(this.ctx, state);
           return json({
             ok: true,
@@ -1115,13 +1169,14 @@ export class FrontmendAuditJob {
                 diagnosticMissions: (await this.ctx.storage.get("diagnosticMissions")) ?? [],
                 repairs: (await this.ctx.storage.get("repairs")) ?? [],
                 browserReview,
+                explorations: (await this.ctx.storage.get("explorations")) ?? [],
               }),
               missionCheckpoint,
             },
           });
         }
         await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
-        const mission = prepareRepairIntent(currentMission, finding.id, input.source);
+        const mission = prepareRepairIntent(currentMission, requestedFindingIds, input.source);
         const updated = await advanceJobRevision(this.ctx, state, { mission });
         const [diagnosticMissions, repairs, retainedBrowserReview] = await Promise.all([
           this.ctx.storage.get("diagnosticMissions"),
@@ -1140,6 +1195,7 @@ export class FrontmendAuditJob {
               diagnosticMissions: diagnosticMissions ?? [],
               repairs: repairs ?? [],
               browserReview: retainedBrowserReview ?? null,
+              explorations: (await this.ctx.storage.get("explorations")) ?? [],
             }),
             missionCheckpoint,
           },
@@ -1173,15 +1229,26 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before reading verification candidates."));
       }
       const findingId = url.searchParams.get("findingId");
+      let requestedFindingIds;
+      try {
+        const queryFindingIds = url.searchParams.getAll("findingIds");
+        requestedFindingIds = normalizeRepairFindingIds(findingId, queryFindingIds.length ? queryFindingIds : undefined);
+      } catch (error) {
+        return errorResponse(error);
+      }
       const browserReview = await this.ctx.storage.get("browserReview");
-      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === findingId);
-      if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
+      const retainedFindings = assessmentFindings(state.report, browserReview);
+      const findings = requestedFindingIds.map((id) => retainedFindings.find((item) => item.id === id));
+      if (findings.some((finding) => !finding)) {
+        return errorResponse(new AuditError("FINDING_NOT_FOUND", "Every repair-package finding must belong to this completed audit."));
+      }
       const previewRepair = createRepairDraft({
         repairId: `candidate-${state.id}`,
         auditId: state.id,
-        finding,
+        finding: findings[0],
+        findings,
         report: state.report,
-        input: { findingId: finding.id },
+        input: { findingId: requestedFindingIds[0], findingIds: requestedFindingIds },
         source: "human",
       });
       const impact = await this.verificationImpactForRepair(state, previewRepair, []);
@@ -1209,11 +1276,15 @@ export class FrontmendAuditJob {
       if (!input || typeof input !== "object" || Array.isArray(input)) {
         return errorResponse(new AuditError("INVALID_INPUT", "The request body must be an object."));
       }
-      const extra = Object.keys(input).find((key) => !["paths", "expectedMissionRevision"].includes(key));
+      const extra = Object.keys(input).find((key) => !["paths", "routeCandidateIds", "expectedMissionRevision"].includes(key));
       if (extra) return errorResponse(new AuditError("INVALID_INPUT", `Unknown field: ${extra}.`));
       try {
         await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
-        const data = createSiteExplorationInputs(state.report, input.paths);
+        const data = createSiteExplorationInputs(
+          state.report,
+          { paths: input.paths, routeCandidateIds: input.routeCandidateIds },
+          { requireCandidateIds: state.mission?.scope === "bounded-site" },
+        );
         const updated = await advanceJobRevision(this.ctx, state);
         return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, data) });
       } catch (error) {
@@ -1249,12 +1320,19 @@ export class FrontmendAuditJob {
         if (mission?.id !== missionId || mission?.rootAuditId !== state.id) {
           return errorResponse(new AuditError("INVALID_INPUT", "The exploration does not match this root audit."));
         }
+        const previous = explorations.find((item) => item.id === missionId);
         const retained = [
           ...explorations.filter((item) => item.id !== missionId),
           mission,
         ].slice(-10);
         await this.ctx.storage.put("explorations", retained);
-        return json({ ok: true, data: mission }, { status: 201 });
+        const snapshotChanged = previous
+          && JSON.stringify(previous.currentSnapshot ?? null) !== JSON.stringify(mission.currentSnapshot ?? null);
+        const retainedState = snapshotChanged ? await advanceJobRevision(this.ctx, state) : state;
+        return json({
+          ok: true,
+          data: await checkpointedJobData(this.ctx, retainedState, mission),
+        }, { status: previous ? 200 : 201 });
       }
       return errorResponse(
         new AuditError("METHOD_NOT_ALLOWED", "That site exploration operation is not supported."),
@@ -1346,10 +1424,11 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
       }
       try {
-        const [diagnosticMissions, browserReview, repairs] = await Promise.all([
+        const [diagnosticMissions, browserReview, repairs, explorations] = await Promise.all([
           this.ctx.storage.get("diagnosticMissions"),
           this.ctx.storage.get("browserReview"),
           this.ctx.storage.get("repairs"),
+          this.ctx.storage.get("explorations"),
         ]);
         const receipt = createAssessmentReceipt({
           report: state.report,
@@ -1357,6 +1436,7 @@ export class FrontmendAuditJob {
           diagnosticMissions,
           browserReview: browserReview ?? null,
           repairs: repairs ?? [],
+          explorations: explorations ?? [],
         });
         return new Response(assessmentReceiptMarkdown(receipt), {
           headers: {
@@ -1428,14 +1508,27 @@ export class FrontmendAuditJob {
   }
 
   async verificationImpactForRepair(state, repair, verificationTargetIds) {
-    const impact = createRepairVerificationImpact({
+    const packageItems = repair.findingPackage?.items?.length
+      ? repair.findingPackage.items.map((item) => ({
+          findingId: item.findingId,
+          findingSource: item.source,
+          findingScope: item.scope,
+          findingEvidence: item.evidence,
+          focusAreas: item.scope?.focusAreas ?? [],
+        }))
+      : [{
+          findingId: repair.findingId,
+          findingSource: repair.findingSource,
+          findingScope: repair.findingScope,
+          findingEvidence: repair.findingEvidence,
+          focusAreas: repair.findingScope?.focusAreas ?? [],
+        }];
+    const impact = createRepairPackageVerificationImpact({
       repairId: repair.id,
       repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
-      findingId: repair.findingId,
       rootReport: state.report,
-      findingSource: repair.findingSource,
-      findingScope: repair.findingScope,
-      findingEvidence: repair.findingEvidence,
+      findings: packageItems,
+      browserReview: (await this.ctx.storage.get("browserReview")) ?? null,
       auditedReports: await this.retainedExplorationReports(),
       verificationTargetIds,
     });
@@ -1509,16 +1602,34 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("INVALID_REPAIR", "The repair proposal must be an object."));
       }
       const browserReview = await this.ctx.storage.get("browserReview");
-      const finding = assessmentFindings(state.report, browserReview).find((item) => item.id === input.findingId);
-      if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
-      const existing = repairs.find((repair) => repair.findingId === finding.id);
+      let requestedFindingIds;
+      try {
+        requestedFindingIds = normalizeRepairFindingIds(input.findingId, input.findingIds);
+      } catch (error) {
+        return errorResponse(error);
+      }
+      const retainedFindings = assessmentFindings(state.report, browserReview);
+      const findings = requestedFindingIds.map((id) => retainedFindings.find((item) => item.id === id));
+      if (findings.some((finding) => !finding)) {
+        return errorResponse(new AuditError("FINDING_NOT_FOUND", "Every repair-package finding must belong to this completed audit."));
+      }
+      const existing = repairs.find((repair) => JSON.stringify(repair.findingIds ?? [repair.findingId]) === JSON.stringify(requestedFindingIds));
       if (existing) {
         return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(existing, state)) });
       }
-      if (state.mission?.repairPreparation?.findingId !== finding.id) {
+      if (repairs.some((repair) => (repair.findingIds ?? [repair.findingId]).some((id) => requestedFindingIds.includes(id)))) {
+        return errorResponse(new AuditError(
+          "REPAIR_PACKAGE_CONFLICT",
+          "A retained finding already belongs to a different repair package.",
+        ));
+      }
+      const preparedFindingIds = state.mission
+        ? auditMissionSnapshot(state.mission).repairPreparation?.findingIds ?? []
+        : [];
+      if (JSON.stringify(preparedFindingIds) !== JSON.stringify(requestedFindingIds)) {
         return errorResponse(new AuditError(
           "REPAIR_INTENT_REQUIRED",
-          "Record explicit repair intent for this finding before staging a repair draft.",
+          "Record explicit repair intent for this exact frozen finding package before staging a repair draft.",
         ));
       }
       if (repairs.length >= 10) {
@@ -1526,31 +1637,37 @@ export class FrontmendAuditJob {
       }
       const { source, expectedMissionRevision, verificationTargetIds, ...proposal } = input;
       await assertJobRevision(this.ctx, state, expectedMissionRevision);
-      let diagnosticMission = null;
       const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
-      const priority = state.mission
+      const priorities = state.mission
         ? deriveAuditMissionState({
             report: state.report,
             mission: state.mission,
             diagnosticMissions: missions,
             repairs,
             browserReview,
-          }).priorities.find((item) => item.findingId === finding.id)
-        : null;
-      if (source === "agent" && (findingRequiresDiagnosticMission(finding) || priority?.diagnosticMissionRequired)) {
-        diagnosticMission = missions.find((mission) => mission.findingId === finding.id) ?? null;
-        if (!diagnosticMission || diagnosticMission.state?.state !== "ready-for-repair") {
+            explorations: (await this.ctx.storage.get("explorations")) ?? [],
+          }).priorities
+        : [];
+      const packageDiagnosticMissions = [];
+      for (const finding of findings) {
+        const priority = priorities.find((item) => item.findingId === finding.id);
+        const diagnosticRequired = findingRequiresDiagnosticMission(finding) || priority?.diagnosticMissionRequired;
+        const diagnosticMission = missions.find((mission) => mission.findingId === finding.id) ?? null;
+        if (diagnosticRequired && (source === "agent" || findings.length > 1) && diagnosticMission?.state?.state !== "ready-for-repair") {
           return errorResponse(new AuditError(
             "DIAGNOSTIC_MISSION_REQUIRED",
-            "Open this finding's diagnostic mission and submit runtime plus repository evidence before staging an agent repair.",
+            "Every diagnosis-required finding in this package must have repair-ready runtime and repository evidence before staging.",
           ));
         }
+        if (diagnosticMission?.state?.state === "ready-for-repair") packageDiagnosticMissions.push(diagnosticMissionForRepair(diagnosticMission));
       }
       const repairId = crypto.randomUUID();
       let repair = createRepairDraft({
         repairId,
         auditId: state.id,
-        finding,
+        finding: findings[0],
+        findings,
+        diagnosticMissions: packageDiagnosticMissions,
         report: state.report,
         input: proposal,
         source,
@@ -1563,7 +1680,6 @@ export class FrontmendAuditJob {
           verificationTargetIds ?? [],
         ),
       };
-      if (diagnosticMission) repair = { ...repair, diagnosticMission: diagnosticMissionForRepair(diagnosticMission) };
       const policyResult = applyRepairPolicy(repair, repairPolicy);
       repair = policyResult.repair;
       repairPolicy = policyResult.policy;
@@ -1813,6 +1929,7 @@ export class FrontmendAuditJob {
               diagnosticMissions: missions,
               repairs,
               browserReview,
+              explorations: (await this.ctx.storage.get("explorations")) ?? [],
             }).priorities.find((item) => item.findingId === finding.id)
           : null;
         const mission = createDiagnosticMission({
@@ -1873,7 +1990,9 @@ export class FrontmendAuditJob {
   }
 
   async handleBrowserReview(request, url, state) {
-    const verificationReplay = state.verification?.browserReplay?.required === true;
+    const verificationReplay = state.verification?.browserReplay?.required === true
+      || (state.verification?.browserReplays?.length ?? 0) > 0
+      || (state.verification?.browserGuardrails?.length ?? 0) > 0;
     if (state.status !== "complete" || !state.report || (!state.mission && !verificationReplay)) {
       return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the measurement before opening its browser review."));
     }

@@ -301,8 +301,10 @@ function Landing({
   isSubmitting,
   focusAreas,
   maxPriorities,
+  scope,
   onToggleFocus,
   onMaxPrioritiesChange,
+  onScopeChange,
 }) {
   const focusSummary = focusAreas.length
     ? focusAreas.map((area) => AUDIT_FOCUS_COPY[area]?.label ?? area).join(" + ")
@@ -350,7 +352,7 @@ function Landing({
               <strong>Shape this assessment</strong>
               <small>Optional · the full evidence record stays available</small>
             </span>
-            <em>{focusSummary} · top {maxPriorities}</em>
+            <em>{focusSummary} · {scope === "bounded-site" ? "bounded site" : "page"} · top {maxPriorities}</em>
           </summary>
           <div className="audit-composer-body">
             <fieldset>
@@ -394,6 +396,21 @@ function Landing({
                 {[1, 2, 3, 4, 5].map((count) => (
                   <option value={count} key={count}>Top {count}</option>
                 ))}
+              </select>
+            </label>
+            <label className="priority-limit" htmlFor="audit-scope">
+              <span>
+                <strong>Assessment scope</strong>
+                <small>Bounded site retains up to three observed same-site routes</small>
+              </span>
+              <select
+                id="audit-scope"
+                value={scope}
+                disabled={isSubmitting}
+                onChange={(event) => onScopeChange(event.target.value)}
+              >
+                <option value="page">This page</option>
+                <option value="bounded-site">Bounded site</option>
               </select>
             </label>
           </div>
@@ -630,6 +647,9 @@ export function App() {
   const [maxPriorities, setMaxPriorities] = useState(
     () => auditService.getActiveAudit()?.mission?.maxPriorities ?? 3,
   );
+  const [scope, setScope] = useState(
+    () => auditService.getActiveAudit()?.mission?.scope ?? "page",
+  );
   const [showHow, setShowHow] = useState(false);
   const [showWebMcp, setShowWebMcp] = useState(false);
   const [showAgentActivity, setShowAgentActivity] = useState(false);
@@ -697,6 +717,7 @@ export function App() {
         setUrl(next.url);
         setFocusAreas(next.mission?.focusAreas ?? []);
         setMaxPriorities(next.mission?.maxPriorities ?? 3);
+        setScope(next.mission?.scope ?? "page");
         setError("");
         setPollError("");
         setRestorationAuditId("");
@@ -832,7 +853,7 @@ export function App() {
       const next = await auditService.startAudit({
         url,
         source: "human",
-        mission: { intent: "assess", focusAreas, maxPriorities },
+        mission: { intent: "assess", focusAreas, maxPriorities, scope, routeLimit: 3 },
       });
       setUrl(next.url);
       setAudit(next);
@@ -860,12 +881,15 @@ export function App() {
           intent: retainedMission.intent,
           focusAreas: retainedMission.focusAreas,
           maxPriorities: retainedMission.maxPriorities,
+          scope: retainedMission.scope,
+          routeLimit: retainedMission.routeLimit,
         },
       });
       setUrl(next.url);
       setAudit(next);
       setFocusAreas(next.mission?.focusAreas ?? retainedMission.focusAreas);
       setMaxPriorities(next.mission?.maxPriorities ?? retainedMission.maxPriorities);
+      setScope(next.mission?.scope ?? retainedMission.scope);
       setError("");
       setCancelError("");
       setPollError("");
@@ -906,6 +930,7 @@ export function App() {
       setUrl(cancelledUrl);
       setFocusAreas(audit.mission?.focusAreas ?? []);
       setMaxPriorities(audit.mission?.maxPriorities ?? 3);
+      setScope(audit.mission?.scope ?? "page");
       setError("");
       window.history.replaceState(null, "", "/");
       window.requestAnimationFrame(() => inputRef.current?.focus());
@@ -996,6 +1021,7 @@ export function App() {
           isSubmitting={isStarting}
           focusAreas={focusAreas}
           maxPriorities={maxPriorities}
+          scope={scope}
           onToggleFocus={(area) => {
             setFocusAreas((current) => current.includes(area)
               ? current.filter((candidate) => candidate !== area)
@@ -1004,6 +1030,7 @@ export function App() {
                 : current);
           }}
           onMaxPrioritiesChange={setMaxPriorities}
+          onScopeChange={setScope}
           />
         ) : null}
         {mode === "progress" ? (

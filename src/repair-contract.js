@@ -63,6 +63,9 @@ export function applyRepairPolicy(repair, policy, now = Date.now()) {
   if (currentPolicy.mode !== "auto-low-risk") reasons.push("auto mode is not enabled");
   if (currentPolicy.remainingAutoApprovals < 1) reasons.push("the auto-approval allowance is exhausted");
   if (repair?.source !== "agent") reasons.push("the proposal was not submitted by an agent");
+  if ((repair?.findingIds?.length ?? 1) > 1) {
+    reasons.push("multi-finding packages require explicit review");
+  }
   if (repair?.risk !== "low") reasons.push("only low-risk proposals are eligible");
   if (!AUTO_APPROVED_PATCH_TYPES.includes(repair?.patchType)) {
     reasons.push("only HTML and CSS proposals are eligible");
@@ -593,6 +596,9 @@ function repairFindingScope(report, finding) {
     }
   }
   return {
+    focusAreas: Array.isArray(finding?.focusAreas)
+      ? [...new Set(finding.focusAreas.filter((area) => typeof area === "string"))].slice(0, 3)
+      : [],
     occurrenceCount: allSources.length,
     occurrencesOmitted: Math.max(0, allSources.length - 4),
     sources: allSources.slice(0, 4),
@@ -632,10 +638,63 @@ function browserFindingEvidenceSnapshot(finding) {
   };
 }
 
+function repairPackageFindings(finding, findings) {
+  const values = Array.isArray(findings) && findings.length ? findings : [finding];
+  if (values.length < 1 || values.length > 3 || values.some((item) => !item?.id)) {
+    throw new AuditError("INVALID_REPAIR", "A repair package must contain between one and three retained findings.");
+  }
+  const ids = values.map((item) => item.id);
+  if (new Set(ids).size !== ids.length) {
+    throw new AuditError("INVALID_REPAIR", "A repair package cannot contain duplicate findings.");
+  }
+  if (finding?.id && ids[0] !== finding.id) {
+    throw new AuditError("INVALID_REPAIR", "The primary finding must remain first in the repair package.");
+  }
+  return values;
+}
+
+function packageDefaults(findings) {
+  const templates = findings.map(templateForFinding);
+  const riskOrder = { low: 0, medium: 1, high: 2 };
+  const patchTypes = [...new Set(templates.map((template) => template.patchType))];
+  return {
+    summary: findings.length === 1
+      ? findings[0].repair
+      : `Address ${findings.length} retained findings in one reviewed repository change: ${findings.map((item) => item.title).join("; ")}`,
+    patchType: patchTypes.length === 1 ? patchTypes[0] : "guidance",
+    patch: findings.length === 1
+      ? templates[0].patch
+      : findings.map((item, index) => `${index + 1}. ${item.title}: ${templates[index].patch}`).join("\n"),
+    verificationPlan: findings.length === 1
+      ? templates[0].verificationPlan
+      : `Rerun every reviewed exact-rule row for: ${findings.map((item) => item.title).join("; ")}. Confirm retained provider and browser guardrails before claiming resolution.`,
+    risk: templates.reduce(
+      (highest, template) => riskOrder[template.risk] > riskOrder[highest] ? template.risk : highest,
+      "low",
+    ),
+  };
+}
+
+function repairPackageItem(report, finding, diagnosticMissions) {
+  const diagnosticMission = (diagnosticMissions ?? []).find((mission) => mission?.findingId === finding.id) ?? null;
+  return {
+    findingId: finding.id,
+    title: briefText(finding.title, 240),
+    severity: briefText(finding.severity, 20),
+    category: briefText(finding.category, 80),
+    source: boundedFindingSource(finding.source),
+    evidence: browserFindingEvidenceSnapshot(finding),
+    scope: repairFindingScope(report, finding),
+    diagnosticMission: diagnosticMissionSnapshotForArtifact(diagnosticMission),
+  };
+}
+
 export function createRepairDraft({
   repairId = crypto.randomUUID(),
   auditId,
   finding,
+  findings = null,
+  diagnosticMissions = [],
   report = null,
   input = {},
   source = "human",
@@ -646,6 +705,7 @@ export function createRepairDraft({
   const extra = Object.keys(input).find(
     (key) => ![
       "findingId",
+      "findingIds",
       "summary",
       "patchType",
       "patch",
@@ -657,7 +717,16 @@ export function createRepairDraft({
     ].includes(key),
   );
   if (extra) throw new AuditError("INVALID_REPAIR", `Unknown repair field: ${extra}.`);
-  const defaults = templateForFinding(finding);
+  const retainedFindings = repairPackageFindings(finding, findings);
+  const requestedFindingIds = input.findingIds ?? retainedFindings.map((item) => item.id);
+  if (
+    !Array.isArray(requestedFindingIds)
+    || JSON.stringify(requestedFindingIds) !== JSON.stringify(retainedFindings.map((item) => item.id))
+  ) {
+    throw new AuditError("INVALID_REPAIR", "findingIds must exactly match the frozen repair preparation order.");
+  }
+  const packageItems = retainedFindings.map((item) => repairPackageItem(report, item, diagnosticMissions));
+  const defaults = packageDefaults(retainedFindings);
   const patchType = input.patchType ?? defaults.patchType;
   const risk = input.risk ?? defaults.risk;
   if (!PATCH_TYPES.includes(patchType)) {
@@ -670,13 +739,29 @@ export function createRepairDraft({
     id: repairId,
     auditId,
     findingId: finding.id,
+    findingIds: retainedFindings.map((item) => item.id),
+    findingCount: retainedFindings.length,
     findingTitle: finding.title,
     findingSource: finding.source ?? null,
     findingEvidence: browserFindingEvidenceSnapshot(finding),
     findingScope: repairFindingScope(report, finding),
+    findingScopes: packageItems.map((item) => ({
+      findingId: item.findingId,
+      source: item.source,
+      scope: item.scope,
+    })),
+    findingPackage: {
+      schemaVersion: 1,
+      primaryFindingId: finding.id,
+      items: packageItems,
+    },
+    diagnosticMissions: packageItems
+      .map((item) => item.diagnosticMission)
+      .filter(Boolean),
+    diagnosticMission: packageItems[0]?.diagnosticMission ?? null,
     status: "draft",
     source: source === "agent" ? "agent" : "human",
-    summary: boundedString(input.summary ?? finding.repair, "summary", 300),
+    summary: boundedString(input.summary ?? defaults.summary, "summary", 300),
     patchType,
     patch: boundedString(input.patch ?? defaults.patch, "patch", 3_000),
     verificationPlan: boundedString(
@@ -1265,7 +1350,7 @@ function engineUsesLighthouse(engine) {
 }
 
 function engineUsesDocument(engine) {
-  return ["live-document", "hybrid-lighthouse-document"].includes(engine?.mode);
+  return ["live-document", "hybrid-lighthouse-document", "live-lighthouse-document"].includes(engine?.mode);
 }
 
 function exactRuleComparison({ source, baselineEngine, measuredEngine, measuredRuleOutcome }) {
@@ -1354,7 +1439,11 @@ export function createVerificationContext(report, repair) {
     repairId: repair.id,
     repairRevision: Number.isFinite(repair.revision) ? repair.revision : 1,
     findingId: repair.findingId,
+    findingIds: Array.isArray(repair.findingIds) && repair.findingIds.length
+      ? [...repair.findingIds]
+      : [repair.findingId],
     findingTitle: repair.findingTitle,
+    findingPackage: repair.findingPackage ? JSON.parse(JSON.stringify(repair.findingPackage)) : null,
     findingSource: repair.findingSource,
     findingScope,
     baselineEngine: report.engine,
@@ -1370,6 +1459,9 @@ export function createVerificationContext(report, repair) {
       : null,
     repositoryPlan: repositoryPlanSnapshot(repair.repositoryPlan),
     diagnosticMission: diagnosticMissionSnapshotForArtifact(repair.diagnosticMission),
+    diagnosticMissions: (repair.diagnosticMissions ?? [])
+      .map(diagnosticMissionSnapshotForArtifact)
+      .filter(Boolean),
     approval: approvalSnapshot(repair),
     implementationReceipt: implementationReceiptSnapshot(repair.implementationReceipt),
     deploymentAttestedAt: repair.deploymentAttestedAt,
@@ -1380,9 +1472,9 @@ function metricDelta(current, baseline) {
   return Number.isFinite(current) && Number.isFinite(baseline) ? current - baseline : null;
 }
 
-function browserReplayComparison(verification, review) {
-  const baseline = verification?.browserReplay?.baseline;
-  if (!verification?.browserReplay?.required || !baseline) return null;
+function browserReplayComparison(replay, review, index = 0) {
+  const baseline = replay?.baseline;
+  if (!replay?.required || !baseline) return null;
   if (!review || review.purpose !== "verification") {
     return {
       comparable: false,
@@ -1391,7 +1483,9 @@ function browserReplayComparison(verification, review) {
       replay: { required: true, status: "not-opened", baseline },
     };
   }
-  const result = review.results?.find((item) => item.checkId === "fresh-browser-replay") ?? null;
+  const checkId = index === 0 ? "fresh-browser-replay" : `fresh-browser-replay-${index + 1}`;
+  const result = review.results?.find((item) =>
+    item.taskTrigger?.findingId === baseline.findingId || item.checkId === checkId) ?? null;
   const reviewStatus = review.state?.status ?? "in-progress";
   if (!result || result.outcome === "blocked") {
     const status = result?.outcome === "blocked" ? "blocked" : reviewStatus;
@@ -1433,6 +1527,35 @@ function browserReplayComparison(verification, review) {
   };
 }
 
+function browserGuardrailComparisons(verification, review) {
+  return (Array.isArray(verification?.browserGuardrails) ? verification.browserGuardrails : [])
+    .slice(0, 2)
+    .map((baseline) => {
+      const result = review?.purpose === "verification"
+        ? review.results?.find((item) => item.taskTrigger?.auditId === baseline.checkId)
+        : null;
+      const status = !result
+        ? review ? "in-progress" : "not-opened"
+        : result.outcome === "blocked" ? "blocked" : "complete";
+      return {
+        required: true,
+        checkId: briefText(baseline.checkId, 80),
+        label: briefText(baseline.label, 120),
+        focusArea: briefText(baseline.focusArea, 40),
+        viewport: briefText(baseline.viewport, 40),
+        status,
+        outcome: result?.outcome ?? null,
+        summary: result?.summary ? briefText(result.summary, 300) : null,
+        observations: (result?.observations ?? []).slice(0, 4).map((item) => briefText(item, 400)),
+        blockerReason: result?.blockerReason ?? null,
+        reportedAt: Number.isFinite(result?.reportedAt) ? result.reportedAt : null,
+        provenance: result
+          ? result.source === "person" ? "person-reported-browser" : "agent-reported-browser"
+          : null,
+      };
+    });
+}
+
 export function compareVerification(report, verification, now = Date.now(), browserReview = null) {
   const source = verification?.findingSource;
   const findingScope = {
@@ -1446,8 +1569,19 @@ export function compareVerification(report, verification, now = Date.now(), brow
   };
   const baselineEngine = verification?.baselineEngine;
   const measuredEngine = report?.engine;
-  const browserReplay = browserReplayComparison(verification, browserReview);
-  const scopeOutcomes = browserReplay
+  const replayInputs = Array.isArray(verification?.browserReplays) && verification.browserReplays.length
+    ? verification.browserReplays
+    : verification?.browserReplay
+      ? [verification.browserReplay]
+      : [];
+  const browserReplayComparisons = replayInputs
+    .slice(0, 3)
+    .map((replay, index) => browserReplayComparison(replay, browserReview, index))
+    .filter(Boolean);
+  const browserReplay = browserReplayComparisons[0] ?? null;
+  const browserGuardrails = browserGuardrailComparisons(verification, browserReview);
+  const primaryIsBrowserFinding = source?.provider === "Frontmend browser review";
+  const scopeOutcomes = primaryIsBrowserFinding && browserReplay
     ? findingScope.sources.map((candidate) => ({
         source: candidate,
         outcome: browserReplay.outcome,
@@ -1478,12 +1612,23 @@ export function compareVerification(report, verification, now = Date.now(), brow
   const ruleOutcome = comparable
     ? aggregateRuleOutcome(scopeOutcomes.map((outcome) => outcome.outcome))
     : "not-comparable";
-  const status = !comparable
+  const exactStatus = !comparable
     ? "inconclusive"
     : ruleOutcome === "failed"
       ? "still-present"
       : ruleOutcome === "passed"
         ? "resolved"
+        : "inconclusive";
+  const guardrailsComplete = browserGuardrails.every((guardrail) => guardrail.status === "complete");
+  const guardrailRegression = browserGuardrails.some((guardrail) => guardrail.outcome === "issue");
+  const replaysComplete = browserReplayComparisons.every((comparison) => comparison.comparable);
+  const replayStillPresent = browserReplayComparisons.some((comparison) => comparison.outcome === "failed");
+  const status = exactStatus === "still-present" || replayStillPresent
+    ? "still-present"
+    : guardrailRegression
+      ? "regression"
+      : guardrailsComplete && replaysComplete
+        ? exactStatus
         : "inconclusive";
   const baseline = verification.baseline ?? reportSnapshot(null, source, findingScope);
   const current = reportSnapshot(report, source, findingScope);
@@ -1507,16 +1652,25 @@ export function compareVerification(report, verification, now = Date.now(), brow
     repairId: verification.repairId,
     repairRevision: verification.repairRevision,
     findingId: verification.findingId,
+    findingIds: Array.isArray(verification.findingIds) && verification.findingIds.length
+      ? [...verification.findingIds]
+      : [verification.findingId],
     findingTitle: verification.findingTitle,
+    findingPackage: verification.findingPackage ?? null,
     findingSource: source,
     findingScope,
     scopeOutcomes,
     repositoryPlan: repositoryPlanSnapshot(verification.repositoryPlan),
     diagnosticMission: diagnosticMissionSnapshotForArtifact(verification.diagnosticMission),
+    diagnosticMissions: (verification.diagnosticMissions ?? [])
+      .map(diagnosticMissionSnapshotForArtifact)
+      .filter(Boolean),
     approval: verification.approval ?? null,
     implementationReceipt: implementationReceiptSnapshot(verification.implementationReceipt),
     aggregateMatrix: verification.aggregateMatrix ?? null,
     browserReplay: browserReplay?.replay ?? null,
+    browserReplays: browserReplayComparisons.map((comparison) => comparison.replay),
+    browserGuardrails,
     deploymentAttestedAt: verification.deploymentAttestedAt,
     status,
     comparable,
@@ -1567,6 +1721,12 @@ export function compareVerification(report, verification, now = Date.now(), brow
             : findingScope.sources.length > 1
               ? "At least one captured rule occurrence failed again, but whole-report metrics are not like for like."
               : "The exact original rule explicitly failed again, but whole-report metrics are not like for like."
+          : status === "regression"
+            ? "The repaired rule passed, but a retained browser journey or reflow guardrail regressed in fresh evidence."
+          : browserReplayComparisons.some((comparison) => !comparison.comparable)
+            ? "Provider measurement is complete, but every retained browser issue still needs its exact fresh replay before resolution can be claimed."
+          : browserGuardrails.some((guardrail) => guardrail.status !== "complete")
+            ? "Provider measurement is complete, but retained browser guardrails still need fresh direct comparisons before resolution can be claimed."
           : comparable
             ? "The fresh audit did not affirmatively pass every captured rule occurrence, so Frontmend cannot claim it was resolved across the repair scope."
             : browserReplay?.reason === "browser-replay-required"
@@ -1592,12 +1752,26 @@ export function repairExportMarkdown({ report, repair }) {
   const occurrencesOmitted = Number.isFinite(repair.findingScope?.occurrencesOmitted)
     ? Math.max(0, Math.round(repair.findingScope.occurrencesOmitted))
     : 0;
+  const packageItems = repair.findingPackage?.items?.length
+    ? repair.findingPackage.items
+    : [{
+        findingId: repair.findingId,
+        title: repair.findingTitle,
+        severity: null,
+        source: repair.findingSource,
+        scope: repair.findingScope,
+        diagnosticMission: repair.diagnosticMission,
+      }];
+  const packageDiagnoses = packageItems
+    .map((item) => item.diagnosticMission)
+    .filter((mission) => mission?.diagnosis);
   const lines = [
-    `# Frontmend repair: ${repair.findingTitle}`,
+    `# Frontmend repair: ${packageItems.length > 1 ? `${packageItems.length}-finding package` : repair.findingTitle}`,
     "",
     `- Site: ${report.finalUrl ?? report.url}`,
     `- Baseline audit: ${report.auditId}`,
-    `- Finding: ${repair.findingId}`,
+    `- Primary finding: ${repair.findingId}`,
+    `- Package findings: ${packageItems.length}`,
     `- Repair revision: ${Number.isFinite(repair.revision) ? repair.revision : 1}`,
     `- Patch type: ${repair.patchType}`,
     `- Risk: ${repair.risk}`,
@@ -1607,6 +1781,20 @@ export function repairExportMarkdown({ report, repair }) {
     `- Approval recorded: ${new Date(repair.reviewedAt).toISOString()}`,
     `- Deployment handoff: ${Number.isFinite(repair.deploymentAttestedAt) ? `site owner attested ${new Date(repair.deploymentAttestedAt).toISOString()}` : "not yet attested"}`,
     "",
+    ...(packageItems.length > 1
+      ? [
+          "## Frozen repair package",
+          "",
+          "| Finding | Severity | Provider | Rule |",
+          "| --- | --- | --- | --- |",
+          ...packageItems.map((item) =>
+            `| ${receiptText(item.title, 240)}<br><code>${receiptText(item.findingId, 160)}</code> | ${receiptText(item.severity, 20)} | ${receiptText(item.source?.provider, 120)} | ${receiptText(item.source?.auditId, 160)} |`,
+          ),
+          "",
+          "> Package membership was frozen at explicit preparation. One approval and one implementation receipt cover this exact set; verification remains finding-specific.",
+          "",
+        ]
+      : []),
     "## Captured repair scope",
     "",
     "| Provider | Rule | Strategy |",
@@ -1628,18 +1816,22 @@ export function repairExportMarkdown({ report, repair }) {
           "",
         ]
       : []),
-    ...(repair.diagnosticMission?.diagnosis
+    ...(packageDiagnoses.length
       ? [
           "## Diagnostic provenance",
           "",
-          `- Measured symptom: ${receiptText(repair.diagnosticMission.measuredEvidence?.kind, 80)} (${receiptText(repair.diagnosticMission.measuredEvidence?.provenance, 80)})`,
-          `- Contributed by: ${repair.diagnosticMission.diagnosis.agentReported ? "coding agent" : "person"} at ${new Date(repair.diagnosticMission.diagnosis.reportedAt).toISOString()}`,
-          `- Confidence: ${receiptText(repair.diagnosticMission.diagnosis.confidence, 20)}`,
-          `- Diagnosis: ${receiptText(repair.diagnosticMission.diagnosis.summary, 300)}`,
-          `- Reproduction: ${receiptText(repair.diagnosticMission.diagnosis.reproduction, 600)}`,
-          `- Source locations: ${repair.diagnosticMission.diagnosis.sourceLocations.map((location) => `\`${receiptText(location.file, 200)}${location.line ? `:${location.line}` : ""}\``).join(", ")}`,
-          `- Planned checks: ${repair.diagnosticMission.diagnosis.verificationChecks.map((check) => receiptText(check, 120)).join("; ")}`,
-          "",
+          ...packageDiagnoses.flatMap((mission, index) => [
+            ...(packageDiagnoses.length > 1 ? [`### ${index + 1}. ${receiptText(mission.findingTitle ?? mission.findingId, 240)}`, ""] : []),
+            `- Finding: ${receiptText(mission.findingId, 160)}`,
+            `- Measured symptom: ${receiptText(mission.measuredEvidence?.kind, 80)} (${receiptText(mission.measuredEvidence?.provenance, 80)})`,
+            `- Contributed by: ${mission.diagnosis.agentReported ? "coding agent" : "person"} at ${new Date(mission.diagnosis.reportedAt).toISOString()}`,
+            `- Confidence: ${receiptText(mission.diagnosis.confidence, 20)}`,
+            `- Diagnosis: ${receiptText(mission.diagnosis.summary, 300)}`,
+            `- Reproduction: ${receiptText(mission.diagnosis.reproduction, 600)}`,
+            `- Source locations: ${mission.diagnosis.sourceLocations.map((location) => `\`${receiptText(location.file, 200)}${location.line ? `:${location.line}` : ""}\``).join(", ")}`,
+            `- Planned checks: ${mission.diagnosis.verificationChecks.map((check) => receiptText(check, 120)).join("; ")}`,
+            "",
+          ]),
           "> Lighthouse evidence and contributed diagnosis remain separately attributed. Frontmend did not inspect repository source or independently prove the diagnosis.",
           "",
         ]
@@ -1764,6 +1956,8 @@ export function auditReportMarkdown(report) {
   const isDocumentAudit = report.engine.mode === "live-document";
   const boundary = isDocumentAudit
     ? "This run inspected the fetched HTML document and public response headers. It did not execute page scripts, exercise user journeys, capture screenshots, or measure rendered viewport behavior."
+    : report.engine.mode === "live-lighthouse-document"
+      ? "This run combined mobile and desktop Lighthouse lab evidence with fetched HTML, public response headers, metadata, and bounded route discovery. Document evidence did not execute scripts or prove every user journey."
     : report.engine.mode === "live-lighthouse"
       ? "This run used Lighthouse lab evidence for the listed emulated strategies. It does not prove every device, user journey, network condition, or production state."
       : report.engine.mode === "hybrid-lighthouse-document"
@@ -1788,6 +1982,14 @@ export function auditReportMarkdown(report) {
       ? [`- Lighthouse: ${receiptText(report.engine.lighthouseVersion, 80)}`]
       : []),
     `- Provider notice: ${receiptText(report.engine.notice, 500)}`,
+    ...(report.coverage
+      ? [
+          `- Coverage: ${receiptText(report.coverage.level, 80)}`,
+          `- Lighthouse source: ${receiptText(report.coverage.sources?.lighthouse?.status, 40)}`,
+          `- Document source: ${receiptText(report.coverage.sources?.document?.status, 40)}`,
+          `- Observed route candidates: ${artifactMetric(report.coverage.routeCandidateCount)}`,
+        ]
+      : []),
     "",
     "## Summary",
     "",
@@ -1795,6 +1997,17 @@ export function auditReportMarkdown(report) {
     "| ---: | ---: | ---: | ---: | ---: | ---: |",
     `| ${artifactMetric(report.score)} | ${artifactMetric(report.checks?.passed)} | ${artifactMetric(report.checks?.warnings)} | ${artifactMetric(report.checks?.failed)} | ${artifactMetric(report.findingCount)} | ${artifactMetric(report.viewportCount)} |`,
   ];
+
+  if (Array.isArray(report.sourceFailures) && report.sourceFailures.length) {
+    lines.push(
+      "## Unavailable evidence sources",
+      "",
+      ...report.sourceFailures.slice(0, 3).map(
+        (failure) => `- ${receiptText(failure.source, 40)} · ${receiptText(failure.code, 80)}: ${receiptText(failure.message, 240)}`,
+      ),
+      "",
+    );
+  }
 
   if (report.exploration?.parentAuditId && Number.isFinite(report.exploration.depth)) {
     const trail = Array.isArray(report.exploration.trail)
@@ -1972,10 +2185,21 @@ export function verificationReceiptMarkdown(report) {
       "A verification receipt is available only after a completed repair verification.",
     );
   }
-  if (verification.browserReplay?.required && verification.browserReplay.status !== "complete") {
+  const browserReplays = Array.isArray(verification.browserReplays) && verification.browserReplays.length
+    ? verification.browserReplays
+    : verification.browserReplay?.required
+      ? [verification.browserReplay]
+      : [];
+  if (browserReplays.some((replay) => replay?.required && replay.status !== "complete")) {
     throw new AuditError(
       "VERIFICATION_RECEIPT_UNAVAILABLE",
-      "Complete the exact fresh browser replay before exporting a verification receipt.",
+      "Complete every exact fresh browser replay before exporting a verification receipt.",
+    );
+  }
+  if ((verification.browserGuardrails ?? []).some((guardrail) => guardrail.status !== "complete")) {
+    throw new AuditError(
+      "VERIFICATION_RECEIPT_UNAVAILABLE",
+      "Complete every retained browser guardrail before exporting a verification receipt.",
     );
   }
   const metricComparable = verification.metricComparable === true;
@@ -2025,21 +2249,39 @@ export function verificationReceiptMarkdown(report) {
     "",
     "> Resolution requires an explicit pass for every captured occurrence. A passing strategy cannot hide a sibling failure or missing comparison.",
     "",
-    ...(verification.browserReplay?.required
+    ...(browserReplays.length
       ? [
-          "## Fresh browser replay",
+          `## Fresh browser replay${browserReplays.length === 1 ? "" : "s"}`,
           "",
-          `- Baseline observation: ${receiptText(verification.browserReplay.baseline?.evidence, 600)}`,
-          `- Retained element: ${receiptText(verification.browserReplay.baseline?.selector, 200)}`,
-          `- Replay outcome: ${receiptText(verification.browserReplay.outcome, 40)}`,
-          `- Agent summary: ${receiptText(verification.browserReplay.summary, 300)}`,
-          ...((verification.browserReplay.observations ?? []).slice(0, 4).map(
-            (observation) => `- Observed: ${receiptText(observation, 400)}`,
-          )),
-          `- Provenance: ${receiptText(verification.browserReplay.provenance, 80)}`,
-          `- Reported: ${Number.isFinite(verification.browserReplay.reportedAt) ? new Date(verification.browserReplay.reportedAt).toISOString() : "—"}`,
-          "",
+          ...browserReplays.flatMap((replay, index) => [
+            ...(browserReplays.length > 1 ? [`### ${index + 1}. ${receiptText(replay.baseline?.title, 240)}`, ""] : []),
+            `- Finding: ${receiptText(replay.baseline?.findingId, 160)}`,
+            `- Baseline observation: ${receiptText(replay.baseline?.evidence, 600)}`,
+            `- Retained element: ${receiptText(replay.baseline?.selector, 200)}`,
+            `- Replay outcome: ${receiptText(replay.outcome, 40)}`,
+            `- Agent summary: ${receiptText(replay.summary, 300)}`,
+            ...((replay.observations ?? []).slice(0, 4).map(
+              (observation) => `- Observed: ${receiptText(observation, 400)}`,
+            )),
+            `- Provenance: ${receiptText(replay.provenance, 80)}`,
+            `- Reported: ${Number.isFinite(replay.reportedAt) ? new Date(replay.reportedAt).toISOString() : "—"}`,
+            "",
+          ]),
           "> This exact rendered comparison is agent-reported browser evidence and remains separate from provider measurement.",
+          "",
+        ]
+      : []),
+    ...((verification.browserGuardrails ?? []).length
+      ? [
+          "## Browser regression guardrails",
+          "",
+          "| Check | Viewport | Status | Outcome |",
+          "| --- | --- | --- | --- |",
+          ...verification.browserGuardrails.map((guardrail) =>
+            `| ${receiptText(guardrail.label, 120)} | ${receiptText(guardrail.viewport, 40)} | ${receiptText(guardrail.status, 40)} | ${receiptText(guardrail.outcome ?? "—", 40)} |`,
+          ),
+          "",
+          "> These fresh browser comparisons preserve retained journey and reflow checks separately from provider rule evidence.",
           "",
         ]
       : []),

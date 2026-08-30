@@ -2,10 +2,41 @@ import { AuditError } from "./url-policy.js";
 
 const EVALUATED_STATUSES = new Set(["passed", "failed", "not-applicable"]);
 const TERMINAL_JOB_STATUSES = new Set(["complete", "failed", "cancelled"]);
-const ROW_STATUSES = new Set(["waiting", "running", "resolved", "still-present", "inconclusive"]);
+const ROW_STATUSES = new Set(["waiting", "running", "resolved", "still-present", "regression", "inconclusive"]);
 const MAX_OPTIONAL_TARGETS = 3;
 const MAX_TARGETS = 4;
-const MAX_ROWS = 20;
+const MAX_ROWS = 72;
+const MAX_PROVIDER_GUARDRAILS = 4;
+const MAX_BROWSER_GUARDRAILS = 2;
+const IMPORTANT_RULE_FOCUS = Object.freeze({
+  "button-name": "accessibility",
+  "color-contrast": "accessibility",
+  "heading-order": "accessibility",
+  "html-has-lang": "accessibility",
+  "html-lang": "accessibility",
+  "image-alt": "accessibility",
+  label: "accessibility",
+  "link-name": "accessibility",
+  "main-landmark": "accessibility",
+  "missing-h1": "accessibility",
+  viewport: "accessibility",
+  canonical: "seo",
+  "crawlable-anchors": "seo",
+  "document-title": "seo",
+  hreflang: "seo",
+  "http-status-code": "seo",
+  "is-crawlable": "seo",
+  "meta-description": "seo",
+  "robots-txt": "seo",
+  "cumulative-layout-shift": "performance",
+  "first-contentful-paint": "performance",
+  "largest-contentful-paint": "performance",
+  "speed-index": "performance",
+  "total-blocking-time": "performance",
+  "content-security-policy": "security",
+  "x-content-type-options": "security",
+  "errors-in-console": "reliability",
+});
 
 function bounded(value, maximum = 240) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim().slice(0, maximum);
@@ -41,6 +72,19 @@ function sameRule(left, right) {
 
 function sameSource(left, right) {
   return sameRule(left, right) && left?.strategy === right?.strategy;
+}
+
+function findingRuleKey(finding) {
+  return `${bounded(finding?.source?.provider, 120)}:${bounded(finding?.source?.auditId ?? finding?.id, 160)}`;
+}
+
+function retainedFocusAreas(values, fallbackSource) {
+  const result = Array.isArray(values)
+    ? values.filter((area) => ["accessibility", "seo", "performance", "security", "reliability"].includes(area))
+    : [];
+  if (result.length) return [...new Set(result)].slice(0, 3);
+  const inferred = IMPORTANT_RULE_FOCUS[fallbackSource?.auditId];
+  return inferred ? [inferred] : [];
 }
 
 function uniqueSources(values) {
@@ -197,6 +241,135 @@ function providerRowsForTarget(target, selectedOptional) {
   }));
 }
 
+function providerGuardrailRowsForTarget(target, focusAreas, findingSource) {
+  if (!focusAreas.length) return [];
+  const sources = uniqueSources(
+    (target.report?.ruleOutcomes ?? [])
+      .filter((outcome) =>
+        outcome?.status === "passed"
+        && !sameRule(outcome?.source, findingSource)
+        && focusAreas.includes(IMPORTANT_RULE_FOCUS[outcome?.source?.auditId])
+      )
+      .map((outcome) => outcome.source),
+  ).slice(0, MAX_PROVIDER_GUARDRAILS);
+  return sources.map((source) => ({
+    id: rowId("guardrail", target, source),
+    targetId: target.id,
+    path: target.path,
+    strategy: source.strategy,
+    proofKind: "provider-guardrail",
+    required: true,
+    selection: "automatic-guardrail",
+    source,
+    baseline: {
+      auditId: target.auditId,
+      outcome: "passed",
+      engine: target.baselineReport.engine,
+      focusArea: IMPORTANT_RULE_FOCUS[source.auditId],
+    },
+    status: "waiting",
+    assignment: null,
+    outcome: null,
+    comparisonReason: null,
+  }));
+}
+
+function newFindingGuardrailRow(target, focusAreas, findingSource) {
+  if (!focusAreas.length) return [];
+  const knownFindingRules = [...new Set(
+    (target.report?.findings ?? [])
+      .filter((finding) => ["high", "medium"].includes(finding?.severity))
+      .filter((finding) => (finding.focusAreas ?? []).some((area) => focusAreas.includes(area)))
+      .map(findingRuleKey),
+  )].slice(0, 20);
+  return [{
+    id: rowId("new-findings", target, null, "high-medium"),
+    targetId: target.id,
+    path: target.path,
+    strategy: "all-retained",
+    proofKind: "new-findings-guardrail",
+    required: true,
+    selection: "automatic-guardrail",
+    source: null,
+    baseline: {
+      auditId: target.auditId,
+      outcome: "no-new-high-medium-findings",
+      engine: target.baselineReport.engine,
+      focusAreas,
+      knownFindingRules,
+      repairedRule: `${bounded(findingSource?.provider, 120)}:${bounded(findingSource?.auditId, 160)}`,
+      repairedRules: [`${bounded(findingSource?.provider, 120)}:${bounded(findingSource?.auditId, 160)}`],
+    },
+    status: "waiting",
+    assignment: null,
+    outcome: null,
+    comparisonReason: null,
+  }];
+}
+
+function browserGuardrailRowsForTarget(target, browserReview, focusAreas) {
+  if (!target.root || !browserReview || !focusAreas.length) return [];
+  const tasks = browserReview.requestedChecks ?? browserReview.tasks ?? [];
+  return (browserReview.results ?? [])
+    .filter((result) => result?.outcome === "passed")
+    .map((result) => ({ result, task: tasks.find((task) => task?.id === result.checkId) }))
+    .filter(({ result, task }) => {
+      const id = `${result.checkId ?? ""} ${task?.kind ?? ""}`;
+      const areas = task?.focusAreas ?? (task?.focusArea ? [task.focusArea] : []);
+      return /(journey|reflow)/i.test(id) && areas.some((area) => focusAreas.includes(area));
+    })
+    .slice(0, MAX_BROWSER_GUARDRAILS)
+    .map(({ result, task }) => {
+      const viewport = bounded(task?.target?.viewport ?? task?.viewport ?? "desktop", 40);
+      const source = {
+        provider: "Frontmend browser review",
+        auditId: bounded(result.checkId, 80),
+        strategy: viewport,
+      };
+      return {
+        id: rowId("browser-guardrail", target, source),
+        targetId: target.id,
+        path: target.path,
+        strategy: viewport,
+        proofKind: "browser-guardrail",
+        required: true,
+        selection: "automatic-guardrail",
+        source,
+        baseline: {
+          auditId: target.auditId,
+          outcome: "passed",
+          checkId: bounded(result.checkId, 80),
+          label: bounded(task?.label ?? result.checkId, 120),
+          focusArea: bounded(task?.focusArea ?? task?.focusAreas?.[0], 40),
+          viewport,
+          assignment: task?.assignment ? JSON.parse(JSON.stringify(task.assignment)) : null,
+          target: task?.target ? JSON.parse(JSON.stringify(task.target)) : null,
+          summary: bounded(result.summary, 300),
+        },
+        status: "waiting",
+        assignment: null,
+        outcome: null,
+        comparisonReason: null,
+      };
+    });
+}
+
+function rowsForSelectedTargets(targets, selectedTargetIds) {
+  const withSelection = (target, row) => ({
+    ...row,
+    selection: target.required ? row.selection : selectedTargetIds.includes(target.id)
+      ? "optional-reviewed"
+      : row.selection,
+  });
+  const exact = targets.flatMap((target) => (target.rows ?? [])
+    .filter((row) => ["provider-rule", "browser-replay"].includes(row.proofKind))
+    .map((row) => withSelection(target, row)));
+  const guardrails = targets.flatMap((target) => (target.rows ?? [])
+    .filter((row) => !["provider-rule", "browser-replay"].includes(row.proofKind))
+    .map((row) => withSelection(target, row)));
+  return [...exact, ...guardrails].slice(0, MAX_ROWS);
+}
+
 function browserRowForTarget(target, findingEvidence) {
   if (!findingEvidence?.browserReviewEvidence?.reviewId) return [];
   const source = sourceSnapshot(findingEvidence.source) ?? {
@@ -215,10 +388,25 @@ function browserRowForTarget(target, findingEvidence) {
     source,
     baseline: {
       auditId: target.auditId,
+      findingId: bounded(findingEvidence.findingId, 160),
+      title: bounded(findingEvidence.title, 240),
+      category: bounded(findingEvidence.category, 80),
+      focusArea: findingEvidence.focusArea === "seo" ? "seo" : "accessibility",
       outcome: "issue",
       evidence: bounded(findingEvidence.evidence, 600),
       selector: bounded(findingEvidence.selector, 200),
+      repair: bounded(findingEvidence.repair, 600),
+      source,
       checkId: bounded(findingEvidence.browserReviewEvidence.checkId, 80),
+      browserReviewEvidence: {
+        reviewId: bounded(findingEvidence.browserReviewEvidence.reviewId, 160),
+        checkId: bounded(findingEvidence.browserReviewEvidence.checkId, 80),
+        checkLabel: bounded(findingEvidence.browserReviewEvidence.checkLabel, 120),
+        provenance: bounded(findingEvidence.browserReviewEvidence.provenance, 80),
+        reportedAt: Number.isFinite(findingEvidence.browserReviewEvidence.reportedAt)
+          ? findingEvidence.browserReviewEvidence.reportedAt
+          : null,
+      },
     },
     status: "waiting",
     assignment: null,
@@ -235,6 +423,8 @@ export function createRepairVerificationImpact({
   findingSource,
   findingScope = null,
   findingEvidence = null,
+  focusAreas = [],
+  browserReview = null,
   auditedReports = [],
   verificationTargetIds,
 } = {}) {
@@ -242,6 +432,7 @@ export function createRepairVerificationImpact({
     throw new AuditError("INVALID_REPAIR", "A repair, root report, and retained finding rule are required.");
   }
   const browserFinding = findingSource.provider === "Frontmend browser review";
+  const retainedAreas = retainedFocusAreas(focusAreas, findingSource);
   const reports = normalizeAuditedReports(rootReport, auditedReports);
   const targets = [];
   for (const entry of reports) {
@@ -259,6 +450,7 @@ export function createRepairVerificationImpact({
       auditId: bounded(entry.auditId, 80),
       path: bounded(entry.path, 256) || "/",
       url: bounded(entry.url, 2_048),
+      root: entry.root === true,
       required,
       reason: required
         ? entry.root
@@ -268,7 +460,24 @@ export function createRepairVerificationImpact({
       evaluatedSources: evidence.evaluated,
       failedSources: evidence.failed,
       baselineReport: baselineReportSnapshot(entry.report, evidence.evaluated.length ? evidence.evaluated : [findingSource]),
+      report: entry.report,
     });
+  }
+  for (const target of targets) {
+    const exactRows = browserFinding
+      ? browserRowForTarget(target, findingEvidence)
+      : providerRowsForTarget(target, false);
+    target.rows = [
+      ...exactRows,
+      ...providerGuardrailRowsForTarget(target, retainedAreas, findingSource),
+      ...newFindingGuardrailRow(target, retainedAreas, findingSource),
+      ...browserGuardrailRowsForTarget(target, browserReview, retainedAreas),
+    ].slice(0, MAX_ROWS).map((row) => ({
+      ...row,
+      findingId: bounded(findingId, 160) || null,
+      findingIds: bounded(findingId, 160) ? [bounded(findingId, 160)] : [],
+    }));
+    delete target.report;
   }
   const candidates = targets
     .filter((target) => !target.required)
@@ -282,9 +491,7 @@ export function createRepairVerificationImpact({
     }));
   const selectedTargetIds = validateSelectedCandidateIds(verificationTargetIds, candidates);
   const selected = targets.filter((target) => target.required || selectedTargetIds.includes(target.id));
-  const rows = selected.flatMap((target) => browserFinding
-    ? browserRowForTarget(target, findingEvidence)
-    : providerRowsForTarget(target, selectedTargetIds.includes(target.id))).slice(0, MAX_ROWS);
+  const rows = rowsForSelectedTargets(selected, selectedTargetIds);
   if (!rows.length) {
     throw new AuditError("INVALID_REPAIR", "The retained repair has no exact verification rows.");
   }
@@ -294,11 +501,126 @@ export function createRepairVerificationImpact({
     repairRevision: Number.isInteger(repairRevision) && repairRevision > 0 ? repairRevision : 1,
     rootAuditId: bounded(rootReport.auditId, 160),
     findingId: bounded(findingId, 120) || null,
+    findingIds: bounded(findingId, 160) ? [bounded(findingId, 160)] : [],
+    focusAreas: retainedAreas,
     status: "unreviewed",
     rule: {
       provider: bounded(findingSource.provider, 120),
       auditId: bounded(findingSource.auditId, 160),
     },
+    selectedTargetIds,
+    candidates,
+    targets,
+    previewRows: rows,
+    matrix: null,
+  };
+}
+
+function mergePackageRow(existing, incoming) {
+  if (!existing) return { ...incoming };
+  const findingIds = [...new Set([...(existing.findingIds ?? []), ...(incoming.findingIds ?? [])])].slice(0, 3);
+  if (existing.proofKind !== "new-findings-guardrail") {
+    return { ...existing, findingIds };
+  }
+  return {
+    ...existing,
+    findingIds,
+    baseline: {
+      ...existing.baseline,
+      focusAreas: [...new Set([
+        ...(existing.baseline?.focusAreas ?? []),
+        ...(incoming.baseline?.focusAreas ?? []),
+      ])].slice(0, 5),
+      knownFindingRules: [...new Set([
+        ...(existing.baseline?.knownFindingRules ?? []),
+        ...(incoming.baseline?.knownFindingRules ?? []),
+      ])].slice(0, 20),
+      repairedRules: [...new Set([
+        ...(existing.baseline?.repairedRules ?? [existing.baseline?.repairedRule].filter(Boolean)),
+        ...(incoming.baseline?.repairedRules ?? [incoming.baseline?.repairedRule].filter(Boolean)),
+      ])].slice(0, 3),
+    },
+  };
+}
+
+export function createRepairPackageVerificationImpact({ findings, ...input } = {}) {
+  if (!Array.isArray(findings) || findings.length < 1 || findings.length > 3) {
+    throw new AuditError("INVALID_REPAIR", "A repair verification package must contain between one and three retained findings.");
+  }
+  const findingIds = findings.map((item) => bounded(item?.findingId, 160));
+  if (findingIds.some((id) => !id) || new Set(findingIds).size !== findingIds.length) {
+    throw new AuditError("INVALID_REPAIR", "Repair verification findings must have unique retained IDs.");
+  }
+  const impacts = findings.map((item) => createRepairVerificationImpact({
+    ...input,
+    findingId: item.findingId,
+    findingSource: item.findingSource,
+    findingScope: item.findingScope,
+    findingEvidence: item.findingEvidence,
+    focusAreas: item.focusAreas,
+    verificationTargetIds: [],
+  }));
+  if (impacts.length === 1) {
+    return selectRepairVerificationTargets(
+      impacts[0],
+      input.verificationTargetIds ?? [],
+      input.repairRevision,
+    );
+  }
+  const targetMap = new Map();
+  for (const impact of impacts) {
+    for (const target of impact.targets) {
+      const existing = targetMap.get(target.id);
+      if (!existing) {
+        targetMap.set(target.id, {
+          ...target,
+          evaluatedSources: [...target.evaluatedSources],
+          failedSources: [...target.failedSources],
+          rows: target.rows.map((row) => ({ ...row })),
+        });
+        continue;
+      }
+      existing.required = existing.required || target.required;
+      existing.reason = existing.required
+        ? existing.path === pathFromUrl(input.rootReport?.finalUrl ?? input.rootReport?.url)
+          ? "Root route retained by the selected repair package."
+          : "At least one exact retained rule failed on this completed exploration route."
+        : "At least one exact retained rule was evaluated on this completed exploration route.";
+      existing.evaluatedSources = uniqueSources([...existing.evaluatedSources, ...target.evaluatedSources]);
+      existing.failedSources = uniqueSources([...existing.failedSources, ...target.failedSources]);
+      const rows = new Map(existing.rows.map((row) => [row.id, row]));
+      for (const row of target.rows) rows.set(row.id, mergePackageRow(rows.get(row.id), row));
+      existing.rows = [...rows.values()].slice(0, MAX_ROWS);
+    }
+  }
+  const targets = [...targetMap.values()].slice(0, MAX_TARGETS);
+  const candidates = targets
+    .filter((target) => !target.required)
+    .slice(0, MAX_OPTIONAL_TARGETS)
+    .map((target) => ({
+      id: target.id,
+      auditId: target.auditId,
+      path: target.path,
+      strategies: [...new Set(target.evaluatedSources.map((source) => source.strategy))],
+      reason: target.reason,
+    }));
+  const selectedTargetIds = validateSelectedCandidateIds(input.verificationTargetIds ?? [], candidates);
+  const selected = targets.filter((target) => target.required || selectedTargetIds.includes(target.id));
+  const rows = rowsForSelectedTargets(selected, selectedTargetIds);
+  if (!rows.some((row) => ["provider-rule", "browser-replay"].includes(row.proofKind))) {
+    throw new AuditError("INVALID_REPAIR", "The retained repair package has no exact verification rows.");
+  }
+  return {
+    schemaVersion: 1,
+    repairId: bounded(input.repairId, 80),
+    repairRevision: Number.isInteger(input.repairRevision) && input.repairRevision > 0 ? input.repairRevision : 1,
+    rootAuditId: bounded(input.rootReport?.auditId, 160),
+    findingId: findingIds[0],
+    findingIds,
+    focusAreas: [...new Set(impacts.flatMap((impact) => impact.focusAreas ?? []))].slice(0, 5),
+    status: "unreviewed",
+    rule: { ...impacts[0].rule },
+    rules: impacts.map((impact) => ({ findingId: impact.findingId, ...impact.rule })),
     selectedTargetIds,
     candidates,
     targets,
@@ -316,10 +638,10 @@ export function selectRepairVerificationTargets(impact, verificationTargetIds, r
     impact.candidates ?? [],
   );
   const selected = impact.targets.filter((target) => target.required || selectedTargetIds.includes(target.id));
-  const browserFinding = impact.rule?.provider === "Frontmend browser review";
-  const rows = selected.flatMap((target) => browserFinding
-    ? impact.previewRows.filter((row) => row.targetId === target.id)
-    : providerRowsForTarget(target, selectedTargetIds.includes(target.id))).slice(0, MAX_ROWS);
+  const hydrated = selected.map((target) => target.rows
+    ? target
+    : { ...target, rows: impact.previewRows.filter((row) => row.targetId === target.id) });
+  const rows = rowsForSelectedTargets(hydrated, selectedTargetIds);
   return {
     ...impact,
     repairRevision: Number.isInteger(repairRevision) && repairRevision > 0
@@ -384,6 +706,7 @@ export function verificationCandidateProjection(impact) {
   return {
     auditId: impact?.rootAuditId ?? impact?.targets?.[0]?.auditId ?? null,
     findingId: impact?.findingId ?? null,
+    findingIds: [...(impact?.findingIds ?? (impact?.findingId ? [impact.findingId] : []))],
     selectedTargetIds: [...(impact?.selectedTargetIds ?? [])],
     candidates: (impact?.candidates ?? []).map((candidate) => ({
       id: candidate.id,
@@ -394,6 +717,7 @@ export function verificationCandidateProjection(impact) {
     })),
     limit: MAX_OPTIONAL_TARGETS,
     rule: impact?.rule ? { ...impact.rule } : null,
+    rules: (impact?.rules ?? []).map((rule) => ({ ...rule })),
   };
 }
 
@@ -413,6 +737,39 @@ export function reviewedVerificationTargets(impact) {
       rows: impact.matrix.rows.filter((row) => row.targetId === id).map((row) => ({ ...row })),
     };
   });
+}
+
+export function browserReplaysForVerificationRows(rows) {
+  const values = Array.isArray(rows) ? rows : [];
+  return values
+    .filter((row) => row?.proofKind === "browser-replay" && row?.baseline?.findingId)
+    .filter((row, index, candidates) =>
+      candidates.findIndex((candidate) => candidate.baseline.findingId === row.baseline.findingId) === index)
+    .slice(0, 3)
+    .map((row) => ({
+      required: true,
+      status: "not-opened",
+      rowId: bounded(row.id, 160),
+      baseline: {
+        findingId: bounded(row.baseline.findingId, 160),
+        title: bounded(row.baseline.title, 240),
+        category: bounded(row.baseline.category, 80) || "Accessibility",
+        focusArea: row.baseline.focusArea === "seo" ? "seo" : "accessibility",
+        selector: bounded(row.baseline.selector, 200) || "Rendered page",
+        evidence: bounded(row.baseline.evidence, 600),
+        repair: bounded(row.baseline.repair, 600) || "Recheck the original rendered issue.",
+        source: sourceSnapshot(row.baseline.source ?? row.source),
+        browserReviewEvidence: {
+          reviewId: bounded(row.baseline.browserReviewEvidence?.reviewId, 160),
+          checkId: bounded(row.baseline.browserReviewEvidence?.checkId ?? row.baseline.checkId, 80),
+          checkLabel: bounded(row.baseline.browserReviewEvidence?.checkLabel ?? "Browser check", 120),
+          provenance: bounded(row.baseline.browserReviewEvidence?.provenance, 80) || "agent-reported-browser",
+          reportedAt: Number.isFinite(row.baseline.browserReviewEvidence?.reportedAt)
+            ? row.baseline.browserReviewEvidence.reportedAt
+            : null,
+        },
+      },
+    }));
 }
 
 export function createRepairVerificationRun(impact, runId, now = Date.now()) {
@@ -455,7 +812,7 @@ function comparableEngine(baseline, current, source) {
   if (!baseline?.mode || !current?.mode || baseline.mode !== current.mode || baseline.provider !== current.provider) {
     return false;
   }
-  if (source?.provider?.includes("Lighthouse")) {
+  if (source?.provider?.includes("Lighthouse") || baseline.mode.includes("lighthouse")) {
     return Boolean(baseline.lighthouseVersion && baseline.lighthouseVersion === current.lighthouseVersion);
   }
   return baseline.ruleSetVersion === current.ruleSetVersion;
@@ -473,9 +830,62 @@ function providerRowStatus(row, audit) {
   if (!comparableEngine(row.baseline.engine, engineSnapshot(audit.report.engine), row.source)) {
     return { status: "inconclusive", outcome, comparisonReason: "evidence-engine-changed" };
   }
-  if (outcome === "failed") return { status: "still-present", outcome, comparisonReason: "exact-rule-failed" };
-  if (outcome === "passed") return { status: "resolved", outcome, comparisonReason: "exact-rule-passed" };
+  if (outcome === "failed") {
+    return row.proofKind === "provider-guardrail"
+      ? { status: "regression", outcome, comparisonReason: "retained-guardrail-failed" }
+      : { status: "still-present", outcome, comparisonReason: "exact-rule-failed" };
+  }
+  if (outcome === "passed") {
+    return {
+      status: "resolved",
+      outcome,
+      comparisonReason: row.proofKind === "provider-guardrail"
+        ? "retained-guardrail-passed"
+        : "exact-rule-passed",
+    };
+  }
   return { status: "inconclusive", outcome, comparisonReason: "exact-rule-not-evaluated" };
+}
+
+function newFindingsRowStatus(row, audit) {
+  if (!audit?.id || !audit.status) return { status: "waiting", outcome: null, comparisonReason: null };
+  if (!TERMINAL_JOB_STATUSES.has(audit.status)) {
+    return { status: audit.status === "queued" ? "waiting" : "running", outcome: null, comparisonReason: null };
+  }
+  if (audit.status !== "complete" || !audit.report) {
+    return { status: "inconclusive", outcome: "missing", comparisonReason: `audit-${audit.status}` };
+  }
+  if (!comparableEngine(row.baseline.engine, engineSnapshot(audit.report.engine))) {
+    return { status: "inconclusive", outcome: "missing", comparisonReason: "evidence-engine-changed" };
+  }
+  const known = new Set(row.baseline.knownFindingRules ?? []);
+  const repaired = new Set(row.baseline.repairedRules ?? [row.baseline.repairedRule].filter(Boolean));
+  const focusAreas = row.baseline.focusAreas ?? [];
+  const introduced = (audit.report.findings ?? [])
+    .filter((finding) => ["high", "medium"].includes(finding?.severity))
+    .filter((finding) => !focusAreas.length || (finding.focusAreas ?? []).some((area) => focusAreas.includes(area)))
+    .filter((finding) => !repaired.has(findingRuleKey(finding)))
+    .filter((finding) => !known.has(findingRuleKey(finding)))
+    .slice(0, 5)
+    .map((finding) => ({
+      findingId: bounded(finding.id, 160),
+      title: bounded(finding.title, 240),
+      severity: finding.severity,
+      source: sourceSnapshot(finding.source),
+    }));
+  return introduced.length
+    ? {
+        status: "regression",
+        outcome: "new-high-medium-findings",
+        comparisonReason: "new-retained-findings",
+        introducedFindings: introduced,
+      }
+    : {
+        status: "resolved",
+        outcome: "no-new-high-medium-findings",
+        comparisonReason: "no-new-retained-findings",
+        introducedFindings: [],
+      };
 }
 
 function browserRowStatus(row, audit) {
@@ -486,7 +896,9 @@ function browserRowStatus(row, audit) {
   if (audit.status !== "complete" || !audit.report) {
     return { status: "inconclusive", outcome: "missing", comparisonReason: `audit-${audit.status}` };
   }
-  const replay = audit.report.verification?.browserReplay;
+  const replay = (audit.report.verification?.browserReplays ?? [])
+    .find((item) => item?.baseline?.findingId === row.findingId)
+    ?? audit.report.verification?.browserReplay;
   if (!replay?.required || replay.status !== "complete") {
     return {
       status: "inconclusive",
@@ -499,8 +911,33 @@ function browserRowStatus(row, audit) {
     : { status: "still-present", outcome: "issue", comparisonReason: "exact-browser-replay" };
 }
 
+function browserGuardrailRowStatus(row, audit) {
+  if (!audit?.id || !audit.status) return { status: "waiting", outcome: null, comparisonReason: null };
+  if (!TERMINAL_JOB_STATUSES.has(audit.status)) {
+    return { status: audit.status === "queued" ? "waiting" : "running", outcome: null, comparisonReason: null };
+  }
+  if (audit.status !== "complete" || !audit.report) {
+    return { status: "inconclusive", outcome: "missing", comparisonReason: `audit-${audit.status}` };
+  }
+  const comparison = (audit.report.verification?.browserGuardrails ?? [])
+    .find((item) => item?.checkId === row.baseline.checkId);
+  if (!comparison || comparison.status !== "complete") {
+    return {
+      status: "inconclusive",
+      outcome: comparison?.outcome ?? "missing",
+      comparisonReason: comparison?.status === "blocked"
+        ? "browser-guardrail-blocked"
+        : "browser-guardrail-missing",
+    };
+  }
+  return comparison.outcome === "passed"
+    ? { status: "resolved", outcome: "passed", comparisonReason: "retained-browser-guardrail-passed" }
+    : { status: "regression", outcome: "issue", comparisonReason: "retained-browser-guardrail-failed" };
+}
+
 function aggregateStatus(rows) {
   if (rows.some((row) => row.status === "still-present")) return "still-present";
+  if (rows.some((row) => row.status === "regression")) return "regression";
   if (rows.some((row) => row.status === "running")) return "running";
   if (rows.some((row) => row.status === "waiting")) return "waiting";
   if (rows.some((row) => row.status === "inconclusive")) return "inconclusive";
@@ -518,7 +955,11 @@ export function aggregateRepairVerification(impact, run, audits = [], now = Date
     const audit = assignment?.auditId ? auditsById.get(assignment.auditId) : null;
     const result = row.proofKind === "browser-replay"
       ? browserRowStatus(row, audit)
-      : providerRowStatus(row, audit);
+      : row.proofKind === "browser-guardrail"
+        ? browserGuardrailRowStatus(row, audit)
+        : row.proofKind === "new-findings-guardrail"
+          ? newFindingsRowStatus(row, audit)
+          : providerRowStatus(row, audit);
     if (!ROW_STATUSES.has(result.status)) {
       throw new AuditError("INVALID_REPAIR", "An aggregate verification row has an invalid status.");
     }
@@ -532,7 +973,7 @@ export function aggregateRepairVerification(impact, run, audits = [], now = Date
   });
   const status = aggregateStatus(rows);
   const terminal = rows.length > 0 && rows.every((row) =>
-    ["resolved", "still-present", "inconclusive"].includes(row.status));
+    ["resolved", "still-present", "regression", "inconclusive"].includes(row.status));
   const terminalEvidenceTimes = [...auditsById.values()]
     .filter((audit) => TERMINAL_JOB_STATUSES.has(audit?.status))
     .map((audit) => audit.completedAt ?? audit.report?.completedAt)
@@ -559,6 +1000,7 @@ export function aggregateRepairVerification(impact, run, audits = [], now = Date
       rowCount: rows.length,
       resolved: rows.filter((row) => row.status === "resolved").length,
       stillPresent: rows.filter((row) => row.status === "still-present").length,
+      regressions: rows.filter((row) => row.status === "regression").length,
       inconclusive: rows.filter((row) => row.status === "inconclusive").length,
       active: rows.filter((row) => ["waiting", "running"].includes(row.status)).length,
     },
@@ -568,7 +1010,7 @@ export function aggregateRepairVerification(impact, run, audits = [], now = Date
 }
 
 export function repairVerificationReceiptMarkdown(aggregate) {
-  if (!aggregate?.receiptAvailable || !["resolved", "still-present", "inconclusive"].includes(aggregate.status)) {
+  if (!aggregate?.receiptAvailable || !["resolved", "still-present", "regression", "inconclusive"].includes(aggregate.status)) {
     throw new AuditError(
       "VERIFICATION_RECEIPT_UNAVAILABLE",
       "The aggregate receipt is available only after every reviewed row reaches a terminal outcome.",
@@ -588,13 +1030,13 @@ export function repairVerificationReceiptMarkdown(aggregate) {
     "",
     "## Reviewed verification matrix",
     "",
-    "| Path | Proof | Strategy | Status | Fresh outcome |",
-    "| --- | --- | --- | --- | --- |",
+    "| Finding | Path | Proof | Strategy | Status | Fresh outcome |",
+    "| --- | --- | --- | --- | --- | --- |",
     ...aggregate.rows.map((row) =>
-      `| ${bounded(row.path, 256)} | ${bounded(row.proofKind, 40)} | ${bounded(row.strategy, 40)} | ${bounded(row.status, 40)} | ${bounded(row.outcome ?? "—", 40)} |`,
+      `| ${bounded(row.findingId ?? row.findingIds?.join(", ") ?? "package guardrail", 160)} | ${bounded(row.path, 256)} | ${bounded(row.proofKind, 40)} | ${bounded(row.strategy, 40)} | ${bounded(row.status, 40)} | ${bounded(row.outcome ?? "—", 40)} |`,
     ),
     "",
-    "> Every row came from retained audited scope reviewed before deployment. Missing, blocked, or incomparable evidence remains inconclusive; one failure keeps the repair still present.",
+    "> Every row came from retained audited scope reviewed before deployment. Missing, blocked, or incomparable evidence remains inconclusive; a retained target failure stays present and a newly failed guardrail is a regression.",
     "",
   ];
   return lines.join("\n");

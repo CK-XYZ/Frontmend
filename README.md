@@ -12,7 +12,7 @@ From a fresh Codex task with the target repository open, use one natural prompt:
 
 Codex should resolve the repository's public deployment, start Frontmend in **Assess** mode, retain the requested focus, and return no more than three deduplicated priorities. Measurement completion is not assessment completion: for an agent-started accessibility or SEO mission, Frontmend opens a bounded rendered-browser review and gives Codex one exact, ordered, non-destructive check at a time. Codex records only directly observed facts, issues, or an honest blocker. Browser findings stay labelled agent-observed, then enter the same ranked queue as provider findings. If a priority still needs repository diagnosis, Frontmend names that next action too. It must not stage a repair from this prompt.
 
-Only a later explicit request such as “Please prepare the first priority for a fix” records **Prepare a fix** intent and makes an eligible repair draft available. That transition is not approval, does not consume delegated-auto allowance, does not edit the repository, and cannot deploy or attest deployment.
+Only a later explicit request such as “Please prepare the first priority for a fix” records **Prepare a fix** intent and makes an eligible repair draft available. A person or agent may freeze one to three diagnosed findings that belong to one coherent repository change; the first remains the legacy primary finding. That transition is not approval, does not consume delegated-auto allowance, does not edit the repository, and cannot deploy or attest deployment.
 
 ## Working product slice
 
@@ -21,9 +21,10 @@ Only a later explicit request such as “Please prepare the first priority for a
 - Durable, asynchronous audit jobs with stable IDs, persisted progress, per-client and service-wide budgets, same-URL deduplication, and 24-hour retention.
 - Real audit cancellation shared by the human control and WebMCP: the active provider request is aborted, `cancelled` is persisted as a terminal state, repeated cancellation is safe, and the same stable audit can be restarted as a numbered attempt.
 - Fresh retry semantics for failed jobs: a repeated human or agent start keeps the stable workspace ID, consumes the normal rate budget, increments the visible attempt, clears stale failure state, and actually runs the provider again.
-- Independent PageSpeed Insights/Lighthouse evidence for mobile and desktop, including bounded screenshots when supplied by the provider. One failed viewport no longer discards the other viewport's measured result.
+- Concurrent independent PageSpeed Insights/Lighthouse and live-document evidence for every audit. Mobile and desktop measurements, bounded screenshots, public HTML, response headers, metadata, and observed same-site routes are merged deterministically; one unavailable source never discards the other and remains explicit in the coverage projection.
 - Natural intent handoff for requests such as “audit my site for accessibility and SEO”: the result tool accepts the requested focus areas, retains category scores, and returns up to three severity-ranked priorities deduplicated across mobile and desktop instead of making the person restate Frontmend's workflow.
 - A progressive human mission composer offers the same bounded focus and one-to-five priority shortlist at URL intake. Leaving it untouched preserves the full frontend audit, while a focused selection survives cancellation, retry, reload, and the stable workspace without hiding the complete evidence record.
+- Audit mission schema v2 makes the assessment claim explicit: **This page** preserves the existing single-target workflow, while **Bounded site** waits for up to three deterministic server-issued same-site route candidates. Legacy v1 missions project as page scope, and both Human and WebMCP intake share the same scope and route-limit contract.
 - A completed person-started **Assess** mission can be handed to a browser-capable agent without creating a second audit. Frontmend retains the original audit ID, person attribution, provider evidence, attempt, and authority boundary; opening the existing browser review advances the mission revision and makes its first exact rendered task the resumable checkpoint. Broad human audits may adopt bounded accessibility and SEO coverage, while focused audits retain their selected rendered-review scope.
 - The same exact rendered task is fully completable in Human mode with passed, issue, or blocked outcomes, conditional structured finding fields, person provenance, and stale-session refresh. An untouched optional handoff can be visibly withdrawn before evidence; after any result exists, it must be completed or retain an honest blocker.
 - A supported repository-diagnosis mission is also fully completable in Human mode. A person can contribute the same bounded browser observations, repository-relative ownership, planned checks, and confidence as a capable coding agent, or preserve an honest blocker when the matching browser or repository is unavailable. Stale writes refresh the authoritative mission and require review before resubmission.
@@ -32,11 +33,11 @@ Only a later explicit request such as “Please prepare the first priority for a
 - A persisted **Agent browser review** prevents agent-started accessibility and SEO audits from stopping at provider scores. Frontmend exposes one exact check at a time—rendered structure, a primary journey, responsive reflow, and search discovery as applicable—and retains pass, issue, or bounded blocker outcomes without pretending this is a complete manual or screen-reader audit.
 - Browser-observed issues carry their own provenance, become ranked assessment priorities, and continue through the same repository fix-brief, diagnosis, repair, and fresh-verification contracts as provider findings. After deployment, Frontmend preserves the original rendered observation and delegates one exact like-for-like browser replay before it will issue a verification receipt.
 - A ranked mission-priority surface links directly to the complete evidence queue, preserves cross-viewport occurrences, and shows whether each priority is measured, awaiting diagnosis, or backed by contributed diagnosis.
-- An explicit **Prepare a fix** transition freezes one retained finding before repair staging appears. It is idempotent for that finding, rejects conflicting intent, creates no repair by itself, and cannot silently consume delegated policy.
-- A truthful live-document fallback when Lighthouse is unavailable, plus a hybrid mode that supplements a retained single-viewport Lighthouse result with bounded public HTML and response-header evidence. Every report names unavailable strategies instead of flattening partial evidence into a total failure.
+- An explicit **Prepare a fix** transition freezes one to three ordered diagnosed findings before repair staging appears. It is idempotent only for that exact package, rejects replacement or reordering, creates no repair by itself, and cannot silently consume delegated policy. Multi-finding packages always require explicit person review.
+- A categorical evidence-coverage projection names completed and unavailable sources, measured strategies, bounded route candidates, and limitations without inventing a confidence score. Duplicate document rules are omitted when Lighthouse already evaluated the exact rule, while source provenance remains separate.
 - Bounded same-site route discovery from fetched anchor paths, with explicit unvisited-route caveats and a shared human/WebMCP action whose server-authoritative parent job starts a real follow-up audit only for an observed path.
 - Durable route journeys with bounded root, parent, depth, and ancestor provenance in job snapshots, reports, Markdown exports, WebMCP results, and a visible back-to-parent trail.
-- Durable site-exploration missions that atomically start one to three selected observed routes, preserve a separate audit per page, aggregate recurring rule evidence, survive reload, and export a bounded cross-page report without claiming a full crawl.
+- Durable site-exploration missions accept only server-issued candidate IDs for bounded-site continuations, atomically start one to three retained observed routes, preserve a separate audit per page, feed completed cross-page recurrence into the root priorities/checkpoint/assessment receipt, survive reload, and export a bounded report without claiming a full crawl. Failed or unavailable route coverage remains an explicit terminal limitation.
 - Site-aware CSP repair evidence that inventories bounded external resource origins and inline script/style usage from the fetched document, then produces a conservative Report-Only candidate without claiming runtime coverage.
 - Responsive findings workspace with evidence provenance and source-specific scoring.
 - Truthful high-volume Lighthouse results: the summary reports the full measured failure total, while the bounded ten-detail queue exposes its omitted count and retains every explicit rule outcome for agents and exports.
@@ -57,7 +58,7 @@ Only a later explicit request such as “Please prepare the first priority for a
 - A human-only deployment-handoff gate: explicit approval or eligible delegation unlocks implementation and export, but a site-owner attestation is required before human or WebMCP verification can start.
 - Approval-gated Markdown export with an explicit proposal-only honesty notice.
 - Portable verification-receipt export with a bounded rule-scope outcome table, metric deltas, repository implementation provenance when recorded, audit lineage, and explicit source/check/deployment boundaries.
-- Fresh repair verification that reports `resolved`, `still-present`, or `inconclusive`; a provider repair freezes every measured strategy sharing the original failed rule, while a browser-observed repair freezes the original evidence, element, check, and viewport for one exact post-deployment replay.
+- Fresh repair verification that reports `resolved`, `still-present`, `regression`, or `inconclusive`; every finding in a cohesive package keeps separately identified exact rows, provider repairs freeze every measured strategy sharing each failed rule plus bounded previously passing provider and rendered-browser guardrails, and every browser-observed finding freezes its original evidence, element, check, and viewport for its own exact post-deployment replay. Newly introduced high/medium findings in the reviewed focus remain separate regression rows.
 - Browser-finding verification reuses `open_browser_review` and `record_browser_review_check` contextually: the receipt stays absent while the replay is unopened, active, or blocked; `passed` resolves only the retained rendered issue, `issue` keeps it present, and a blocker leaves the same comparison resumable.
 - Rule proof and summary-metric proof are deliberately separate: partial/hybrid verification requires the same Lighthouse version for an exact Lighthouse rule, while score/check/finding deltas appear only when the engine, measured strategies, score basis, and document-supplement coverage all match.
 - A before/after proof receipt with baseline and fresh audit IDs plus server-derived score, passed-check, and finding deltas; the same structure is returned through WebMCP.
@@ -76,7 +77,7 @@ Only a later explicit request such as “Please prepare the first priority for a
 
 ## Evidence boundary
 
-Frontmend reports only evidence returned by the current run. Each supported Lighthouse or document rule emits an explicit `passed`, `failed`, `not-applicable`, or `not-evaluated` outcome independently of the bounded findings display. `findingCount` records the full measured failure total, `findings` retains the ten highest-priority details, and `findingsOmitted` makes the difference explicit instead of silently shrinking the result. Provider responses are limited by bytes actually read, screenshots accept only bounded passive image formats, failures remain structured and recoverable, and a fallback report states that no screenshot or viewport measurement was made. CSP resource inventories accept only bounded HTTP(S) origins, exclude same-origin references already covered by `'self'`, and explicitly state that static HTML cannot reveal runtime requests, CSS imports, or every user journey.
+Frontmend reports only evidence returned by the current run. Lighthouse and document inspection run concurrently and remain independent sources; every completed report carries a categorical coverage projection and bounded source failures. Each supported Lighthouse or document rule emits an explicit `passed`, `failed`, `not-applicable`, or `not-evaluated` outcome independently of the bounded findings display. `findingCount` records the full measured failure total, `findings` retains the ten highest-priority details, and `findingsOmitted` makes the difference explicit instead of silently shrinking the result. Provider responses are limited by bytes actually read, screenshots accept only bounded passive image formats, failures remain structured and recoverable, and a document-only report states that no screenshot or viewport measurement was made. CSP resource inventories accept only bounded HTTP(S) origins, exclude same-origin references already covered by `'self'`, and explicitly state that static HTML cannot reveal runtime requests, CSS imports, or every user journey.
 
 The current slice diagnoses a deliberately narrow set of Lighthouse and document rules. Summary check counts include only those explicit supported rules, rather than every opaque audit in the upstream payload. In hybrid runs, document rules already evaluated by the retained Lighthouse strategy are omitted from findings and totals; the fetched-document profile remains available, but it never substitutes for the unavailable viewport. Verification history does not turn unlike measurements into a trend: each attempt records its evidence signature, and scores remain visible as observations while the UI and Markdown receipt explicitly withhold deltas when coverage differs from the root baseline. A repair artifact is a reviewed proposal: Frontmend does not claim it edited a third-party site. The person deploys the change through their normal source and hosting workflow, then Frontmend performs a fresh public audit. A successful local run, build, or Wrangler dry run is not a deployment or production proof.
 
@@ -88,7 +89,7 @@ No source from private products or existing MCP bridges has been copied into thi
 
 ```text
 Human UI ────────┐                         ┌─ PageSpeed Insights / Lighthouse
-                 ├─ audit service ─ jobs ─┼─ bounded live-document fallback
+                 ├─ audit service ─ jobs ─┼─ concurrent bounded document inspection
 WebMCP tools ────┘                         └─ person/agent rendered review
                                   │
                                   └─ shared diagnosis + repair mission
@@ -111,7 +112,7 @@ The coding agent also keeps repository access and submits only bounded files, ch
 | `cancel_site_audit` | Stop an active job and persist its terminal cancellation state. |
 | `get_site_audit_results` | Read the bounded evidence report. |
 | `open_browser_review` | Open the next exact rendered-browser assessment check or post-deployment replay required by the visible mission. |
-| `record_browser_review_check` | Record the current exact check as passed, issue, or honestly blocked; assessment issues create bounded findings, while verification compares only the retained finding. |
+| `record_browser_review_check` | Record the current exact check as passed, issue, or honestly blocked; assessment issues create bounded findings, while verification compares only retained exact evidence and reviewed browser guardrails. |
 | `get_assessment_receipt` | Export one completed mission as bounded structured evidence plus portable Markdown without broadening repair or deployment authority. |
 | `get_repository_fix_brief` | Translate one finding into a source-safe repository implementation contract. |
 | `open_diagnostic_mission` | Turn a structured Lighthouse symptom into explicit browser, repository, and verification investigations. |
@@ -121,21 +122,24 @@ The coding agent also keeps repository access and submits only bounded files, ch
 | `start_site_exploration` | Atomically start one to three observed page audits under one durable mission. |
 | `get_site_exploration` | Read mission progress and bounded recurring evidence across selected pages. |
 | `get_verification_receipt` | Return portable Markdown plus structured per-strategy outcomes for a completed verification. |
-| `prepare_site_repair` | Record explicit intent for one retained finding without approving, implementing, or deploying it. |
-| `stage_site_repair` | Submit a visible repository mission, freeze its measured-rule scope, and either await review or consume an eligible scoped auto grant without changing the target site. |
+| `prepare_site_repair` | Record explicit intent for one to three diagnosed retained findings without approving, implementing, or deploying them. |
+| `stage_site_repair` | Submit one visible coherent repository mission, freeze every package finding and measured-rule row, and await explicit review for multi-finding work or the existing eligible scoped auto grant for a legacy single finding without changing the target site. |
 | `revise_site_repair` | Submit a complete new version only after visible human feedback. |
 | `get_repair_workspace` | Inspect drafts, frozen rule scope, mission progress, ownership boundaries, and allowed next actions. |
 | `record_repository_implementation` | Attach bounded agent-reported filenames and check outcomes after explicit review or eligible delegated authorisation. |
-| `start_repair_verification` | Re-audit an approved repair and compare every captured occurrence of the measured rule. |
+| `start_repair_verification` | Re-audit an approved repair and compare every captured occurrence plus its reviewed regression guardrails. |
 
 ## Development
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 287 contracts.
+`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files. `bun test` currently runs 312 contracts across 31 files.
+
+`bun run eval:mission` executes a deterministic offline mission protocol over the registered twenty-one-tool library, real shared service, local HTTP middleware, public Worker adapter, and real audit Durable Object implementation. It proves a complete bounded-site assessment-to-verification sequence, local/Worker categorical parity, stale-revision recovery, and an honest provider/browser-conflict blocker. Its fixture approval and site-owner attestation are protocol inputs: the command does not operate a browser, inspect a repository, deploy a site, call PageSpeed Insights, or prove production behaviour.
 
 ```powershell
 bun install
+bun run eval:mission
 bun run test
 bun run build
 bunx wrangler deploy --dry-run

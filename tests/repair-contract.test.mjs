@@ -242,6 +242,61 @@ test("creates a bounded source-attributed repair that requires human review", ()
   assert.equal(repair.repositoryPlan.sourceChangedByFrontmend, false);
 });
 
+test("keeps a cohesive multi-finding package immutable and outside delegated auto approval", () => {
+  const second = {
+    id: "document-missing-h1",
+    title: "The document has no primary heading",
+    severity: "medium",
+    category: "SEO",
+    focusAreas: ["seo", "accessibility"],
+    evidence: "No h1 element was found in the fetched document.",
+    repair: "Add one descriptive primary heading to the shared page template.",
+    source: { provider: "Frontmend document audit", auditId: "missing-h1", strategy: "document" },
+  };
+  const repair = createRepairDraft({
+    auditId: "audit-package",
+    finding,
+    findings: [finding, second],
+    input: {
+      findingIds: [finding.id, second.id],
+      summary: "Repair the retained response policy and page heading in one reviewed template change.",
+      patchType: "html",
+      patch: "Add the primary heading and the bounded response-policy configuration.",
+      verificationPlan: "Rerun both exact rules and retained guardrails.",
+      risk: "low",
+      repositoryFiles: ["src/template.html"],
+      repositoryChecks: ["bun test"],
+    },
+    source: "agent",
+    now: 200,
+  });
+  assert.deepEqual(repair.findingIds, [finding.id, second.id]);
+  assert.equal(repair.findingPackage.items.length, 2);
+  assert.equal(repair.findingPackage.primaryFindingId, finding.id);
+
+  const policy = createRepairPolicy({ mode: "auto-low-risk" }, 210);
+  const gated = applyRepairPolicy(repair, policy, 220);
+  assert.equal(gated.repair.status, "draft");
+  assert.equal(gated.repair.requiresHumanReview, true);
+  assert.match(gated.repair.automation.reasons.join(" "), /multi-finding packages require explicit review/i);
+  assert.equal(gated.policy.remainingAutoApprovals, policy.remainingAutoApprovals);
+
+  const revised = reviseRepairDraft(
+    requestRepairChanges(repair, "Clarify the shared verification boundary.", 230),
+    { verificationPlan: "Rerun both exact rules on every retained route, then replay browser guardrails." },
+    "agent",
+    240,
+  );
+  assert.deepEqual(revised.findingIds, repair.findingIds);
+  assert.deepEqual(revised.findingPackage, repair.findingPackage);
+  assert.throws(
+    () => reviseRepairDraft(requestRepairChanges(repair, "Do not replace package membership.", 250), {
+      findingIds: [second.id],
+    }),
+    (error) => error.code === "INVALID_REPAIR",
+  );
+});
+
 test("turns bounded CSP evidence into a conservative site-aware report-only draft", () => {
   const repair = createRepairDraft({
     auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
@@ -564,6 +619,14 @@ test("verification claims resolution only for comparable evidence", () => {
       provider: "Frontmend document audit",
       ruleSetVersion: 1,
     },
+    baseline: {
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      completedAt: 90,
+      score: 90,
+      findingCount: 1,
+      checks: { passed: 0, warnings: 0, failed: 1 },
+      exactRuleOutcome: "failed",
+    },
   };
   const baseReport = {
     engine: {
@@ -595,6 +658,77 @@ test("verification claims resolution only for comparable evidence", () => {
       .status,
     "inconclusive",
   );
+});
+
+test("verification withholds resolution and reports a browser guardrail regression", () => {
+  const verification = {
+    baselineAuditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    repairId: "3e8fe191-1f46-4f1b-92ac-492a5d73bb24",
+    repairRevision: 2,
+    findingId: finding.id,
+    findingTitle: finding.title,
+    findingSource: finding.source,
+    baselineEngine: {
+      mode: "live-document",
+      provider: "Frontmend document audit",
+      ruleSetVersion: 1,
+    },
+    baseline: {
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      completedAt: 90,
+      score: 90,
+      findingCount: 1,
+      checks: { passed: 0, warnings: 0, failed: 1 },
+      exactRuleOutcome: "failed",
+    },
+    browserGuardrails: [{
+      checkId: "primary-journey",
+      label: "Primary journey",
+      focusArea: "accessibility",
+      viewport: "desktop",
+      summary: "The primary journey completed before repair.",
+    }],
+  };
+  const fresh = {
+    auditId: "fresh-guardrail-audit",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 100,
+    score: 100,
+    checks: { passed: 1, warnings: 0, failed: 0 },
+    findings: [],
+    engine: {
+      mode: "live-document",
+      provider: "Frontmend document audit",
+      ruleSetVersion: 1,
+    },
+    ruleOutcomes: [{ source: finding.source, status: "passed" }],
+  };
+  const waiting = compareVerification(fresh, verification, 110);
+  assert.equal(waiting.status, "inconclusive");
+  assert.equal(waiting.browserGuardrails[0].status, "not-opened");
+  assert.throws(
+    () => verificationReceiptMarkdown({ ...fresh, verification: waiting }),
+    (error) => error.code === "VERIFICATION_RECEIPT_UNAVAILABLE",
+  );
+
+  let review = createBrowserVerificationReview({
+    auditId: fresh.auditId,
+    verification,
+    target: fresh.finalUrl,
+    now: 120,
+  });
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-guardrail-1",
+    outcome: "issue",
+    summary: "The primary journey no longer reaches completion.",
+    observations: ["The retained primary action now stops before confirmation."],
+  }, "agent", 130);
+  const regression = compareVerification(fresh, verification, 140, review);
+  assert.equal(regression.status, "regression");
+  assert.equal(regression.ruleOutcome, "passed");
+  assert.equal(regression.browserGuardrails[0].outcome, "issue");
+  assert.match(verificationReceiptMarkdown({ ...fresh, verification: regression }), /Browser regression guardrails/i);
 });
 
 test("browser-observed repairs require an exact fresh replay before a verification receipt", () => {
@@ -722,6 +856,92 @@ test("browser-observed repairs require an exact fresh replay before a verificati
   const stillPresent = compareVerification(fresh, context, 185, failedReview);
   assert.equal(stillPresent.status, "still-present");
   assert.equal(stillPresent.ruleOutcome, "failed");
+});
+
+test("a multi-finding browser package withholds resolution until every exact replay completes", () => {
+  const makeReplay = (findingId, title, auditId, strategy, evidence) => ({
+    required: true,
+    status: "not-opened",
+    baseline: {
+      findingId,
+      title,
+      category: "Accessibility",
+      focusArea: "accessibility",
+      selector: strategy === "mobile" ? "button.primary" : "main output",
+      evidence,
+      repair: "Repair the retained rendered symptom.",
+      source: { provider: "Frontmend browser review", auditId, strategy },
+      browserReviewEvidence: {
+        reviewId: "baseline-review",
+        checkId: auditId.split(":")[0],
+        checkLabel: title,
+        provenance: "agent-reported-browser",
+        reportedAt: 90,
+      },
+    },
+  });
+  const replays = [
+    makeReplay("browser:reflow:01", "Primary action reflow", "responsive-reflow:01", "mobile", "The primary action clipped."),
+    makeReplay("browser:feedback:01", "Completion feedback", "primary-journey:01", "desktop", "Completion feedback was absent."),
+  ];
+  const fresh = {
+    auditId: "fresh-browser-package",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 120,
+    score: 100,
+    findingCount: 0,
+    checks: { passed: 10, warnings: 0, failed: 0 },
+    engine: { mode: "live-lighthouse", provider: "PageSpeed Insights", ruleSetVersion: 1, lighthouseVersion: "13.4.1" },
+    findings: [],
+    ruleOutcomes: [],
+  };
+  const verification = {
+    baselineAuditId: "browser-package-baseline",
+    repairId: "repair-browser-package",
+    repairRevision: 1,
+    findingId: replays[0].baseline.findingId,
+    findingIds: replays.map((replay) => replay.baseline.findingId),
+    findingTitle: replays[0].baseline.title,
+    findingSource: replays[0].baseline.source,
+    findingScope: { sources: [replays[0].baseline.source] },
+    baselineEngine: fresh.engine,
+    baselineEvidence: null,
+    baseline: {
+      auditId: "browser-package-baseline",
+      completedAt: 100,
+      score: 90,
+      findingCount: 2,
+      checks: { passed: 8, warnings: 0, failed: 2 },
+      exactRuleOutcome: "failed",
+    },
+    browserReplay: replays[0],
+    browserReplays: replays,
+  };
+  let review = createBrowserVerificationReview({ auditId: fresh.auditId, verification, target: fresh.url, now: 130 });
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay",
+    outcome: "passed",
+    summary: "The primary action now reflows inside the viewport.",
+    observations: ["The retained action is fully visible."],
+  }, "agent", 140);
+  const partial = compareVerification(fresh, verification, 145, review);
+  assert.equal(partial.status, "inconclusive");
+  assert.equal(partial.browserReplays[1].status, "in-progress");
+  assert.throws(
+    () => verificationReceiptMarkdown({ ...fresh, verification: partial }),
+    (error) => error.code === "VERIFICATION_RECEIPT_UNAVAILABLE",
+  );
+  review = recordBrowserReviewCheck(review, {
+    checkId: "fresh-browser-replay-2",
+    outcome: "passed",
+    summary: "Completion feedback is now visible.",
+    observations: ["The retained completion state includes visible feedback."],
+  }, "agent", 150);
+  const resolved = compareVerification(fresh, verification, 155, review);
+  assert.equal(resolved.status, "resolved");
+  assert.equal(resolved.browserReplays.length, 2);
+  assert.match(verificationReceiptMarkdown({ ...fresh, verification: resolved }), /Fresh browser replays[\s\S]*Completion feedback/i);
 });
 
 test("verification requires every captured strategy for the rule to pass", () => {

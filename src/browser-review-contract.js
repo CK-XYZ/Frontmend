@@ -171,7 +171,7 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
   return {
     schemaVersion: 1,
     id: boundedString(task.id, "task.id", 80),
-    kind: ["provider-confirmation", "coverage-gap", "safe-journey", "verification-replay"].includes(task.kind)
+    kind: ["provider-confirmation", "coverage-gap", "safe-journey", "verification-replay", "verification-guardrail"].includes(task.kind)
       ? task.kind
       : "coverage-gap",
     label: boundedString(task.label, "task.label", 120),
@@ -363,6 +363,12 @@ export function browserReviewSnapshot(review) {
     verificationBaseline: review.purpose === "verification"
       ? verificationBaselineSnapshot(review.verificationBaseline)
       : null,
+    verificationBaselines: review.purpose === "verification"
+      ? (review.verificationBaselines ?? [review.verificationBaseline])
+          .map(verificationBaselineSnapshot)
+          .filter(Boolean)
+          .slice(0, 3)
+      : [],
     requestedFocusAreas: missionFocusAreas({ focusAreas: review.requestedFocusAreas }),
     adoption: review.purpose === "assessment" && review.adoption
       ? {
@@ -488,17 +494,48 @@ export function createBrowserReviewMission({
 }
 
 export function createBrowserVerificationReview({ auditId, verification, target, now = Date.now() }) {
-  const baseline = verificationBaselineSnapshot(verification?.browserReplay?.baseline);
-  if (!verification?.browserReplay?.required || !baseline) {
+  const replayInputs = Array.isArray(verification?.browserReplays) && verification.browserReplays.length
+    ? verification.browserReplays
+    : verification?.browserReplay
+      ? [verification.browserReplay]
+      : [];
+  const baselines = replayInputs
+    .filter((replay) => replay?.required !== false)
+    .map((replay) => verificationBaselineSnapshot(replay?.baseline ?? replay))
+    .filter(Boolean)
+    .filter((baseline, index, values) =>
+      values.findIndex((candidate) => candidate.findingId === baseline.findingId) === index)
+    .slice(0, 3);
+  const baseline = baselines[0] ?? null;
+  const guardrails = (Array.isArray(verification?.browserGuardrails) ? verification.browserGuardrails : [])
+    .slice(0, 2)
+    .map((guardrail, index) => ({
+      checkId: boundedString(guardrail.checkId, `browserGuardrails[${index}].checkId`, 80),
+      label: boundedString(guardrail.label, `browserGuardrails[${index}].label`, 120),
+      focusArea: guardrail.focusArea === "seo" ? "seo" : "accessibility",
+      viewport: guardrail.viewport === "mobile" ? "mobile" : "desktop",
+      summary: boundedString(
+        guardrail.summary ?? "The retained browser guardrail passed before the reviewed repair.",
+        `browserGuardrails[${index}].summary`,
+        300,
+      ),
+      assignment: guardrail.assignment && typeof guardrail.assignment === "object"
+        ? guardrail.assignment
+        : null,
+    }));
+  if (!baselines.length && !guardrails.length) {
     throw new AuditError(
       "BROWSER_REVIEW_NOT_REQUIRED",
-      "This verification does not contain a retained browser finding that requires fresh replay.",
+      "This verification does not contain a retained browser replay or guardrail.",
     );
   }
-  const viewport = baseline.source.strategy === "mobile" ? "mobile" : "desktop";
-  const tasks = [{
+  const tasks = [];
+  for (const [index, replayBaseline] of baselines.entries()) {
+    const baseline = replayBaseline;
+    const viewport = baseline.source.strategy === "mobile" ? "mobile" : "desktop";
+    tasks.push({
     schemaVersion: 1,
-    id: "fresh-browser-replay",
+    id: index === 0 ? "fresh-browser-replay" : `fresh-browser-replay-${index + 1}`,
     kind: "verification-replay",
     label: "Fresh browser replay",
     focusArea: baseline.focusArea,
@@ -531,7 +568,62 @@ export function createBrowserVerificationReview({ auditId, verification, target,
       findingsAllowed: false,
       blockerReasons: [...BROWSER_REVIEW_BLOCKER_REASONS],
     },
-  }];
+    });
+  }
+  for (const [index, guardrail] of guardrails.entries()) {
+    const path = new URL(target).pathname || "/";
+    tasks.push({
+      schemaVersion: 1,
+      id: `fresh-browser-guardrail-${index + 1}`,
+      kind: "verification-guardrail",
+      label: `Regression guardrail · ${guardrail.label}`,
+      focusArea: guardrail.focusArea,
+      focusAreas: [guardrail.focusArea],
+      viewport: guardrail.viewport,
+      target: { path, viewport: guardrail.viewport, affectedViewports: [guardrail.viewport] },
+      trigger: {
+        provider: "Frontmend browser review",
+        auditId: guardrail.checkId,
+        findingId: null,
+        ruleId: guardrail.checkId,
+        selector: null,
+        retainedEvidence: guardrail.summary,
+        occurrences: [{
+          findingId: null,
+          strategy: guardrail.viewport,
+          selector: null,
+          evidence: guardrail.summary,
+        }],
+      },
+      assignment: {
+        goal: `Confirm the retained ${guardrail.label} guardrail still passes after the reviewed change.`,
+        instructions: boundedString(
+          guardrail.assignment?.instructions
+            ?? `Repeat the retained ${guardrail.label} browser check at the ${guardrail.viewport} viewport.`,
+          `browserGuardrails[${index}].assignment.instructions`,
+          900,
+        ),
+        boundary: boundedString(
+          guardrail.assignment?.boundary
+            ?? "Report only a fresh direct browser observation. Do not infer a pass from provider scores or deployment claims.",
+          `browserGuardrails[${index}].assignment.boundary`,
+          900,
+        ),
+        completionCriteria: boundedString(
+          guardrail.assignment?.completionCriteria
+            ?? "Return passed only when the retained journey or reflow guardrail still holds, issue when it regressed, or an honest blocker.",
+          `browserGuardrails[${index}].assignment.completionCriteria`,
+          600,
+        ),
+      },
+      responseContract: {
+        outcomes: ["passed", "issue", "blocked"],
+        observationPrompt: "Describe only the fresh comparison with the retained browser guardrail.",
+        findingsAllowed: false,
+        blockerReasons: [...BROWSER_REVIEW_BLOCKER_REASONS],
+      },
+    });
+  }
   return browserReviewSnapshot({
     schemaVersion: 2,
     id: crypto.randomUUID(),
@@ -539,7 +631,11 @@ export function createBrowserVerificationReview({ auditId, verification, target,
     purpose: "verification",
     target: boundedString(target, "target", 2_048),
     verificationBaseline: baseline,
-    requestedFocusAreas: [baseline.focusArea],
+    verificationBaselines: baselines,
+    requestedFocusAreas: [...new Set([
+      ...baselines.map((item) => item.focusArea),
+      ...guardrails.map((guardrail) => guardrail.focusArea),
+    ])],
     tasks,
     results: [],
     history: [],

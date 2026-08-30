@@ -107,8 +107,13 @@ function VerificationBanner({ verification }) {
       ? [verification.findingSource]
       : [];
   const scoped = scopeSources.length > 1;
-  const replayPending = verification.browserReplay?.required && verification.browserReplay.status !== "complete";
-  const browserReplay = verification.browserReplay?.required === true;
+  const browserGuardrails = verification.browserGuardrails ?? [];
+  const browserReplays = verification.browserReplays?.length
+    ? verification.browserReplays
+    : verification.browserReplay?.required ? [verification.browserReplay] : [];
+  const replayPending = browserReplays.some((replay) => replay.status !== "complete")
+    || browserGuardrails.some((guardrail) => guardrail.status !== "complete");
+  const browserReplay = browserReplays.length > 0 || browserGuardrails.length > 0;
   const labels = {
     resolved: browserReplay
       ? "Exact rendered issue passed"
@@ -120,6 +125,7 @@ function VerificationBanner({ verification }) {
       : scoped
         ? "A captured rule occurrence still fails"
         : "Original finding still present",
+    regression: "A retained regression guardrail failed",
     inconclusive: replayPending
       ? "Fresh browser comparison required"
       : scoped
@@ -146,7 +152,7 @@ function VerificationBanner({ verification }) {
         <span className="verification-icon" aria-hidden="true">
           {verification.status === "resolved" ? (
             <CheckCircle size={23} weight="fill" />
-          ) : verification.status === "still-present" ? (
+          ) : verification.status === "still-present" || verification.status === "regression" ? (
             <Warning size={23} weight="fill" />
           ) : (
             <Info size={23} weight="fill" />
@@ -201,28 +207,50 @@ function VerificationBanner({ verification }) {
           mode="verification"
         />
       ) : null}
-      {verification.browserReplay?.required ? (
-        <section className={`verification-replay-evidence replay-${verification.browserReplay.status}`} aria-labelledby="verification-replay-title">
+      {browserReplays.length ? (
+        <section className="verification-replay-group" aria-labelledby="verification-replay-title">
           <div>
-            <p className="kicker">Exact rendered comparison</p>
-            <strong id="verification-replay-title">{verification.browserReplay.baseline?.title}</strong>
-            <p>{verification.browserReplay.baseline?.evidence}</p>
+            <p className="kicker">Exact rendered comparison{browserReplays.length === 1 ? "" : "s"}</p>
+            <strong id="verification-replay-title">
+              {browserReplays.length === 1 ? browserReplays[0].baseline?.title : `${browserReplays.length} retained browser findings`}
+            </strong>
+            {browserReplays.length > 1 ? <p>Each retained browser symptom must receive its own fresh direct replay.</p> : null}
           </div>
-          <dl>
-            <div>
-              <dt>State</dt>
-              <dd>{verification.browserReplay.status?.replaceAll("-", " ")}</dd>
-            </div>
-            <div>
-              <dt>Viewport</dt>
-              <dd>{verification.browserReplay.baseline?.source?.strategy}</dd>
-            </div>
-            <div>
-              <dt>Agent outcome</dt>
-              <dd>{verification.browserReplay.outcome ?? "Waiting"}</dd>
-            </div>
-          </dl>
-          {verification.browserReplay.summary ? <p>{verification.browserReplay.summary}</p> : null}
+          {browserReplays.map((replay) => (
+            <article key={replay.baseline?.findingId} className={`verification-replay-evidence replay-${replay.status}`}>
+              <div>
+                <strong>{replay.baseline?.title}</strong>
+                <p>{replay.baseline?.evidence}</p>
+              </div>
+              <dl>
+                <div><dt>State</dt><dd>{replay.status?.replaceAll("-", " ")}</dd></div>
+                <div><dt>Viewport</dt><dd>{replay.baseline?.source?.strategy}</dd></div>
+                <div><dt>Outcome</dt><dd>{replay.outcome ?? "Waiting"}</dd></div>
+              </dl>
+              {replay.summary ? <p>{replay.summary}</p> : null}
+            </article>
+          ))}
+        </section>
+      ) : null}
+      {browserGuardrails.length ? (
+        <section className="verification-browser-guardrails" aria-labelledby="verification-browser-guardrails-title">
+          <div>
+            <p className="kicker">Retained browser guardrails</p>
+            <strong id="verification-browser-guardrails-title">Journey and reflow checks require exact replay</strong>
+            <p>A passed assessment check is not assumed safe after repair. Each retained behaviour is observed again at its original viewport.</p>
+          </div>
+          <ol>
+            {browserGuardrails.map((guardrail) => (
+              <li key={guardrail.checkId} data-status={guardrail.outcome ?? guardrail.status}>
+                <div>
+                  <strong>{guardrail.label}</strong>
+                  <span>{guardrail.focusArea} · {guardrail.viewport}</span>
+                </div>
+                <em>{guardrail.outcome ?? guardrail.status?.replaceAll("-", " ")}</em>
+                {guardrail.summary ? <p>{guardrail.summary}</p> : null}
+              </li>
+            ))}
+          </ol>
         </section>
       ) : null}
       <RepositoryPlanCard plan={verification.repositoryPlan} />

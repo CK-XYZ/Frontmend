@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "vite build && bun scripts/prepare-sites-build.mjs",
+    "eval:mission": "bun scripts/eval-mission.mjs",
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
     "test:contracts": "node --test tests/audit-service.test.mjs tests/pagespeed-provider.test.mjs tests/route-contract.test.mjs tests/site-exploration-contract.test.mjs tests/repair-contract.test.mjs tests/webmcp.test.mjs",
