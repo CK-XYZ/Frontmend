@@ -13,6 +13,7 @@ import {
   LinkSimple,
   MagnifyingGlass,
   Monitor,
+  PaperPlaneTilt,
   Pulse,
   Robot,
   ShieldCheck,
@@ -25,6 +26,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "../audit-service.js";
 import { assessmentFindings, deriveAuditMissionState } from "../audit-mission-contract.js";
 import { findingRequiresDiagnosticMission } from "../diagnostic-contract.js";
+import { createFreshAgentHandoff } from "../mission-handoff-contract.js";
 import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSummary.jsx";
 import { humanMissionMutationFailure } from "../ui/human-mission-recovery.js";
 import { LazyWorkspace } from "../ui/LazyWorkspace.jsx";
@@ -1292,7 +1294,13 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   );
   const [shareState, setShareState] = useState("idle");
   const shareInputRef = useRef(null);
+  const [handoffState, setHandoffState] = useState("idle");
+  const handoffInputRef = useRef(null);
   const shareUrl = new URL(auditWorkspacePath(report.auditId), window.location.origin).href;
+  const missionCheckpoint = auditService.getMissionCheckpoint(report.auditId);
+  const agentHandoff = missionCheckpoint
+    ? createFreshAgentHandoff(missionCheckpoint, window.location.origin)
+    : null;
   const viewport = viewports.find((item) => item.id === viewportId) ?? viewports[0];
   const selectedFinding =
     findings.find((finding) => finding.id === selectedFindingId) ?? findings[0];
@@ -1378,6 +1386,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   };
 
   const copyShareLink = async () => {
+    setHandoffState("idle");
     try {
       if (typeof navigator.clipboard?.writeText !== "function") throw new Error("Clipboard unavailable");
       await navigator.clipboard.writeText(shareUrl);
@@ -1388,6 +1397,23 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
       window.requestAnimationFrame(() => {
         shareInputRef.current?.focus();
         shareInputRef.current?.select();
+      });
+    }
+  };
+
+  const copyAgentHandoff = async () => {
+    if (!agentHandoff) return;
+    setShareState("idle");
+    try {
+      if (typeof navigator.clipboard?.writeText !== "function") throw new Error("Clipboard unavailable");
+      await navigator.clipboard.writeText(agentHandoff.prompt);
+      setHandoffState("copied");
+      window.setTimeout(() => setHandoffState("idle"), 1_600);
+    } catch {
+      setHandoffState("manual");
+      window.requestAnimationFrame(() => {
+        handoffInputRef.current?.focus();
+        handoffInputRef.current?.select();
       });
     }
   };
@@ -1422,6 +1448,20 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                   ? "Link shown"
                   : "Share audit"}
             </button>
+            {agentHandoff ? (
+              <button className="share-audit agent-handoff-action" type="button" onClick={copyAgentHandoff}>
+                {handoffState === "copied" ? (
+                  <Check size={16} weight="bold" aria-hidden="true" />
+                ) : (
+                  <PaperPlaneTilt size={16} weight="bold" aria-hidden="true" />
+                )}
+                {handoffState === "copied"
+                  ? "Handoff copied"
+                  : handoffState === "manual"
+                    ? "Handoff shown"
+                    : "Copy agent handoff"}
+              </button>
+            ) : null}
             <a
               className="share-audit"
               href={auditService.getAuditReportUrl(report.auditId)}
@@ -1499,6 +1539,33 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             </button>
           </div>
           <small>Clipboard access is unavailable. Copy this reloadable workspace URL manually.</small>
+        </div>
+      ) : null}
+
+      {handoffState === "manual" && agentHandoff ? (
+        <div className="manual-share manual-agent-handoff" role="status">
+          <label htmlFor="manual-agent-handoff">Fresh-agent mission handoff</label>
+          <div>
+            <textarea
+              ref={handoffInputRef}
+              id="manual-agent-handoff"
+              value={agentHandoff.prompt}
+              readOnly
+              rows={9}
+              onFocus={(event) => event.currentTarget.select()}
+            />
+            <button
+              type="button"
+              aria-label="Close fresh-agent mission handoff"
+              onClick={() => setHandoffState("idle")}
+            >
+              <X size={15} weight="bold" />
+            </button>
+          </div>
+          <small>
+            Clipboard access is unavailable. Copy this bounded prompt manually; the receiving agent must
+            open the stable workspace and read its latest checkpoint before acting.
+          </small>
         </div>
       ) : null}
 

@@ -2087,6 +2087,17 @@ summary:focus-visible,
   color: #0b5131;
 }
 
+.agent-handoff-action {
+  border-color: color-mix(in srgb, #7356a5 24%, #dfe1da);
+  background: color-mix(in srgb, #eee8f8 46%, rgba(255, 255, 255, 0.72));
+  color: #59427f;
+}
+
+.agent-handoff-action:hover {
+  border-color: color-mix(in srgb, #7356a5 48%, #dfe1da);
+  color: #3f2c61;
+}
+
 .manual-share {
   width: min(480px, calc(100vw - 48px));
   display: grid;
@@ -2113,7 +2124,8 @@ summary:focus-visible,
   gap: 7px;
 }
 
-.manual-share input {
+.manual-share input,
+.manual-share textarea {
   min-width: 0;
   padding: 7px 8px;
   border: 1px solid #d8ddd1;
@@ -2125,9 +2137,25 @@ summary:focus-visible,
   font-size: 10px;
 }
 
-.manual-share input:focus {
+.manual-share input:focus,
+.manual-share textarea:focus {
   border-color: #9ebc69;
   box-shadow: 0 0 0 3px rgb(159 191 103 / 14%);
+}
+
+.manual-agent-handoff {
+  width: min(680px, calc(100vw - 48px));
+}
+
+.manual-agent-handoff > div {
+  align-items: start;
+}
+
+.manual-agent-handoff textarea {
+  width: 100%;
+  max-height: min(44vh, 340px);
+  resize: vertical;
+  line-height: 1.5;
 }
 
 .manual-share button {
