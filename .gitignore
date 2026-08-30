@@ -9,3 +9,5 @@ dist/
 .dev.vars
 .dev.vars.*
 !.dev.vars.example
+/output
+/design
