@@ -369,3 +369,15 @@
 - Against the immediately preceding lazy-workspace gate, the initial entry increased 2.28 kB raw / 0.60 kB gzip and CSS increased 4.70 kB raw / 0.86 kB gzip. Against the retained pre-split 546.44 kB raw / 147.66 kB gzip JavaScript baseline, the hardened entry remains 132.22 kB raw (24.20%) and 30.74 kB gzip (20.82%) smaller.
 - The in-app browser had no existing Frontmend preview, and project rules prohibit starting a server without explicit authority. This is therefore structural source, regression, compilation, and package evidence—not screenshot, 390 px visual, keyboard-runtime, 200% zoom, high-contrast, screen-reader, supported-browser, or live WebMCP proof.
 - No development server, deployment, push, commit, Access change, public-repository publication, browser proof, or Devpost write occurred.
+
+## 30 August 2026 — Safe fresh-agent mission handoff
+
+- Added one pure bounded handoff projection over the existing mission checkpoint and same-origin stable audit URL. It retains only copy-time revision, status, required capability, source-separation instructions, and human authority orientation.
+- The copied prompt deliberately excludes the checkpoint's mutable action input and requires the receiving session to open the workspace, re-read the latest checkpoint, and discover the current contextual subset before acting. Live state always supersedes the copy.
+- Bounded checkpoint authority text is allowlisted into five short person-owned statements plus agent/claim boundaries. Unsafe origins and invalid revisions fail closed; arbitrary nested fields do not survive the projection.
+- Added **Copy agent handoff** to the deferred completed-report workspace with clipboard success feedback and an accessible manual-copy textarea fallback. The existing stable-link share remains unchanged.
+- Split the compiler into `mission-handoff-contract.js` after the first build showed that co-locating it with the synchronously imported checkpoint module increased initial JavaScript. The final build keeps the initial entry at 414.22 kB raw / 116.91 kB gzip; the deferred report chunk is 68.16 kB raw / 19.01 kB gzip.
+- Focused handoff, checkpoint, lazy-boundary, and Human UI coverage passed 13/13. The full suite passed 239/239 tests across twenty-three files with Bun 1.4.0.
+- `bun run build` passed with Vite 6.4.2 and transformed 4,597 modules. It emitted `index-BueaCMuN.css` at 118.61 kB raw / 22.76 kB gzip, `index-C5pRBbyC.js` at 414.22 kB raw / 116.91 kB gzip, and `ReportWorkspace--z-xUIj1.js` at 68.16 kB raw / 19.01 kB gzip; no chunk-size advisory was emitted.
+- Wrangler 4.126.0 strict dry run read fifteen static assets, reported 371.43 KiB raw / 78.06 KiB gzip, recognised `FrontmendAuditGate`, `FrontmendAuditJob`, and `ASSETS`, and exited without upload.
+- No WebMCP tool, service mutation, provider, permission, Durable Object, approval authority, deployment authority, or parallel mission state was added. The application slice was committed as `64e194020cb4dfc77dce8662c5b3058f8613b020`; no development server, deployment, push, Access change, public-repository publication, browser proof, or Devpost write occurred.

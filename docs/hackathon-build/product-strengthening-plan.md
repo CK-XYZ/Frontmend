@@ -512,6 +512,18 @@ The mission surfaces now have enough depth that keyboard order, state announceme
 - Preserve Human-only fallback, the twenty-one-tool library, contextual registration, shared services, persisted missions, and every person-owned approval/deployment boundary.
 - Treat source, test, and production-build evidence as structural proof only. Fresh 390 px, 200% zoom, keyboard, high-contrast, and screen-reader evidence remains a separate browser gate.
 
+## Freeform Product Round — Safe Fresh-Agent Handoff
+
+The persisted checkpoint makes a fresh session resumable, but a plain shared URL does not explain that old chat actions and revisions must be discarded. Add one Human-mode handoff that turns the existing durable contract into a safe, copyable continuation without freezing mutable tool input.
+
+- Derive the handoff from the current checkpoint and same-origin stable audit URL through one pure bounded projection.
+- Include revision, status, required capability, evidence-source separation, and the human-only boundary as orientation at copy time.
+- Do not copy the checkpoint's action input, browser task IDs, repair IDs, or any raw prompt, source, private browser data, or absolute path.
+- Require the receiving session to open the workspace and re-read its current checkpoint plus contextual tool set; live state always supersedes copied orientation.
+- Provide an accessible manual-copy field when clipboard access is unavailable and retain the existing 390 px wrapping behaviour.
+- Keep the compiler and presentation inside the deferred report path so URL intake and active audit progress do not pay for it.
+- Add no WebMCP tool, server mutation, permission, provider, Durable Object, deployment authority, or parallel mission state.
+
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
@@ -528,7 +540,8 @@ The mission surfaces now have enough depth that keyboard order, state announceme
 - [x] **12. Human mission conflict recovery across person-owned controls** — implemented and locally verified on 30 August 2026; stale writes refresh the bounded workspace, clear unsafe local authority state, and are never replayed automatically
 - [x] **13. Deferred report, diagnosis, repair, verification, and mission-inspector workspaces** — implemented and locally verified on 30 August 2026; initial JavaScript fell 24.62% raw and 21.22% gzip without changing the twenty-one-tool library
 - [x] **14. Focused accessibility and responsive hardening** — implemented and locally verified on 30 August 2026; 234/234 tests pass and the twenty-one-tool library is unchanged
-- [ ] **15. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **15. Safe fresh-agent mission handoff** — implemented and locally verified on 30 August 2026; copied orientation cannot replay mutable checkpoint input and the initial JavaScript bundle remains at 414.22 kB raw
+- [ ] **16. Fresh current-candidate browser proof after explicit deployment/server authority**
 
 Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, and accessibility rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 

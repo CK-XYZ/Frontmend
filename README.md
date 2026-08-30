@@ -67,7 +67,7 @@ Only a later explicit request such as “Please prepare the first priority for a
 - Audit-scoped tools infer the visible audit when `auditId` is omitted, while retaining explicit IDs for durable or background workflows.
 - A session-only WebMCP activity drawer that exposes bounded semantic tool lifecycle events while deliberately omitting tool inputs, URLs, patches, prompts, and secrets.
 - An inspectable WebMCP status panel that shows the active contextual subset, explains why it changed, and keeps human-only authority visible.
-- Stable audit sharing with an auto-selected manual URL fallback when clipboard access is unavailable.
+- Stable audit sharing plus a bounded **Copy agent handoff** action. The handoff names the reloadable workspace and orientation at copy time, but deliberately omits action inputs and tells a fresh session to re-read the current checkpoint and contextual tools before acting. Clipboard failure exposes the same prompt for manual copy without granting repair, approval, or deployment authority.
 - Keyboard-safe dialogs that move focus inside, contain Tab navigation, close on Escape, and restore the invoking control.
 - A focused accessibility and responsive shell pass adds a skip target and single main landmark, deliberate focus and page-title changes between audit phases, announced URL/progress state, complete keyboard viewport tabs, dialog descriptions and scroll containment, visible radio-card focus, and 44 px narrow-screen controls without changing Human/WebMCP authority.
 - Human and agent actions share the same audit service.
