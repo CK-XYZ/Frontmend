@@ -594,7 +594,8 @@ summary:focus-visible,
 }
 
 .example-chip,
-.privacy-note {
+.privacy-note,
+.guide-link {
   display: inline-flex;
   align-items: center;
   gap: 7px;
@@ -616,6 +617,20 @@ summary:focus-visible,
   border-color: rgba(85, 103, 78, 0.22);
   background: rgba(255, 255, 252, 0.92);
   color: var(--ink);
+}
+
+.guide-link {
+  padding: 7px 2px;
+  color: #59694d;
+  font-weight: 650;
+  text-decoration-color: rgba(89, 105, 77, 0.32);
+  text-decoration-thickness: 1px;
+  text-underline-offset: 4px;
+}
+
+.guide-link:hover {
+  color: var(--ink);
+  text-decoration-color: currentColor;
 }
 
 .search-message {
@@ -7471,6 +7486,122 @@ summary:focus-visible,
   line-height: 1.5;
 }
 
+.how-page {
+  position: relative;
+  z-index: 4;
+  width: min(980px, calc(100% - 48px));
+  min-height: 100svh;
+  display: grid;
+  align-items: center;
+  margin: 0 auto;
+  padding: 124px 0 88px;
+}
+
+.how-page-card {
+  padding: clamp(34px, 6vw, 64px);
+  border: 1px solid var(--line);
+  border-radius: 34px;
+  background: rgba(255, 255, 252, 0.86);
+  box-shadow: var(--shadow);
+}
+
+.how-page-heading {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(240px, 0.8fr);
+  align-items: end;
+  gap: clamp(28px, 6vw, 72px);
+}
+
+.how-page-heading h1 {
+  max-width: 620px;
+  margin: 0;
+  font-size: clamp(42px, 6vw, 72px);
+  font-weight: 420;
+  letter-spacing: -0.06em;
+  line-height: 0.98;
+}
+
+.how-page-heading > p {
+  margin: 0 0 4px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.65;
+}
+
+.how-page-list {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: clamp(34px, 6vw, 58px);
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+}
+
+.how-page-list li {
+  grid-template-columns: 1fr;
+  gap: 10px;
+  padding: 24px 0 26px;
+  border-top: 0;
+}
+
+.how-page-boundary {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  margin-top: 26px;
+  color: #60714c;
+}
+
+.how-page-boundary p {
+  max-width: 720px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.how-page-boundary strong {
+  display: block;
+  margin-bottom: 3px;
+  color: var(--ink);
+}
+
+.how-page-cta {
+  width: max-content;
+  min-height: 46px;
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 28px;
+  padding: 0 18px;
+  border-radius: 14px;
+  background: #252d26;
+  color: white;
+  font-size: 13px;
+  font-weight: 720;
+  text-decoration: none;
+}
+
+.how-page-cta:hover {
+  background: #3b483d;
+}
+
+@media (max-width: 760px) {
+  .how-page-heading {
+    grid-template-columns: 1fr;
+    align-items: start;
+    gap: 20px;
+  }
+
+  .how-page-list {
+    grid-template-columns: 1fr;
+    gap: 0;
+  }
+
+  .how-page-list li + li {
+    border-top: 1px solid var(--line);
+  }
+}
+
 /* Keyboard and readability hardening for the dense mission surfaces. */
 .audit-focus-options label:has(input:focus-visible),
 .human-review-outcomes label:has(input:focus-visible),
@@ -7854,6 +7985,25 @@ summary:focus-visible,
 
   .landing {
     padding: 106px 17px 270px;
+  }
+
+  .how-page {
+    width: calc(100% - 24px);
+    padding: 96px 0 48px;
+  }
+
+  .how-page-card {
+    padding: 28px 22px;
+    border-radius: 24px;
+  }
+
+  .how-page-heading h1 {
+    font-size: 40px;
+  }
+
+  .how-page-cta {
+    width: 100%;
+    justify-content: center;
   }
 
   .landing h1 {

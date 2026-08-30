@@ -7,6 +7,7 @@ const dialogFocus = readFileSync(new URL("../src/ui/use-dialog-focus.js", import
 const lazyWorkspace = readFileSync(new URL("../src/ui/LazyWorkspace.jsx", import.meta.url), "utf8");
 const report = readFileSync(new URL("../src/workspaces/ReportWorkspace.jsx", import.meta.url), "utf8");
 const inspector = readFileSync(new URL("../src/workspaces/WebMcpCapabilitySheet.jsx", import.meta.url), "utf8");
+const missionSummary = readFileSync(new URL("../src/ui/AuditMissionSummary.jsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 
 test("uses one main landmark, a keyboard skip target, and deliberate focus restoration", () => {
@@ -32,10 +33,21 @@ test("keeps modal focus, descriptions, scroll containment, and restoration bound
   assert.match(dialogFocus, /document\.body\.style\.overflow = "hidden"/);
   assert.match(dialogFocus, /document\.body\.style\.overflow = previousBodyOverflow/);
   assert.match(dialogFocus, /\(focusables\(\)\[0\] \?\? dialog\)\.focus\(\)/);
-  assert.match(dialogFocus, /previousFocus\?\.isConnected/);
+  assert.match(dialogFocus, /focusToRestore\?\.isConnected/);
+  assert.match(dialogFocus, /restoreFocusRef\?\.current \?\? previousFocus/);
+  assert.match(app, /const webMcpTriggerRef = useRef\(null\)/);
+  assert.match(app, /buttonRef=\{webMcpTriggerRef\}/);
+  assert.match(app, /restoreFocusRef=\{webMcpTriggerRef\}/);
+  assert.match(lazyWorkspace, /useDialogFocus\(onExit, restoreFocusRef\)/);
+  assert.match(inspector, /useDialogFocus\(onClose, restoreFocusRef\)/);
   assert.match(lazyWorkspace, /aria-describedby="lazy-workspace-state-description"/);
   assert.match(inspector, /id="webmcp-mission-inspector"/);
   assert.match(inspector, /aria-describedby="webmcp-sheet-description"/);
+});
+
+test("describes diagnosis against retained evidence without inventing a measured provider issue", () => {
+  assert.match(missionSummary, /open_diagnostic_mission: "Agent opens the retained issue for diagnosis"/);
+  assert.doesNotMatch(missionSummary, /open_diagnostic_mission: "Agent opens the measured issue for diagnosis"/);
 });
 
 test("implements a complete keyboard-operated viewport tab pattern", () => {

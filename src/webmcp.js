@@ -820,7 +820,7 @@ export function createFrontmendTools(service) {
       name: "submit_runtime_diagnosis",
       title: "Submit runtime diagnosis",
       description:
-        "Contribute agent-reported diagnostic evidence after reproducing a measured issue in the browser and mapping it to repository ownership. Submit observations, repository-relative source locations, and exact planned checks; the returned evidenceChain makes every contributed stage and its provenance visible. Never submit source contents, credentials, private data, or absolute paths. This evidence is labelled agent-reported and does not itself approve, implement, deploy, or verify a repair.",
+        "Contribute agent-reported diagnostic evidence after reproducing a retained issue in the browser and mapping it to repository ownership. Submit observations, repository-relative source locations, and exact planned checks; the returned evidenceChain makes every contributed stage and its provenance visible. Never submit source contents, credentials, private data, or absolute paths. This evidence is labelled agent-reported and does not itself approve, implement, deploy, or verify a repair.",
       inputSchema: {
         type: "object",
         properties: {

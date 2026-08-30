@@ -32,6 +32,23 @@ const LANDING_SIGNALS = [
   { label: "Agent browser", detail: "Rendered checks", state: "neutral", icon: Robot },
   { label: "Fresh proof", detail: "Before + after", state: "good", icon: CheckCircle },
 ];
+const HOW_IT_WORKS_STEPS = [
+  {
+    label: "01",
+    title: "Measure the live URL",
+    detail: "Retain mobile, desktop, and document evidence with its provider and limits attached.",
+  },
+  {
+    label: "02",
+    title: "Inspect what automation misses",
+    detail: "WebMCP gives the agent one exact rendered-browser check at a time, then maps real issues to repository ownership.",
+  },
+  {
+    label: "03",
+    title: "Review the fix, then prove it",
+    detail: "The site owner controls approval and deployment; Frontmend reruns the exact rule and exports the fresh receipt.",
+  },
+];
 const AUDIT_FOCUS_COPY = Object.freeze({
   accessibility: { label: "Accessibility", detail: "Semantics, names, contrast" },
   seo: { label: "SEO", detail: "Discovery and page signals" },
@@ -58,6 +75,11 @@ function auditWorkspacePath(auditId) {
   return `/audits/${encodeURIComponent(auditId)}`;
 }
 
+function staticRouteFromPathname(pathname) {
+  const route = pathname.replace(/\/+$/, "") || "/";
+  return route === "/how-it-works" ? "how-it-works" : null;
+}
+
 function Brand({ onClick }) {
   return (
     <button className="brand" type="button" aria-label="Frontmend home" onClick={onClick}>
@@ -69,7 +91,7 @@ function Brand({ onClick }) {
   );
 }
 
-function WebMcpStatus({ status, expanded, restoring, onClick }) {
+function WebMcpStatus({ status, expanded, restoring, onClick, buttonRef }) {
   const ready = status.status === "ready";
   const failed = status.status === "error";
   const activeCount = status.activeTools ?? status.toolNames.length;
@@ -95,6 +117,7 @@ function WebMcpStatus({ status, expanded, restoring, onClick }) {
 
   return (
     <button
+      ref={buttonRef}
       type="button"
       className={`webmcp-status ${ready && !restoring ? "ready" : ""} ${failed && !restoring ? "error" : ""}`}
       title={
@@ -212,30 +235,60 @@ function HowItWorks({ onClose }) {
         <p className="kicker">The Frontmend loop</p>
         <h2 id="how-title">Measure. Inspect. Prove it held.</h2>
         <ol className="how-list">
-          <li>
-            <span>01</span>
-            <div>
-              <strong>Measure the live URL</strong>
-              <p>Retain mobile, desktop, and document evidence with its provider and limits attached.</p>
-            </div>
-          </li>
-          <li>
-            <span>02</span>
-            <div>
-              <strong>Inspect what automation misses</strong>
-              <p>WebMCP gives the agent one exact rendered-browser check at a time, then maps real issues to repository ownership.</p>
-            </div>
-          </li>
-          <li>
-            <span>03</span>
-            <div>
-              <strong>Review the fix, then prove it</strong>
-              <p>The site owner controls approval and deployment; Frontmend reruns the exact rule and exports the fresh receipt.</p>
-            </div>
-          </li>
+          {HOW_IT_WORKS_STEPS.map((step) => (
+            <li key={step.label}>
+              <span>{step.label}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <p>{step.detail}</p>
+              </div>
+            </li>
+          ))}
         </ol>
       </section>
     </div>
+  );
+}
+
+function HowItWorksPage() {
+  return (
+    <section className="how-page" aria-labelledby="how-page-title">
+      <div className="how-page-card">
+        <div className="how-page-heading">
+          <div>
+            <p className="kicker">The Frontmend loop</p>
+            <h1 id="how-page-title">Measure. Inspect. Prove it held.</h1>
+          </div>
+          <p>
+            Frontmend keeps provider, browser, repository, and verification evidence separate,
+            so every next step says what is known and what still needs proof.
+          </p>
+        </div>
+        <ol className="how-list how-page-list">
+          {HOW_IT_WORKS_STEPS.map((step) => (
+            <li key={step.label}>
+              <span>{step.label}</span>
+              <div>
+                <strong>{step.title}</strong>
+                <p>{step.detail}</p>
+              </div>
+            </li>
+          ))}
+        </ol>
+        <div className="how-page-boundary">
+          <ShieldCheck size={23} weight="duotone" aria-hidden="true" />
+          <p>
+            <strong>The authority boundary stays visible.</strong>
+            Agents can measure, investigate, and prepare reviewable work. A person retains repair
+            intent, approval, deployment, and deployment attestation.
+          </p>
+        </div>
+        <a className="how-page-cta" href="/">
+          Start a site audit
+          <ArrowRight size={18} weight="bold" aria-hidden="true" />
+        </a>
+      </div>
+    </section>
   );
 }
 
@@ -359,6 +412,10 @@ function Landing({
             <ShieldCheck size={14} weight="duotone" aria-hidden="true" />
             Public pages only
           </span>
+          <a className="guide-link" href="/how-it-works">
+            <Info size={14} weight="bold" aria-hidden="true" />
+            How Frontmend works
+          </a>
         </div>
 
         <p
@@ -576,6 +633,9 @@ export function App() {
   const [showHow, setShowHow] = useState(false);
   const [showWebMcp, setShowWebMcp] = useState(false);
   const [showAgentActivity, setShowAgentActivity] = useState(false);
+  const [staticRoute, setStaticRoute] = useState(
+    () => staticRouteFromPathname(window.location.pathname),
+  );
   const [agentActivities, setAgentActivities] = useState(() => auditService.getAgentActivities());
   const [isStarting, setIsStarting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
@@ -600,6 +660,7 @@ export function App() {
   });
   const inputRef = useRef(null);
   const mainContentRef = useRef(null);
+  const webMcpTriggerRef = useRef(null);
   const webMcpToolNames = restorationAuditId ? [] : contextualFrontmendToolNames(auditService);
   const webMcpContextKey = webMcpToolNames.join("|");
 
@@ -691,10 +752,11 @@ export function App() {
   }, [audit?.id, audit?.status, restorationAuditId, pollAttempt]);
 
   const mode = useMemo(() => {
+    if (staticRoute === "how-it-works") return "guide";
     if (restorationAuditId) return "restore";
     if (!audit) return "landing";
     return audit.status === "complete" ? "report" : "progress";
-  }, [audit, restorationAuditId]);
+  }, [audit, restorationAuditId, staticRoute]);
   const focusState = mode === "restore"
     ? `${mode}:${restorationError ? "error" : "loading"}`
     : mode === "progress" && ["failed", "cancelled"].includes(audit?.status)
@@ -713,17 +775,19 @@ export function App() {
   useEffect(() => {
     document.title = mode === "landing"
       ? "Frontmend — Find what broke. Prove the fix."
-      : mode === "restore"
-        ? restorationError
-          ? "Could not restore audit — Frontmend"
-          : "Restoring audit — Frontmend"
-        : mode === "report"
-          ? "Audit results — Frontmend"
-          : audit?.status === "failed"
-            ? "Audit failed — Frontmend"
-            : audit?.status === "cancelled"
-              ? "Audit cancelled — Frontmend"
-              : `${audit?.phaseLabel ?? "Audit in progress"} — Frontmend`;
+      : mode === "guide"
+        ? "How Frontmend works — Frontmend"
+        : mode === "restore"
+          ? restorationError
+            ? "Could not restore audit — Frontmend"
+            : "Restoring audit — Frontmend"
+          : mode === "report"
+            ? "Audit results — Frontmend"
+            : audit?.status === "failed"
+              ? "Audit failed — Frontmend"
+              : audit?.status === "cancelled"
+                ? "Audit cancelled — Frontmend"
+                : `${audit?.phaseLabel ?? "Audit in progress"} — Frontmend`;
   }, [audit?.phaseLabel, audit?.status, mode, restorationError]);
 
   const reset = () => {
@@ -743,6 +807,7 @@ export function App() {
     setRestorationAttempt(0);
     setRestorationError("");
     setIsRestoring(false);
+    setStaticRoute(null);
     window.history.replaceState(null, "", "/");
     window.requestAnimationFrame(() => inputRef.current?.focus());
   };
@@ -885,6 +950,7 @@ export function App() {
         <Brand onClick={reset} />
         <div className="header-actions">
           <WebMcpStatus
+            buttonRef={webMcpTriggerRef}
             status={webMcp}
             expanded={showWebMcp}
             restoring={Boolean(restorationAuditId)}
@@ -916,6 +982,7 @@ export function App() {
       </header>
 
       <main id="main-content" className="main-content" ref={mainContentRef} tabIndex="-1">
+        {mode === "guide" ? <HowItWorksPage /> : null}
         {mode === "landing" ? (
           <Landing
           value={url}
@@ -990,6 +1057,7 @@ export function App() {
           resetKey={`${audit?.id ?? "landing"}:${audit?.missionRevision ?? 1}:${webMcp.status}`}
           variant="dialog"
           onExit={() => setShowWebMcp(false)}
+          restoreFocusRef={webMcpTriggerRef}
           componentProps={{
             audit,
             webMcp,

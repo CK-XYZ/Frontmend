@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-export function useDialogFocus(onClose) {
+export function useDialogFocus(onClose, restoreFocusRef = null) {
   const dialogRef = useRef(null);
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
@@ -44,7 +44,8 @@ export function useDialogFocus(onClose) {
       window.cancelAnimationFrame(focusFrame);
       document.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = previousBodyOverflow;
-      if (previousFocus?.isConnected) window.requestAnimationFrame(() => previousFocus.focus());
+      const focusToRestore = restoreFocusRef?.current ?? previousFocus;
+      if (focusToRestore?.isConnected) window.requestAnimationFrame(() => focusToRestore.focus());
     };
   }, []);
 

@@ -77,8 +77,8 @@ function InlineError({ label, onRetry }) {
   );
 }
 
-function DialogState({ label, error = false, onRetry, onExit }) {
-  const dialogRef = useDialogFocus(onExit);
+function DialogState({ label, error = false, onRetry, onExit, restoreFocusRef }) {
+  const dialogRef = useDialogFocus(onExit, restoreFocusRef);
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onExit}>
       <section
@@ -109,18 +109,22 @@ export function LazyWorkspace({
   componentProps,
   variant = "page",
   onExit = () => {},
+  restoreFocusRef = null,
 }) {
   const [loadAttempt, setLoadAttempt] = useState(0);
   const LazyComponent = useMemo(() => lazy(load), [load, loadAttempt, resetKey]);
   const retry = () => setLoadAttempt((attempt) => attempt + 1);
   const boundaryKey = `${resetKey}:${loadAttempt}`;
+  const resolvedComponentProps = restoreFocusRef
+    ? { ...componentProps, restoreFocusRef }
+    : componentProps;
   const loading = variant === "dialog"
-    ? <DialogState label={label} onExit={onExit} />
+    ? <DialogState label={label} onExit={onExit} restoreFocusRef={restoreFocusRef} />
     : variant === "inline"
       ? <InlineLoading label={label} />
       : <PageLoading label={label} />;
   const renderError = () => variant === "dialog"
-    ? <DialogState label={label} error onRetry={retry} onExit={onExit} />
+    ? <DialogState label={label} error onRetry={retry} onExit={onExit} restoreFocusRef={restoreFocusRef} />
     : variant === "inline"
       ? <InlineError label={label} onRetry={retry} />
       : <PageError label={label} onRetry={retry} />;
@@ -128,7 +132,7 @@ export function LazyWorkspace({
   return (
     <WorkspaceErrorBoundary key={boundaryKey} resetKey={boundaryKey} renderError={renderError}>
       <Suspense fallback={loading}>
-        <LazyComponent {...componentProps} />
+        <LazyComponent {...resolvedComponentProps} />
       </Suspense>
     </WorkspaceErrorBoundary>
   );

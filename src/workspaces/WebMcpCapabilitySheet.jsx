@@ -13,7 +13,7 @@ import { createMissionInspector } from "../mission-inspector-contract.js";
 import { createFrontmendTools } from "../webmcp.js";
 import { useDialogFocus } from "../ui/use-dialog-focus.js";
 
-export default function WebMcpCapabilitySheet({ audit, webMcp, onClose }) {
+export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreFocusRef }) {
   const status = webMcp;
   const repairs = audit?.id ? auditService.getRepairs(audit.id) : [];
   const browserReview = audit?.id ? auditService.getBrowserReview(audit.id) : null;
@@ -36,7 +36,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose }) {
     toolDetails: createFrontmendTools(auditService),
     webMcp,
   });
-  const dialogRef = useDialogFocus(onClose);
+  const dialogRef = useDialogFocus(onClose, restoreFocusRef);
   const supported = status.supported;
   const questions = inspector.questions;
   const activeTools = inspector.activeTools;

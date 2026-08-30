@@ -2778,9 +2778,12 @@ test("audit jobs persist a scoped auto policy and authorise only an eligible age
 test("builds and emits the files required by Sites packaging", { timeout: 30_000 }, async () => {
   await ensureSitesBuild();
   await access(new URL("../dist/client/index.html", import.meta.url));
+  await access(new URL("../dist/client/robots.txt", import.meta.url));
   await access(new URL("../dist/server/index.js", import.meta.url));
   await access(new URL("../dist/.openai/hosting.json", import.meta.url));
+  const robots = await readFile(new URL("../dist/client/robots.txt", import.meta.url), "utf8");
   const server = await readFile(new URL("../dist/server/index.js", import.meta.url), "utf8");
+  assert.equal(robots, "User-agent: *\nAllow: /\n");
   assert.match(server, /FrontmendAuditJob/);
   assert.doesNotMatch(server, /from ["'].+url-policy/);
 });

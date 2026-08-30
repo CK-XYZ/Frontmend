@@ -13,7 +13,7 @@ import { createAuditMission, deriveAuditMissionState } from "../audit-mission-co
 function missionActionLabel(state) {
   if (!state.nextAction) {
     if (state.status === "blocked") {
-      return "Measured evidence retained · resume when browser and repository access match";
+      return "Evidence retained · resume when browser and repository access match";
     }
     return state.assessmentComplete
       ? "No required continuation"
@@ -21,7 +21,7 @@ function missionActionLabel(state) {
   }
   const labels = {
     check_site_audit_progress: "Agent waits for the live measurement",
-    open_diagnostic_mission: "Agent opens the measured issue for diagnosis",
+    open_diagnostic_mission: "Agent opens the retained issue for diagnosis",
     open_browser_review: "Agent opens the rendered-browser evidence mission",
     record_browser_review_check: "Agent performs the next exact browser check",
     submit_runtime_diagnosis: "Agent contributes browser and repository diagnosis",
