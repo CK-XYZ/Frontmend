@@ -593,6 +593,19 @@ A reviewed verification matrix cannot be truthful if a transient candidate read 
 - Keep repair staging disabled until the current candidate projection is authoritative; never convert read failure into an empty reviewed selection.
 - Preserve automatic required routes, Human-only fallback, Worker/local parity, all authority boundaries, and the twenty-one-tool library.
 
+## Freeform Product Round — Authority-Bound Continuation Responses
+
+A correctly addressed request is not enough if its returned record can be cached under another workspace. Validate the response side of every continuation before it influences mission state.
+
+- Validate direct results, checkpoints, and aggregate verification proof against the requested audit and repair.
+- Validate browser-review, diagnostic, and repair mutations against both their audit and retained record ID where one already exists.
+- Validate related-route continuations against the requested parent audit and exact observed path.
+- Validate verification starts against the baseline audit, retained repair, primary verification assignment, and parent checkpoint.
+- Bind finding-led diagnosis and repair, rendered-review focus and check acknowledgement, and repair-policy changes to the exact requested finding, focus set, check ID, or policy mode.
+- Keep delayed responses identity-checked even when a reset generation means they can no longer publish.
+- Make Worker and local related-route payloads return the same parent mission checkpoint and make aggregate proof self-identifying.
+- Reject mismatches before changing the active audit, checkpoint, repair, diagnosis, review, or exploration cache; preserve existing safe error propagation and never replay a mutation.
+
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
@@ -616,9 +629,10 @@ A reviewed verification matrix cannot be truthful if a transient candidate read 
 - [x] **19. Truthful cross-page exploration recovery** — implemented and locally verified on 30 August 2026; interrupted reads preserve the retained mission and mismatched payloads fail before caching
 - [x] **20. Coherent mounted-report mission refresh** — implemented and locally verified on 30 August 2026; partial background reads retain the last complete mission snapshot and expose a read-only retry
 - [x] **21. Fail-closed verification-scope recovery** — implemented and locally verified on 30 August 2026; candidate reads are audit/finding-bound and repair staging waits for the exact current scope
-- [ ] **22. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **22. Authority-bound continuation responses** — implemented and locally verified on 30 August 2026; every retained response is identity- and intent-checked before shared state changes and Worker/local route checkpoints now agree
+- [ ] **23. Fresh current-candidate browser proof after explicit deployment/server authority**
 
-Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, accessibility, and fail-closed scope-recovery rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
+Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, accessibility, fail-closed scope-recovery, and authority-bound continuation rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 
 ## Full Regression Gate
 

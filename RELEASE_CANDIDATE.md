@@ -11,7 +11,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 ## Candidate identity
 
 - Deployed source provenance: standalone repository application commit `a20e1ff0edaa35538211129904c6ff746cf3525a`
-- Current local candidate: application commit `10e2fb1f65dfa29face1ad31a2f500797a45862a`; push remains a separate action. The local candidate adds evidence-led browser investigations, source-separated reconciliation, the WebMCP mission inspector, resumable checkpoints, reviewed aggregate repair verification, complete Human mission paths, deferred workspaces, accessibility hardening, a checkpoint-safe agent handoff, cross-audit restoration isolation, non-terminal progress-read recovery, revision-stable auxiliary mission hydration, identity-checked exploration recovery, atomic report refresh, and fail-closed verification-scope recovery while preserving the 21-tool library and human authority boundaries.
+- Current local candidate: application commit `a865e89d9fde506a4c72cf3854dd5884d48ffb74`; push remains a separate action. The local candidate adds evidence-led browser investigations, source-separated reconciliation, the WebMCP mission inspector, resumable checkpoints, reviewed aggregate repair verification, complete Human mission paths, deferred workspaces, accessibility hardening, a checkpoint-safe agent handoff, cross-audit restoration isolation, non-terminal progress-read recovery, revision-stable auxiliary mission hydration, identity-checked exploration recovery, atomic report refresh, fail-closed verification-scope recovery, and workspace- and intent-bound continuation responses while preserving the 21-tool library and human authority boundaries.
 - Worker name: `frontmend`
 - Cloudflare version: `c04eb2e0-780b-4ee6-978f-876692784108`
 - Deployment created: `2026-08-28T21:26:28.048Z`
@@ -24,15 +24,15 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 
 Run from `Ideas/Frontmend`:
 
-The latest command-safe release gate ran from application commit `10e2fb1f65dfa29face1ad31a2f500797a45862a`. Generated `dist` output remains ignored; application source and tests were committed before this documentation-only evidence update.
+The latest command-safe release gate ran from application commit `a865e89d9fde506a4c72cf3854dd5884d48ffb74`. Generated `dist` output remains ignored; application source and tests were committed before this documentation-only evidence update.
 
 | Gate | Command | Result on 30 August 2026 |
 | --- | --- | --- |
-| Tests | `bun test` | PASS — Bun 1.4.0 ran 261 tests across 28 files; 261 passed, 0 failed |
-| Production build | `bun run build` | PASS — Vite 6.4.2 transformed 4,597 modules; `index-C89LM1eW.css` (123.02 kB / 23.42 kB gzip), initial `index-3N0pPVfl.js` (418.49 kB / 118.19 kB gzip), deferred `RepairWorkspace-EJJn8nBb.js` (24.02 kB / 7.22 kB gzip), deferred `ReportWorkspace-LY0cEzfK.js` (70.27 kB / 19.63 kB gzip), client HTML, Worker artifact, and Sites metadata emitted. No chunk-size advisory was emitted. |
+| Tests | `bun test` | PASS — Bun 1.4.0 ran 267 tests across 28 files; 267 passed, 0 failed |
+| Production build | `bun run build` | PASS — Vite 6.4.2 transformed 4,597 modules; `index-C89LM1eW.css` (123.02 kB / 23.42 kB gzip), initial `index-UGoLfSHW.js` (420.67 kB / 118.79 kB gzip), deferred `RepairWorkspace-B8nRgG-O.js` (24.02 kB / 7.22 kB gzip), deferred `ReportWorkspace-DOnMN65F.js` (70.27 kB / 19.63 kB gzip), client HTML, Worker artifact, and Sites metadata emitted. No chunk-size advisory was emitted. |
 | Wrangler types | `bunx wrangler types --check --config wrangler.jsonc` | NOT RERUN — the previously recorded Wrangler 4.126.0 formatting-only warning remains documented below; the requested current gate used the strict dry-run binding inventory. |
-| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — Wrangler 4.126.0 read fifteen assets and reported 371.74 KiB raw / 78.14 KiB gzip; `FrontmendAuditGate`, `FrontmendAuditJob`, and `ASSETS` were recognised; `--dry-run: exiting now`, so no upload occurred |
-| Worktree | `git diff --check`; `git status --short` | PASS — no whitespace errors; the gate ran from committed application state `10e2fb1`, with only this release-ledger documentation left for its separate commit |
+| Deploy bundle | `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc` | PASS — Wrangler 4.126.0 read fifteen assets and reported 372.01 KiB raw / 78.20 KiB gzip; `FrontmendAuditGate`, `FrontmendAuditJob`, and `ASSETS` were recognised; `--dry-run: exiting now`, so no upload occurred |
+| Worktree | `git diff --check`; `git status --short` | PASS — no whitespace errors; the application slice is committed as `a865e89`, with only this release-ledger documentation left for its separate commit |
 
 Wrangler 4.126.0 still generates six trailing spaces in its runtime declaration output. They were removed so `git diff --check` remains usable; this is formatting-only and does not change the generated binding hash `1fceb1fc38391a32e57618cd2bbf1564`. Because `types --check` compares generated bytes, it reports this clean declaration as stale. Treat the strict dry-run binding inventory as the current packaging prerequisite proof and recheck the generator when Wrangler changes.
 
@@ -190,4 +190,4 @@ Failure conditions: missing API support, `originAgentCluster !== true`, stale to
 
 ## Release decision
 
-The deployed version may be labelled **RC3 deployed, HTTP/API-verified, production-Lighthouse-verified, and currently publicly reachable**. The current local evidence-driven product candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, browser-replay-verified, aggregate-repair-verified, or submission-ready until the procedures above have genuine receipts. The deployed application source is `a20e1ff`; local application commit `10e2fb1` has not been pushed or deployed. Keep the temporary public bypass active throughout judge testing unless it is deliberately replaced by another verified public-access arrangement.
+The deployed version may be labelled **RC3 deployed, HTTP/API-verified, production-Lighthouse-verified, and currently publicly reachable**. The current local evidence-driven product candidate remains undeployed and cannot inherit that live proof. Neither may be labelled current-version Chrome-smoke-verified, ChatGPT-WebMCP-verified, Chrome-WebMCP-verified, browser-replay-verified, aggregate-repair-verified, or submission-ready until the procedures above have genuine receipts. The deployed application source is `a20e1ff`; local application commit `a865e89` has not been pushed or deployed. Keep the temporary public bypass active throughout judge testing unless it is deliberately replaced by another verified public-access arrangement.
