@@ -1185,7 +1185,10 @@ export class FrontmendAuditJob {
         source: "human",
       });
       const impact = await this.verificationImpactForRepair(state, previewRepair, []);
-      return json({ ok: true, data: verificationCandidateProjection(impact) });
+      return json({
+        ok: true,
+        data: await checkpointedJobData(this.ctx, state, verificationCandidateProjection(impact)),
+      });
     }
     if (url.pathname.startsWith("/repairs")) {
       return this.handleRepairs(request, url, state);
@@ -1219,7 +1222,10 @@ export class FrontmendAuditJob {
     }
     if (url.pathname === "/explorations" && request.method === "GET") {
       const explorations = (await this.ctx.storage.get("explorations")) ?? [];
-      return json({ ok: true, data: { rootAuditId: state.id, explorations } });
+      return json({
+        ok: true,
+        data: await checkpointedJobData(this.ctx, state, { rootAuditId: state.id, explorations }),
+      });
     }
     const explorationMatch = url.pathname.match(/^\/explorations\/([^/]+)$/);
     if (explorationMatch) {
@@ -1233,7 +1239,7 @@ export class FrontmendAuditJob {
       if (request.method === "GET") {
         const mission = explorations.find((item) => item.id === missionId);
         return mission
-          ? json({ ok: true, data: mission })
+          ? json({ ok: true, data: await checkpointedJobData(this.ctx, state, mission) })
           : errorResponse(
               new AuditError("EXPLORATION_NOT_FOUND", "No site exploration exists with that ID."),
             );
@@ -1490,7 +1496,11 @@ export class FrontmendAuditJob {
       const workspaceRepairs = await Promise.all(repairs.map((repair) => this.repairWorkspaceItem(repair, state)));
       return json({
         ok: true,
-        data: { auditId: state.id, repairs: workspaceRepairs, policy: repairPolicy },
+        data: await checkpointedJobData(this.ctx, state, {
+          auditId: state.id,
+          repairs: workspaceRepairs,
+          policy: repairPolicy,
+        }),
       });
     }
     if (!rawRepairId && request.method === "POST") {
@@ -1709,7 +1719,7 @@ export class FrontmendAuditJob {
     if (action === "verification" && request.method === "GET") {
       const aggregate = await this.aggregateVerificationForRepair(repair);
       return aggregate
-        ? json({ ok: true, data: aggregate })
+        ? json({ ok: true, data: await checkpointedJobData(this.ctx, state, aggregate) })
         : errorResponse(new AuditError("VERIFICATION_RUN_NOT_FOUND", "No aggregate verification run exists."));
     }
     if (action === "verification-receipt" && request.method === "GET") {
@@ -1773,7 +1783,13 @@ export class FrontmendAuditJob {
     const [, rawMissionId, action] = match;
     const missions = (await this.ctx.storage.get("diagnosticMissions")) ?? [];
     if (!rawMissionId && request.method === "GET") {
-      return json({ ok: true, data: { auditId: state.id, missions: missions.map(diagnosticMissionSnapshot) } });
+      return json({
+        ok: true,
+        data: await checkpointedJobData(this.ctx, state, {
+          auditId: state.id,
+          missions: missions.map(diagnosticMissionSnapshot),
+        }),
+      });
     }
     if (!rawMissionId && request.method === "POST") {
       const input = await readJsonBody(request);
@@ -1815,7 +1831,12 @@ export class FrontmendAuditJob {
     const missionId = decodeURIComponent(rawMissionId ?? "");
     const missionIndex = missions.findIndex((mission) => mission.id === missionId);
     if (missionIndex < 0) return errorResponse(new AuditError("DIAGNOSTIC_NOT_FOUND", "That diagnostic mission does not exist."));
-    if (!action && request.method === "GET") return json({ ok: true, data: diagnosticMissionSnapshot(missions[missionIndex]) });
+    if (!action && request.method === "GET") {
+      return json({
+        ok: true,
+        data: await checkpointedJobData(this.ctx, state, diagnosticMissionSnapshot(missions[missionIndex])),
+      });
+    }
     if (action === "evidence" && request.method === "POST") {
       const input = await readJsonBody(request);
       const { source, expectedMissionRevision, ...evidence } = input ?? {};
@@ -1863,7 +1884,10 @@ export class FrontmendAuditJob {
     if (!rawReviewId && request.method === "GET") {
       return json({
         ok: true,
-        data: { auditId: state.id, review: stored ? browserReviewSnapshot(stored) : null },
+        data: await checkpointedJobData(this.ctx, state, {
+          auditId: state.id,
+          review: stored ? browserReviewSnapshot(stored) : null,
+        }),
       });
     }
     if (!rawReviewId && request.method === "POST") {

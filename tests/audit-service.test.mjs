@@ -8,6 +8,7 @@ import {
 } from "../src/audit-service.js";
 
 const AUDIT_ID = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+const missionCheckpoint = (missionRevision = 1) => ({ auditId: AUDIT_ID, missionRevision });
 
 test("normalizes public hostnames and removes fragments", () => {
   assert.equal(normalizePublicUrl("example.com/docs#intro"), "https://example.com/docs");
@@ -464,6 +465,132 @@ test("rejects a foreign mutation checkpoint even when the returned record is oth
   assert.equal(service.getActiveAudit(), null);
 });
 
+test("rejects a regressive same-audit mission response before cache publication", async () => {
+  const currentCheckpoint = {
+    auditId: AUDIT_ID,
+    missionRevision: 7,
+    status: "action-available",
+  };
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        missionRevision: 7,
+        missionCheckpoint: currentCheckpoint,
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [] },
+      }),
+      setRepairPolicy: async () => ({
+        version: 1,
+        mode: "auto-low-risk",
+        remainingAutoApprovals: 3,
+        deploymentAttestation: "person-only",
+        missionCheckpoint: {
+          ...currentCheckpoint,
+          missionRevision: 6,
+        },
+      }),
+    },
+  });
+
+  await service.startAudit({ url: "https://example.com/" });
+  await assert.rejects(
+    () => service.setRepairPolicy(AUDIT_ID, "auto-low-risk"),
+    (error) => error.code === "MISSION_REVISION_STALE"
+      && error.details?.missionCheckpoint?.missionRevision === 7,
+  );
+
+  assert.equal(service.getActiveAudit().missionRevision, 7);
+  assert.equal(service.getRepairPolicy(AUDIT_ID).mode, "review");
+});
+
+test("rejects regressive same-audit read workspaces before replacing newer mission state", async () => {
+  const staleCheckpoint = missionCheckpoint(4);
+  const missionId = "232d593c-6c81-48c3-b137-a3df269454ff";
+  const repairId = "repair-1";
+  const findingId = "color-contrast";
+  const service = createAuditService({
+    transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        missionRevision: 5,
+        missionCheckpoint: missionCheckpoint(5),
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [] },
+      }),
+      listRepairs: async () => ({
+        auditId: AUDIT_ID,
+        repairs: [{ id: repairId, auditId: AUDIT_ID }],
+        missionCheckpoint: staleCheckpoint,
+      }),
+      listDiagnosticMissions: async () => ({
+        auditId: AUDIT_ID,
+        missions: [{ id: "mission-1", auditId: AUDIT_ID }],
+        missionCheckpoint: staleCheckpoint,
+      }),
+      getBrowserReview: async () => ({
+        auditId: AUDIT_ID,
+        review: { id: "review-1", auditId: AUDIT_ID },
+        missionCheckpoint: staleCheckpoint,
+      }),
+      listExplorations: async () => ({
+        rootAuditId: AUDIT_ID,
+        explorations: [{ id: missionId, rootAuditId: AUDIT_ID }],
+        missionCheckpoint: staleCheckpoint,
+      }),
+      getExploration: async () => ({
+        id: missionId,
+        rootAuditId: AUDIT_ID,
+        missionCheckpoint: staleCheckpoint,
+      }),
+      verificationCandidates: async () => ({
+        auditId: AUDIT_ID,
+        findingId,
+        candidates: [],
+        missionCheckpoint: staleCheckpoint,
+      }),
+      repairVerification: async () => ({
+        id: "run-1",
+        auditId: AUDIT_ID,
+        repairId,
+        rows: [],
+        missionCheckpoint: staleCheckpoint,
+      }),
+    },
+  });
+
+  await service.startAudit({ url: "https://example.com/" });
+  for (const read of [
+    () => service.listRepairs(AUDIT_ID),
+    () => service.listDiagnosticMissions(AUDIT_ID),
+    () => service.loadBrowserReview(AUDIT_ID),
+    () => service.listSiteExplorations(AUDIT_ID),
+    () => service.getSiteExploration(AUDIT_ID, missionId),
+    () => service.getVerificationCandidates(AUDIT_ID, findingId),
+    () => service.getRepairVerification(AUDIT_ID, repairId),
+  ]) {
+    await assert.rejects(
+      read,
+      (error) => error.code === "MISSION_REVISION_STALE"
+        && error.details?.missionCheckpoint?.missionRevision === 5,
+    );
+  }
+
+  assert.equal(service.getActiveAudit().missionRevision, 5);
+  assert.deepEqual(service.getRepairs(AUDIT_ID), []);
+  assert.deepEqual(service.getDiagnosticMissions(AUDIT_ID), []);
+  assert.equal(service.getBrowserReview(AUDIT_ID), null);
+  assert.deepEqual(service.getSiteExplorations(AUDIT_ID), []);
+});
+
 test("binds same-audit diagnosis and repair continuations to the exact requested finding", async () => {
   const requestedFindingId = "finding-1";
   const otherFindingId = "finding-2";
@@ -776,7 +903,11 @@ test("synchronizes a browser review and records only bounded agent evidence", as
           viewports: [],
         },
       }),
-      getBrowserReview: async () => ({ auditId: AUDIT_ID, review: opened }),
+      getBrowserReview: async () => ({
+        auditId: AUDIT_ID,
+        review: opened,
+        missionCheckpoint: missionCheckpoint(5),
+      }),
       openBrowserReview: async (auditId, input, revision) => {
         openCalls.push({ auditId, input, revision });
         return opened;
@@ -843,6 +974,7 @@ test("clears a cached browser review when the authoritative direct read returns 
       getBrowserReview: async () => ({
         auditId: AUDIT_ID,
         review: retained ? review : null,
+        missionCheckpoint: missionCheckpoint(),
       }),
     },
   });
@@ -982,6 +1114,7 @@ test("accepts verification candidates only for the requested audit and finding",
     candidates: [],
     limit: 3,
     rule: { provider: "Lighthouse", auditId: "color-contrast" },
+    missionCheckpoint: missionCheckpoint(),
   };
   const service = createAuditService({
     transport: {
@@ -1294,7 +1427,7 @@ test("refreshes every authoritative mission snapshot after a stale Human write",
     }),
     getBrowserReview: async () => {
       if (browserReadFails) throw new AuditError("BROWSER_REVIEW_UNAVAILABLE", "Review unavailable.");
-      return { auditId: AUDIT_ID, review: initialReview };
+      return { auditId: AUDIT_ID, review: initialReview, missionCheckpoint: missionCheckpoint(2) };
     },
     listExplorations: async () => ({
       rootAuditId: AUDIT_ID,
@@ -1529,8 +1662,14 @@ test("synchronizes durable site explorations through the shared service", async 
       listExplorations: async () => ({
         rootAuditId: AUDIT_ID,
         explorations: [{ ...mission, createdAt: 10 }],
+        missionCheckpoint: missionCheckpoint(),
       }),
-      getExploration: async () => ({ ...mission, status: "complete", progress: 100 }),
+      getExploration: async () => ({
+        ...mission,
+        status: "complete",
+        progress: 100,
+        missionCheckpoint: missionCheckpoint(),
+      }),
       explorationReportUrl: (auditId, missionId) =>
         `/api/audits/${auditId}/explorations/${missionId}/report`,
     },
@@ -1815,7 +1954,12 @@ test("synchronizes staged repairs, human approval, export, and verification jobs
   };
   const service = createAuditService({
     transport: {
-      listRepairs: async () => ({ auditId: AUDIT_ID, repairs: [draft], policy: reviewPolicy }),
+      listRepairs: async () => ({
+        auditId: AUDIT_ID,
+        repairs: [draft],
+        policy: reviewPolicy,
+        missionCheckpoint: missionCheckpoint(),
+      }),
       getRepairPolicy: async () => reviewPolicy,
       setRepairPolicy: async (_auditId, mode) => mode === "auto-low-risk" ? autoPolicy : reviewPolicy,
       stageRepair: async () => draft,

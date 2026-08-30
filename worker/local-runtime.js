@@ -628,10 +628,10 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawMissionId && request.method === "GET") {
           return sendJson(response, 200, {
             ok: true,
-            data: {
+            data: checkpointedLocal(root, {
               rootAuditId,
               explorations: (root.explorations ?? []).map(aggregateMission),
-            },
+            }),
           });
         }
         let missionId;
@@ -674,7 +674,7 @@ export function createLocalAuditRuntime(options = {}) {
           response.setHeader("x-content-type-options", "nosniff");
           return response.end(siteExplorationMarkdown(aggregate));
         }
-        return sendJson(response, 200, { ok: true, data: aggregate });
+        return sendJson(response, 200, { ok: true, data: checkpointedLocal(root, aggregate) });
       }
 
       const repairPolicyMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
@@ -803,7 +803,13 @@ export function createLocalAuditRuntime(options = {}) {
         }
         baseline.diagnosticMissions ??= [];
         if (!rawMissionId && request.method === "GET") {
-          return sendJson(response, 200, { ok: true, data: { auditId, missions: baseline.diagnosticMissions.map(diagnosticMissionSnapshot) } });
+          return sendJson(response, 200, {
+            ok: true,
+            data: checkpointedLocal(baseline, {
+              auditId,
+              missions: baseline.diagnosticMissions.map(diagnosticMissionSnapshot),
+            }),
+          });
         }
         if (!rawMissionId && request.method === "POST") {
           assertSameOrigin(request);
@@ -837,7 +843,12 @@ export function createLocalAuditRuntime(options = {}) {
         const missionId = decodeURIComponent(rawMissionId ?? "");
         const mission = baseline.diagnosticMissions.find((item) => item.id === missionId);
         if (!mission) return sendError(response, new AuditError("DIAGNOSTIC_NOT_FOUND", "That diagnostic mission does not exist."), 404);
-        if (!action && request.method === "GET") return sendJson(response, 200, { ok: true, data: diagnosticMissionSnapshot(mission) });
+        if (!action && request.method === "GET") {
+          return sendJson(response, 200, {
+            ok: true,
+            data: checkpointedLocal(baseline, diagnosticMissionSnapshot(mission)),
+          });
+        }
         if (action === "evidence" && request.method === "POST") {
           assertSameOrigin(request);
           const input = await readBody(request);
@@ -879,10 +890,10 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawReviewId && request.method === "GET") {
           return sendJson(response, 200, {
             ok: true,
-            data: {
+            data: checkpointedLocal(baseline, {
               auditId,
               review: baseline.browserReview ? browserReviewSnapshot(baseline.browserReview) : null,
-            },
+            }),
           });
         }
         if (!rawReviewId && request.method === "POST") {
@@ -1024,8 +1035,11 @@ export function createLocalAuditRuntime(options = {}) {
         });
         return sendJson(response, 200, {
           ok: true,
-          data: verificationCandidateProjection(
-            verificationImpactForRepair(baseline, previewRepair, []),
+          data: checkpointedLocal(
+            baseline,
+            verificationCandidateProjection(
+              verificationImpactForRepair(baseline, previewRepair, []),
+            ),
           ),
         });
       }
@@ -1045,7 +1059,9 @@ export function createLocalAuditRuntime(options = {}) {
         if (!repair) return sendError(response, new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist."), 404);
         const aggregate = aggregateVerificationForRepair(repair);
         if (!aggregate) return sendError(response, new AuditError("VERIFICATION_RUN_NOT_FOUND", "No aggregate verification run exists."), 404);
-        if (!receipt) return sendJson(response, 200, { ok: true, data: aggregate });
+        if (!receipt) {
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, aggregate) });
+        }
         try {
           response.statusCode = 200;
           response.setHeader("content-type", "text/markdown; charset=utf-8");
@@ -1076,11 +1092,11 @@ export function createLocalAuditRuntime(options = {}) {
         if (!rawRepairId && request.method === "GET") {
           return sendJson(response, 200, {
             ok: true,
-            data: {
+            data: checkpointedLocal(baseline, {
               auditId,
               repairs: baseline.repairs.map((repair) => repairWorkspaceItem(baseline, repair)),
               policy: repairPolicySnapshot(baseline.repairPolicy),
-            },
+            }),
           });
         }
         if (!rawRepairId && request.method === "POST") {

@@ -407,9 +407,41 @@ export function createAuditService(options = {}) {
     for (const listener of listeners) listener();
   };
 
+  const missionRevisionFrom = (value) => {
+    const revision = value?.missionCheckpoint?.missionRevision ?? value?.missionRevision;
+    return Number.isInteger(revision) && revision > 0 ? revision : null;
+  };
+
+  const assertNonRegressiveMissionRevision = (auditId, value) => {
+    const incomingRevision = missionRevisionFrom(value);
+    const currentAudit = jobs.get(auditId);
+    if (!currentAudit || !Number.isInteger(incomingRevision)) return value;
+    const currentRevision = auditMissionRevision(currentAudit);
+    if (incomingRevision < currentRevision) {
+      throw new AuditError(
+        "MISSION_REVISION_STALE",
+        "The audit service returned an older mission revision. Frontmend kept the newer workspace; inspect its current state before acting again.",
+        true,
+        { missionCheckpoint: checkpointFor(auditId) },
+      );
+    }
+    return value;
+  };
+
+  const assertMissionCheckpoint = (checkpoint, auditId) => {
+    assertResponseIdentity(checkpoint, "auditId", auditId);
+    if (!Number.isInteger(checkpoint?.missionRevision) || checkpoint.missionRevision < 1) {
+      throw new AuditError(
+        "INVALID_RESPONSE",
+        "The audit service returned an invalid mission checkpoint. Retry the original audit address.",
+      );
+    }
+    return assertNonRegressiveMissionRevision(auditId, checkpoint);
+  };
+
   const rememberCheckpoint = (auditId, checkpoint, expectedGeneration = generation) => {
     if (!checkpoint) return null;
-    assertResponseIdentity(checkpoint, "auditId", auditId);
+    assertMissionCheckpoint(checkpoint, auditId);
     if (expectedGeneration !== generation) return checkpoint;
     const previous = jobs.get(auditId);
     if (previous) {
@@ -454,7 +486,9 @@ export function createAuditService(options = {}) {
   const remember = (audit, expectedGeneration = generation) => {
     if (!audit?.id) return audit;
     if (audit.missionCheckpoint) {
-      assertResponseIdentity(audit.missionCheckpoint, "auditId", audit.id);
+      assertMissionCheckpoint(audit.missionCheckpoint, audit.id);
+    } else {
+      assertNonRegressiveMissionRevision(audit.id, audit);
     }
     if (expectedGeneration !== generation) return audit;
     const previous = jobs.get(audit.id);
@@ -536,9 +570,14 @@ export function createAuditService(options = {}) {
     return values;
   };
 
-  const assertMissionCheckpointIdentity = (value, auditId) => {
+  const assertMissionCheckpointIdentity = (value, auditId, required = false) => {
     if (value?.missionCheckpoint) {
-      assertResponseIdentity(value.missionCheckpoint, "auditId", auditId);
+      assertMissionCheckpoint(value.missionCheckpoint, auditId);
+    } else if (required) {
+      throw new AuditError(
+        "INVALID_RESPONSE",
+        "The audit service returned mission state without its authoritative checkpoint. Retry the original audit address.",
+      );
     }
     return value;
   };
@@ -579,11 +618,7 @@ export function createAuditService(options = {}) {
     let snapshot = null;
     let latestCheckpoint = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const checkpointBefore = assertResponseIdentity(
-        await transport.checkpoint(auditId),
-        "auditId",
-        auditId,
-      );
+      const checkpointBefore = assertMissionCheckpoint(await transport.checkpoint(auditId), auditId);
       const settled = await Promise.allSettled([
         transport.get(auditId),
         transport.listRepairs(auditId),
@@ -591,11 +626,7 @@ export function createAuditService(options = {}) {
         transport.getBrowserReview(auditId),
         transport.listExplorations(auditId),
       ]);
-      const checkpointAfter = assertResponseIdentity(
-        await transport.checkpoint(auditId),
-        "auditId",
-        auditId,
-      );
+      const checkpointAfter = assertMissionCheckpoint(await transport.checkpoint(auditId), auditId);
       latestCheckpoint = checkpointAfter;
       const auditResult = settled[0];
       if (auditResult.status === "fulfilled") {
@@ -626,9 +657,14 @@ export function createAuditService(options = {}) {
       const auditRevision = auditResult.status === "fulfilled"
         ? auditResult.value?.missionRevision
         : null;
+      const workspaceRevisions = settled.slice(1)
+        .filter((result) => result.status === "fulfilled")
+        .map((result) => missionRevisionFrom(result.value))
+        .filter(Number.isInteger);
       const revisionStayedCurrent =
         checkpointBefore.missionRevision === checkpointAfter.missionRevision
-        && (!Number.isInteger(auditRevision) || auditRevision === checkpointAfter.missionRevision);
+        && (!Number.isInteger(auditRevision) || auditRevision === checkpointAfter.missionRevision)
+        && workspaceRevisions.every((revision) => revision === checkpointAfter.missionRevision);
       if (revisionStayedCurrent) {
         snapshot = { missionCheckpoint: checkpointAfter, settled };
         break;
@@ -851,6 +887,7 @@ export function createAuditService(options = {}) {
         "rootAuditId",
         auditId,
       );
+      assertMissionCheckpointIdentity(workspace, auditId, true);
       const retained = assertResponseListIdentity(
         workspace.explorations,
         "rootAuditId",
@@ -884,6 +921,7 @@ export function createAuditService(options = {}) {
         auditId,
       );
       assertResponseIdentity(exploration, "id", missionId);
+      assertMissionCheckpointIdentity(exploration, auditId, true);
       return rememberExploration(
         exploration,
         expectedGeneration,
@@ -903,7 +941,7 @@ export function createAuditService(options = {}) {
         throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
       }
       const expectedGeneration = generation;
-      const checkpoint = assertResponseIdentity(await transport.checkpoint(auditId), "auditId", auditId);
+      const checkpoint = assertMissionCheckpoint(await transport.checkpoint(auditId), auditId);
       rememberCheckpoint(auditId, checkpoint, expectedGeneration);
       return checkpoint;
     },
@@ -961,6 +999,7 @@ export function createAuditService(options = {}) {
         auditId,
       );
       assertResponseListIdentity(workspace.repairs, "auditId", auditId);
+      assertMissionCheckpointIdentity(workspace, auditId, true);
       if (expectedGeneration === generation) {
         repairs.set(auditId, workspace.repairs ?? []);
         if (workspace.policy) repairPolicies.set(auditId, workspace.policy);
@@ -979,6 +1018,7 @@ export function createAuditService(options = {}) {
         auditId,
       );
       assertResponseIdentity(scope, "findingId", findingId);
+      assertMissionCheckpointIdentity(scope, auditId, true);
       return scope;
     },
 
@@ -990,7 +1030,7 @@ export function createAuditService(options = {}) {
       const aggregate = await transport.repairVerification(auditId, repairId);
       assertResponseIdentity(aggregate, "auditId", auditId);
       assertResponseIdentity(aggregate, "repairId", repairId);
-      assertMissionCheckpointIdentity(aggregate, auditId);
+      assertMissionCheckpointIdentity(aggregate, auditId, true);
       if (expectedGeneration === generation) {
         const current = repairs.get(auditId) ?? [];
         repairs.set(auditId, current.map((repair) => repair.id === repairId
@@ -1012,6 +1052,7 @@ export function createAuditService(options = {}) {
         auditId,
       );
       assertResponseListIdentity(workspace.missions, "auditId", auditId);
+      assertMissionCheckpointIdentity(workspace, auditId, true);
       if (expectedGeneration === generation) {
         diagnosticMissions.set(auditId, workspace.missions ?? []);
         emit();
@@ -1051,6 +1092,7 @@ export function createAuditService(options = {}) {
         "auditId",
         auditId,
       );
+      assertMissionCheckpointIdentity(workspace, auditId, true);
       if (workspace.review) {
         assertResponseIdentity(workspace.review, "auditId", auditId);
         rememberBrowserReview(workspace.review, expectedGeneration);
