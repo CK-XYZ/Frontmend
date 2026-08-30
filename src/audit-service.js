@@ -513,6 +513,32 @@ export function createAuditService(options = {}) {
     return exploration;
   };
 
+  const assertResponseIdentity = (value, field, auditId) => {
+    if (value?.[field] !== auditId) {
+      throw new AuditError(
+        "AUDIT_RESPONSE_MISMATCH",
+        "The audit service returned state for a different workspace. Retry the original audit address.",
+      );
+    }
+    return value;
+  };
+
+  const assertResponseListIdentity = (values, field, auditId) => {
+    for (const value of Array.isArray(values) ? values : []) {
+      assertResponseIdentity(value, field, auditId);
+    }
+    return values;
+  };
+
+  const readAudit = async (auditId) => {
+    if (typeof auditId !== "string" || !auditId) {
+      throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+    }
+    const expectedGeneration = generation;
+    const audit = assertResponseIdentity(await transport.get(auditId), "id", auditId);
+    return remember(audit, expectedGeneration);
+  };
+
   const refreshMissionWorkspace = async (auditId) => {
     if (typeof auditId !== "string" || !auditId) {
       throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
@@ -521,7 +547,11 @@ export function createAuditService(options = {}) {
     let snapshot = null;
     let latestCheckpoint = null;
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      const checkpointBefore = await transport.checkpoint(auditId);
+      const checkpointBefore = assertResponseIdentity(
+        await transport.checkpoint(auditId),
+        "auditId",
+        auditId,
+      );
       const settled = await Promise.allSettled([
         transport.get(auditId),
         transport.listRepairs(auditId),
@@ -529,9 +559,32 @@ export function createAuditService(options = {}) {
         transport.getBrowserReview(auditId),
         transport.listExplorations(auditId),
       ]);
-      const checkpointAfter = await transport.checkpoint(auditId);
+      const checkpointAfter = assertResponseIdentity(
+        await transport.checkpoint(auditId),
+        "auditId",
+        auditId,
+      );
       latestCheckpoint = checkpointAfter;
       const auditResult = settled[0];
+      if (auditResult.status === "fulfilled") {
+        assertResponseIdentity(auditResult.value, "id", auditId);
+      }
+      const repairResult = settled[1];
+      if (repairResult.status === "fulfilled") {
+        assertResponseListIdentity(repairResult.value?.repairs, "auditId", auditId);
+      }
+      const diagnosticResult = settled[2];
+      if (diagnosticResult.status === "fulfilled") {
+        assertResponseListIdentity(diagnosticResult.value?.missions, "auditId", auditId);
+      }
+      const browserResult = settled[3];
+      if (browserResult.status === "fulfilled" && browserResult.value?.review) {
+        assertResponseIdentity(browserResult.value.review, "auditId", auditId);
+      }
+      const explorationResult = settled[4];
+      if (explorationResult.status === "fulfilled") {
+        assertResponseListIdentity(explorationResult.value?.explorations, "rootAuditId", auditId);
+      }
       const auditRevision = auditResult.status === "fulfilled"
         ? auditResult.value?.missionRevision
         : null;
@@ -611,6 +664,39 @@ export function createAuditService(options = {}) {
       refreshed: results,
       unavailable: Object.entries(results).filter(([, ready]) => !ready).map(([name]) => name),
     };
+  };
+
+  const restoreAuditWorkspace = async (auditId) => {
+    const audit = await readAudit(auditId);
+    if (audit?.status !== "complete") {
+      return {
+        audit,
+        missionCheckpoint: audit?.missionCheckpoint ?? null,
+        refreshed: { audit: true },
+        unavailable: [],
+      };
+    }
+
+    const workspace = await refreshMissionWorkspace(auditId);
+    if (workspace.unavailable.length) {
+      throw new AuditError(
+        "MISSION_WORKSPACE_INCOMPLETE",
+        "The audit job was found, but Frontmend could not restore every mission record. Retry before acting.",
+        true,
+        {
+          missionCheckpoint: workspace.missionCheckpoint,
+          unavailable: workspace.unavailable,
+        },
+      );
+    }
+    const restoredAudit = jobs.get(auditId);
+    if (!restoredAudit) {
+      throw new AuditError(
+        "AUDIT_RESTORE_INTERRUPTED",
+        "The audit workspace changed while Frontmend restored it. Open the stable audit address again.",
+      );
+    }
+    return { ...workspace, audit: restoredAudit };
   };
 
   return {
@@ -717,12 +803,11 @@ export function createAuditService(options = {}) {
     },
 
     async getAudit(auditId) {
-      if (typeof auditId !== "string" || !auditId) {
-        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
-      }
-      const expectedGeneration = generation;
-      const audit = await transport.get(auditId);
-      return remember(audit, expectedGeneration);
+      return readAudit(auditId);
+    },
+
+    async restoreAuditWorkspace(auditId) {
+      return restoreAuditWorkspace(auditId);
     },
 
     async loadMissionCheckpoint(auditId) {

@@ -524,6 +524,42 @@ The persisted checkpoint makes a fresh session resumable, but a plain shared URL
 - Keep the compiler and presentation inside the deferred report path so URL intake and active audit progress do not pay for it.
 - Add no WebMCP tool, server mutation, permission, provider, Durable Object, deployment authority, or parallel mission state.
 
+## Freeform Product Round — Retry-Safe Fresh-Session Restoration
+
+The handoff is only durable if a temporary read failure cannot destroy its stable address or fall through to unrelated cached state. Harden the synchronous restoration shell as an authority boundary, not merely a loading screen.
+
+- Retain the requested audit ID and `/audits/:id` URL after a failed authoritative read.
+- Reject a returned audit whose identity does not exactly match the requested workspace before it can become active.
+- Offer an accessible retry that repeats only the existing audit GET and never starts, cancels, or mutates a mission.
+- Keep restoration mode active across failure so a cached audit cannot become visible under the requested address.
+- Pause cached-audit polling and register no contextual tools until the requested audit is authoritative.
+- Disable the mission inspector while its projection would otherwise be based on unrelated cached state.
+- Make leaving for a new audit an explicit Human action that clears the retained request.
+- Preserve the twenty-one-tool library, Human-only fallback, initial-bundle boundary, and every approval and deployment boundary.
+
+## Freeform Product Round — Non-Terminal Active-Status Recovery
+
+The job is server-authoritative, so losing one progress response cannot truthfully become a provider failure. Separate observation availability from job outcome throughout the synchronous progress shell.
+
+- Retain the last authoritative job state when a polling read fails.
+- Announce the connection interruption without changing status, phase, progress, error provenance, or mission state.
+- Retry the same audit GET automatically with a bounded delay and expose one immediate read-only retry.
+- Never surface the fresh-attempt mutation unless the job itself returns an authoritative terminal failure.
+- Cancel timers and ignore late reads when the visible audit, restoration boundary, or component lifecycle changes.
+- Preserve Human cancellation, contextual progress tools, the twenty-one-tool library, and every authority boundary.
+
+## Freeform Product Round — Coherent Fresh-Session Hydration
+
+A completed top-level job is not enough to expose a mission: its auxiliary records determine the next actor, exact tool subset, repair authority, and verification state. Restore them as one revision-stable read boundary.
+
+- Keep the stable restoration gate active after the top-level completed job is found.
+- Bracket audit, repair/policy, diagnosis, browser-review, and exploration reads with the persisted checkpoint.
+- Retry the bounded read when mission revision changes during hydration.
+- Require each returned job, checkpoint, repair, diagnosis, browser review, and exploration to identify the requested audit.
+- Treat any unavailable or mismatched mission record as recoverable incomplete restoration, not an empty workspace.
+- Register no contextual tools and expose no mission inspector until the coherent snapshot is authoritative.
+- Preserve the light single-job path for running audits, Human-only fallback, and the twenty-one-tool library.
+
 ## Delivery Order
 
 - [x] **1. Finding-aware browser investigation compiler** — completed and verified locally on 30 August 2026
@@ -541,7 +577,10 @@ The persisted checkpoint makes a fresh session resumable, but a plain shared URL
 - [x] **13. Deferred report, diagnosis, repair, verification, and mission-inspector workspaces** — implemented and locally verified on 30 August 2026; initial JavaScript fell 24.62% raw and 21.22% gzip without changing the twenty-one-tool library
 - [x] **14. Focused accessibility and responsive hardening** — implemented and locally verified on 30 August 2026; 234/234 tests pass and the twenty-one-tool library is unchanged
 - [x] **15. Safe fresh-agent mission handoff** — implemented and locally verified on 30 August 2026; copied orientation cannot replay mutable checkpoint input and the initial JavaScript bundle remains at 414.22 kB raw
-- [ ] **16. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **16. Retry-safe, cross-audit-isolated fresh-session restoration** — implemented and locally verified on 30 August 2026; failed reads retain the stable URL, mismatched responses cannot become active, cached contextual tools are absent, and retry performs only the authoritative GET
+- [x] **17. Non-terminal active-status recovery** — implemented and locally verified on 30 August 2026; interrupted polling preserves authoritative job state and retries only the existing read
+- [x] **18. Coherent fresh-session mission hydration** — implemented and locally verified on 30 August 2026; completed workspaces expose tools only after all audit-scoped records share revision and identity
+- [ ] **19. Fresh current-candidate browser proof after explicit deployment/server authority**
 
 Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, and accessibility rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 

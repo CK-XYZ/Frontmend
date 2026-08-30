@@ -1627,6 +1627,32 @@ test("registration publishes only the requested contextual tool subset", async (
   dispose();
 });
 
+test("registration can pause every contextual tool while authoritative state restores", async () => {
+  const registered = [];
+  const snapshots = [];
+  const target = {
+    modelContext: {
+      async registerTool(tool) {
+        registered.push(tool.name);
+      },
+    },
+  };
+
+  const dispose = registerFrontmendTools({
+    service: createAuditService(),
+    target,
+    toolNames: [],
+    onStatus: (snapshot) => snapshots.push(snapshot),
+  });
+  await dispose.ready;
+
+  assert.deepEqual(registered, []);
+  assert.equal(snapshots.at(-1).status, "ready");
+  assert.equal(snapshots.at(-1).activeTools, 0);
+  assert.equal(snapshots.at(-1).totalTools, 21);
+  dispose();
+});
+
 test("registers the complete audit and repair toolset with an abortable lifecycle", async () => {
   const registered = [];
   const signals = [];

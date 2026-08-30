@@ -53,7 +53,9 @@ test("provides accessible loading, failure, and fresh-component retry boundaries
 test("restores the stable audit before mounting deferred UI and keeps retries presentation-only", () => {
   assert.match(app, /useState\(\(\) => auditService\.getActiveAudit\(\)\)/);
   assert.match(app, /auditIdFromPathname\(window\.location\.pathname\)/);
-  assert.match(app, /auditService\s*\.getAudit\(auditId\)/);
+  assert.match(app, /auditService\s*\.restoreAuditWorkspace\(restorationAuditId\)/);
+  assert.match(app, /\[restorationAuditId, restorationAttempt\]/);
+  assert.match(app, /if \(restorationAuditId\) return "restore"/);
   assert.match(app, /mode === "report"[\s\S]*load=\{loadReportWorkspace\}/);
   assert.match(app, /resetKey=\{`\$\{audit\.id\}:\$\{audit\.missionRevision \?\? 1\}`\}/);
   assert.match(app, /componentProps=\{\{[\s\S]*audit,[\s\S]*webMcp,[\s\S]*onReset: reset/);

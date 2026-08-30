@@ -190,6 +190,11 @@ summary:focus-visible,
   outline-offset: 3px;
 }
 
+.webmcp-status:disabled {
+  cursor: wait;
+  opacity: 0.72;
+}
+
 .status-dot {
   width: 7px;
   height: 7px;
@@ -2023,6 +2028,69 @@ summary:focus-visible,
 .failure-actions button:disabled {
   cursor: wait;
   opacity: 0.62;
+}
+
+.audit-poll-warning {
+  width: min(720px, 100%);
+  margin: 24px auto 0;
+  padding: 16px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  border: 1px solid #e8cda4;
+  border-radius: 16px;
+  background: #fff8ec;
+  color: #6b5438;
+  text-align: left;
+}
+
+.audit-poll-warning strong,
+.audit-poll-warning p,
+.audit-poll-warning small {
+  display: block;
+}
+
+.audit-poll-warning p {
+  margin: 4px 0 5px;
+  line-height: 1.45;
+}
+
+.audit-poll-warning small {
+  line-height: 1.5;
+}
+
+.audit-poll-warning button {
+  min-height: 40px;
+  padding: 8px 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 0;
+  border-radius: 12px;
+  background: #6b5438;
+  color: white;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 720;
+  cursor: pointer;
+}
+
+.audit-poll-warning button:disabled {
+  cursor: wait;
+  opacity: 0.62;
+}
+
+.restoration-failure .failure-message {
+  margin-top: 17px;
+}
+
+.restoration-note {
+  width: min(620px, 100%);
+  margin: -10px auto 28px;
+  color: #705d54;
+  line-height: 1.65;
 }
 
 .report-view {
@@ -7707,6 +7775,15 @@ summary:focus-visible,
 
   .progress-card h1 {
     font-size: 38px;
+  }
+
+  .audit-poll-warning {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .audit-poll-warning button {
+    min-height: 44px;
+    grid-column: 1 / -1;
   }
 
   .audit-mission-summary {

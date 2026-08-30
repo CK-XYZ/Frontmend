@@ -69,35 +69,44 @@ function Brand({ onClick }) {
   );
 }
 
-function WebMcpStatus({ status, expanded, onClick }) {
+function WebMcpStatus({ status, expanded, restoring, onClick }) {
   const ready = status.status === "ready";
   const failed = status.status === "error";
   const activeCount = status.activeTools ?? status.toolNames.length;
   const totalCount = status.totalTools ?? WEBMCP_TOOL_COUNT;
-  const label = ready
-    ? `WebMCP · ${status.toolNames.length} active`
-    : status.status === "registering"
-      ? "WebMCP · syncing"
-      : failed
-        ? `WebMCP · ${status.toolNames.length}/${activeCount} active`
-        : "Human mode";
-  const accessibleLabel = ready
-    ? `WebMCP ready with ${status.toolNames.length} contextual tools active from a library of ${totalCount}`
-    : failed
-      ? `WebMCP registration incomplete: ${status.toolNames.length} of ${activeCount} contextual tools available`
+  const label = restoring
+    ? "WebMCP · restoring"
+    : ready
+      ? `WebMCP · ${status.toolNames.length} active`
       : status.status === "registering"
-        ? "Synchronizing contextual WebMCP tools"
-        : "WebMCP unavailable; human mode active";
+        ? "WebMCP · syncing"
+        : failed
+          ? `WebMCP · ${status.toolNames.length}/${activeCount} active`
+          : "Human mode";
+  const accessibleLabel = restoring
+    ? "WebMCP tools paused while Frontmend restores authoritative audit state"
+    : ready
+      ? `WebMCP ready with ${status.toolNames.length} contextual tools active from a library of ${totalCount}`
+      : failed
+        ? `WebMCP registration incomplete: ${status.toolNames.length} of ${activeCount} contextual tools available`
+        : status.status === "registering"
+          ? "Synchronizing contextual WebMCP tools"
+          : "WebMCP unavailable; human mode active";
 
   return (
     <button
       type="button"
-      className={`webmcp-status ${ready ? "ready" : ""} ${failed ? "error" : ""}`}
-      title={status.errors?.join("\n") || undefined}
+      className={`webmcp-status ${ready && !restoring ? "ready" : ""} ${failed && !restoring ? "error" : ""}`}
+      title={
+        restoring
+          ? "Contextual tools resume after authoritative state is restored."
+          : status.errors?.join("\n") || undefined
+      }
       aria-label={accessibleLabel}
-      aria-expanded={expanded}
+      aria-expanded={restoring ? false : expanded}
       aria-controls="webmcp-mission-inspector"
       aria-haspopup="dialog"
+      disabled={restoring}
       onClick={onClick}
     >
       <span className="status-dot" aria-hidden="true" />
@@ -384,7 +393,18 @@ function Landing({
   );
 }
 
-function AuditProgress({ audit, onCancelAudit, onLeave, onRetry, isRetrying, isCancelling, cancelError }) {
+function AuditProgress({
+  audit,
+  onCancelAudit,
+  onLeave,
+  onRetry,
+  onRetryStatus,
+  isRetrying,
+  isRefreshingStatus,
+  isCancelling,
+  cancelError,
+  pollError,
+}) {
   const stages = [
     { id: "capture", label: "Capture", icon: Browser },
     { id: "inspect", label: "Inspect", icon: MagnifyingGlass },
@@ -477,26 +497,67 @@ function AuditProgress({ audit, onCancelAudit, onLeave, onRetry, isRetrying, isC
         <p className="audit-engine-note">
           Live PageSpeed Insights job · Lighthouse mobile and desktop evidence
         </p>
+        {pollError ? (
+          <div className="audit-poll-warning" role="alert" aria-busy={isRefreshingStatus}>
+            <Warning size={20} weight="duotone" aria-hidden="true" />
+            <div>
+              <strong>Live status is temporarily unavailable</strong>
+              <p>{pollError}</p>
+              <small>
+                The retained job has not been marked failed. Frontmend will keep trying; retrying
+                now only reads the existing job.
+              </small>
+            </div>
+            <button type="button" onClick={onRetryStatus} disabled={isRefreshingStatus}>
+              <Pulse size={16} weight="bold" aria-hidden="true" />
+              {isRefreshingStatus ? "Reading status…" : "Retry status now"}
+            </button>
+          </div>
+        ) : null}
         {cancelError ? <p className="failure-message" role="alert">{cancelError}</p> : null}
       </div>
     </section>
   );
 }
 
-function RestoringAudit({ onCancel }) {
+function RestoringAudit({ error, isRestoring, onCancel, onRetry }) {
+  const failed = Boolean(error);
   return (
     <section className="progress-view" aria-labelledby="restore-title">
       <button className="back-button" type="button" onClick={onCancel}>
         <ArrowLeft size={17} weight="bold" />
-        Return home
+        Start a new audit
       </button>
-      <div className="progress-card" role="status" aria-live="polite" aria-busy="true">
+      <div
+        className={`progress-card ${failed ? "audit-failure restoration-failure" : ""}`}
+        role={failed ? "alert" : "status"}
+        aria-live={failed ? "assertive" : "polite"}
+        aria-busy={isRestoring}
+      >
         <div className="audit-orbit" aria-hidden="true">
-          <Pulse size={31} weight="duotone" />
+          {failed ? <Warning size={31} weight="duotone" /> : <Pulse size={31} weight="duotone" />}
         </div>
-        <p className="kicker">Shared audit</p>
-        <h1 id="restore-title">Restoring the live workspace</h1>
-        <p className="audit-url">Reading authoritative state from the audit job…</p>
+        <p className="kicker">{failed ? "Shared audit unavailable" : "Shared audit"}</p>
+        <h1 id="restore-title">
+          {failed ? "This workspace could not be restored" : "Restoring the live workspace"}
+        </h1>
+        {failed ? (
+          <>
+            <p className="failure-message">{error}</p>
+            <p className="restoration-note">
+              The stable audit address remains in your browser. Retrying only reads the existing
+              authoritative job; it does not restart the audit or replay a mission action.
+            </p>
+            <div className="failure-actions">
+              <button className="retry-audit" type="button" onClick={onRetry} disabled={isRestoring}>
+                <Pulse size={17} weight="bold" />
+                {isRestoring ? "Reading workspace…" : "Try restoring again"}
+              </button>
+            </div>
+          </>
+        ) : (
+          <p className="audit-url">Reading authoritative job and mission state…</p>
+        )}
       </div>
     </section>
   );
@@ -519,7 +580,18 @@ export function App() {
   const [isStarting, setIsStarting] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
   const [cancelError, setCancelError] = useState("");
-  const [isRestoring, setIsRestoring] = useState(false);
+  const [pollError, setPollError] = useState("");
+  const [pollAttempt, setPollAttempt] = useState(0);
+  const [isRefreshingStatus, setIsRefreshingStatus] = useState(false);
+  const [restorationAuditId, setRestorationAuditId] = useState(() => {
+    const requestedAuditId = auditIdFromPathname(window.location.pathname);
+    return requestedAuditId && auditService.getActiveAudit()?.id !== requestedAuditId
+      ? requestedAuditId
+      : "";
+  });
+  const [restorationAttempt, setRestorationAttempt] = useState(0);
+  const [restorationError, setRestorationError] = useState("");
+  const [isRestoring, setIsRestoring] = useState(() => Boolean(restorationAuditId));
   const [webMcp, setWebMcp] = useState({
     supported: false,
     status: "unsupported",
@@ -528,7 +600,7 @@ export function App() {
   });
   const inputRef = useRef(null);
   const mainContentRef = useRef(null);
-  const webMcpToolNames = contextualFrontmendToolNames(auditService);
+  const webMcpToolNames = restorationAuditId ? [] : contextualFrontmendToolNames(auditService);
   const webMcpContextKey = webMcpToolNames.join("|");
 
 
@@ -552,23 +624,27 @@ export function App() {
   );
 
   useEffect(() => {
-    const auditId = auditIdFromPathname(window.location.pathname);
-    if (!auditId || auditService.getActiveAudit()?.id === auditId) return undefined;
+    if (!restorationAuditId) return undefined;
     let active = true;
     setIsRestoring(true);
+    setRestorationError("");
     void auditService
-      .getAudit(auditId)
-      .then((next) => {
+      .restoreAuditWorkspace(restorationAuditId)
+      .then(({ audit: next }) => {
         if (!active) return;
         setAudit(next);
         setUrl(next.url);
         setFocusAreas(next.mission?.focusAreas ?? []);
         setMaxPriorities(next.mission?.maxPriorities ?? 3);
+        setError("");
+        setPollError("");
+        setRestorationAuditId("");
       })
       .catch((cause) => {
         if (!active) return;
-        window.history.replaceState(null, "", "/");
-        setError(cause instanceof AuditError ? cause.message : "That shared audit could not be restored.");
+        setRestorationError(
+          cause instanceof AuditError ? cause.message : "That shared audit could not be restored.",
+        );
       })
       .finally(() => {
         if (active) setIsRestoring(false);
@@ -576,52 +652,54 @@ export function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [restorationAuditId, restorationAttempt]);
 
   useEffect(() => {
-    if (!audit || ["complete", "failed", "cancelled"].includes(audit.status)) return undefined;
+    if (restorationAuditId || !audit || ["complete", "failed", "cancelled"].includes(audit.status)) {
+      return undefined;
+    }
     let cancelled = false;
     let timer;
     const poll = async () => {
+      setIsRefreshingStatus(true);
       try {
         const next = await auditService.getAudit(audit.id);
         if (cancelled) return;
         setAudit(next);
+        setPollError("");
         if (!["complete", "failed", "cancelled"].includes(next.status)) {
           timer = window.setTimeout(poll, 1_500);
         }
       } catch (cause) {
         if (cancelled) return;
-        setAudit({
-          ...audit,
-          status: "failed",
-          phase: "failed",
-          phaseLabel: "Live audit failed",
-          error: {
-            code: cause instanceof AuditError ? cause.code : "AUDIT_REQUEST_FAILED",
-            message:
-              cause instanceof AuditError
-                ? cause.message
-                : "Frontmend lost contact with the live audit service.",
-          },
-        });
+        setPollError(
+          cause instanceof AuditError
+            ? cause.message
+            : "Frontmend lost contact with the live audit service. The audit may still be running.",
+        );
+        timer = window.setTimeout(poll, 3_000);
+      } finally {
+        if (!cancelled) setIsRefreshingStatus(false);
       }
     };
     timer = window.setTimeout(poll, 600);
     return () => {
       cancelled = true;
       window.clearTimeout(timer);
+      setIsRefreshingStatus(false);
     };
-  }, [audit?.id, audit?.status]);
+  }, [audit?.id, audit?.status, restorationAuditId, pollAttempt]);
 
   const mode = useMemo(() => {
-    if (isRestoring) return "restore";
+    if (restorationAuditId) return "restore";
     if (!audit) return "landing";
     return audit.status === "complete" ? "report" : "progress";
-  }, [audit, isRestoring]);
-  const focusState = mode === "progress" && ["failed", "cancelled"].includes(audit?.status)
-    ? `${mode}:${audit.status}`
-    : mode;
+  }, [audit, restorationAuditId]);
+  const focusState = mode === "restore"
+    ? `${mode}:${restorationError ? "error" : "loading"}`
+    : mode === "progress" && ["failed", "cancelled"].includes(audit?.status)
+      ? `${mode}:${audit.status}`
+      : mode;
   const previousFocusStateRef = useRef(focusState);
 
   useEffect(() => {
@@ -636,7 +714,9 @@ export function App() {
     document.title = mode === "landing"
       ? "Frontmend — Find what broke. Prove the fix."
       : mode === "restore"
-        ? "Restoring audit — Frontmend"
+        ? restorationError
+          ? "Could not restore audit — Frontmend"
+          : "Restoring audit — Frontmend"
         : mode === "report"
           ? "Audit results — Frontmend"
           : audit?.status === "failed"
@@ -644,7 +724,7 @@ export function App() {
             : audit?.status === "cancelled"
               ? "Audit cancelled — Frontmend"
               : `${audit?.phaseLabel ?? "Audit in progress"} — Frontmend`;
-  }, [audit?.phaseLabel, audit?.status, mode]);
+  }, [audit?.phaseLabel, audit?.status, mode, restorationError]);
 
   const reset = () => {
     auditService.reset();
@@ -656,9 +736,28 @@ export function App() {
     setIsStarting(false);
     setIsCancelling(false);
     setCancelError("");
+    setPollError("");
+    setPollAttempt(0);
+    setIsRefreshingStatus(false);
+    setRestorationAuditId("");
+    setRestorationAttempt(0);
+    setRestorationError("");
     setIsRestoring(false);
     window.history.replaceState(null, "", "/");
     window.requestAnimationFrame(() => inputRef.current?.focus());
+  };
+
+  const retryRestoration = () => {
+    if (!restorationAuditId || isRestoring) return;
+    setRestorationError("");
+    setIsRestoring(true);
+    setRestorationAttempt((attempt) => attempt + 1);
+  };
+
+  const retryAuditStatus = () => {
+    if (!audit?.id || isRefreshingStatus) return;
+    setIsRefreshingStatus(true);
+    setPollAttempt((attempt) => attempt + 1);
   };
 
   const start = async (event) => {
@@ -674,6 +773,7 @@ export function App() {
       setAudit(next);
       setError("");
       setCancelError("");
+      setPollError("");
       window.history.replaceState(null, "", auditWorkspacePath(next.id));
     } catch (cause) {
       setError(cause instanceof AuditError ? cause.message : "Frontmend could not start the audit.");
@@ -703,6 +803,7 @@ export function App() {
       setMaxPriorities(next.mission?.maxPriorities ?? retainedMission.maxPriorities);
       setError("");
       setCancelError("");
+      setPollError("");
       window.history.replaceState(null, "", auditWorkspacePath(next.id));
     } catch (cause) {
       setAudit((current) => ({
@@ -786,6 +887,7 @@ export function App() {
           <WebMcpStatus
             status={webMcp}
             expanded={showWebMcp}
+            restoring={Boolean(restorationAuditId)}
             onClick={() => setShowWebMcp(true)}
           />
           <button
@@ -843,12 +945,22 @@ export function App() {
           onCancelAudit={cancelAudit}
           onLeave={reset}
           onRetry={retry}
+          onRetryStatus={retryAuditStatus}
           isRetrying={isStarting}
+          isRefreshingStatus={isRefreshingStatus}
           isCancelling={isCancelling}
           cancelError={cancelError}
+          pollError={pollError}
           />
         ) : null}
-        {mode === "restore" ? <RestoringAudit onCancel={reset} /> : null}
+        {mode === "restore" ? (
+          <RestoringAudit
+            error={restorationError}
+            isRestoring={isRestoring}
+            onCancel={reset}
+            onRetry={retryRestoration}
+          />
+        ) : null}
         {mode === "report" ? (
           <LazyWorkspace
           load={loadReportWorkspace}
