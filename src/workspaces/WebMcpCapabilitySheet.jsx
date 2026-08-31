@@ -1,17 +1,29 @@
-import {
-  ArrowRight,
-  CheckCircle,
-  ClipboardText,
-  Pulse,
-  Robot,
-  Stamp,
-  X,
-} from "@phosphor-icons/react";
+import { CaretRight, X } from "@phosphor-icons/react";
 import { auditService } from "../audit-service.js";
 import { deriveAuditMissionState } from "../audit-mission-contract.js";
 import { createMissionInspector } from "../mission-inspector-contract.js";
 import { createFrontmendTools } from "../webmcp.js";
 import { useDialogFocus } from "../ui/use-dialog-focus.js";
+
+function registrationLabel(status) {
+  if (!status.supported) return "Human mode";
+  if (status.status === "ready") return "WebMCP ready";
+  if (status.status === "registering") return "Syncing";
+  if (status.status === "error") return "Partial";
+  return "Human mode";
+}
+
+/** Hairline record rows. Used everywhere a list of facts appears. */
+function RecordList({ items, empty }) {
+  if (!items.length) return <p className="inspector-empty">{empty}</p>;
+  return (
+    <ul className="inspector-record">
+      {items.map((item) => (
+        <li key={item}>{item}</li>
+      ))}
+    </ul>
+  );
+}
 
 export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreFocusRef }) {
   const status = webMcp;
@@ -56,99 +68,122 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
         aria-describedby="webmcp-sheet-description"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="icon-button close-button" type="button" onClick={onClose} aria-label="Close mission inspector">
-          <X size={18} weight="bold" />
-        </button>
-        <div className="webmcp-sheet-heading">
-          <span className={`webmcp-sheet-signal ${supported ? "ready" : ""}`} aria-hidden="true">
-            <Robot size={21} weight="duotone" />
-          </span>
-          <div>
-            <p className="kicker">Contextual WebMCP</p>
-            <h2 id="webmcp-sheet-title">Mission inspector</h2>
+        <header className="inspector-head">
+          <div className="inspector-head-line">
+            <p className="inspector-kicker">Contextual WebMCP</p>
+            <span
+              className={`inspector-status ${supported ? "is-ready" : "is-human"}`}
+              data-state={inspector.registration.status}
+            >
+              <span className="inspector-status-dot" aria-hidden="true" />
+              {registrationLabel(status)}
+            </span>
           </div>
-        </div>
-        <p className="webmcp-sheet-lead" id="webmcp-sheet-description">
-          This inspector explains the current shared mission, the evidence that must return, and the actions that remain person-owned.
-        </p>
-        <div className="mission-inspector-stage">
-          <span>{inspector.stage.replaceAll("-", " ")}</span>
-          <strong>{questions.whatHappensNow.actor}</strong>
-        </div>
-        <section className="mission-inspector-now" aria-labelledby="mission-inspector-now-title">
-          <span aria-hidden="true"><Pulse size={20} weight="duotone" /></span>
+          <h2 id="webmcp-sheet-title">Mission inspector</h2>
+          <p id="webmcp-sheet-description">
+            The current shared mission, the evidence that must return, and the actions that stay
+            person-owned.
+          </p>
+          <button
+            className="inspector-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close mission inspector"
+          >
+            <X size={17} weight="bold" />
+          </button>
+        </header>
+
+        <dl className="inspector-meta">
           <div>
-            <p className="kicker">What happens now</p>
-            <h3 id="mission-inspector-now-title">{questions.whatHappensNow.title}</h3>
-            <p>{questions.whatHappensNow.summary}</p>
-            {questions.whatHappensNow.requiredCapability ? (
-              <small>Required capability · {questions.whatHappensNow.requiredCapability}</small>
-            ) : null}
+            <dt>Stage</dt>
+            <dd>{inspector.stage.replaceAll("-", " ")}</dd>
           </div>
+          <div>
+            <dt>Operator</dt>
+            <dd>{questions.whatHappensNow.actor}</dd>
+          </div>
+          <div>
+            <dt>Contracts</dt>
+            <dd>
+              {activeTools.length} active · {inspector.registration.totalToolCount} bounded
+            </dd>
+          </div>
+        </dl>
+
+        <section className="inspector-block is-now" aria-labelledby="mission-inspector-now-title">
+          <p className="inspector-label">What happens now</p>
+          <h3 id="mission-inspector-now-title">{questions.whatHappensNow.title}</h3>
+          <p className="inspector-prose">{questions.whatHappensNow.summary}</p>
+          {questions.whatHappensNow.requiredCapability ? (
+            <p className="inspector-capability">
+              <span>Required capability</span>
+              <code>{questions.whatHappensNow.requiredCapability}</code>
+            </p>
+          ) : null}
         </section>
 
-        <div className="mission-inspector-why">
-          <strong>Why now</strong>
-          <p>{questions.whyNow}</p>
-        </div>
+        <section className="inspector-block" aria-labelledby="mission-inspector-why-title">
+          <p className="inspector-label" id="mission-inspector-why-title">Why now</p>
+          <p className="inspector-prose">{questions.whyNow}</p>
+        </section>
 
-        <div className="mission-inspector-columns">
-          <section>
-            <ClipboardText size={18} weight="duotone" aria-hidden="true" />
-            <div>
-              <strong>What must return</strong>
-              {questions.whatMustReturn.length ? (
-                <ul>{questions.whatMustReturn.map((item) => <li key={item}>{item}</li>)}</ul>
-              ) : <p>No further evidence is required.</p>}
-            </div>
+        <div className="inspector-split">
+          <section aria-labelledby="mission-inspector-return-title">
+            <p className="inspector-label" id="mission-inspector-return-title">What must return</p>
+            <RecordList
+              items={questions.whatMustReturn}
+              empty="No further evidence is required."
+            />
           </section>
-          <section>
-            <ArrowRight size={18} weight="bold" aria-hidden="true" />
-            <div>
-              <strong>What it unlocks</strong>
-              <ul>{questions.whatItUnlocks.map((item) => <li key={item}>{item}</li>)}</ul>
-            </div>
+          <section aria-labelledby="mission-inspector-unlocks-title">
+            <p className="inspector-label" id="mission-inspector-unlocks-title">What it unlocks</p>
+            <RecordList items={questions.whatItUnlocks} empty="Nothing further is unlocked." />
           </section>
         </div>
 
-        <div className="webmcp-human-boundary">
-          <Stamp size={20} weight="duotone" aria-hidden="true" />
-          <div>
-            <strong>What remains human-only</strong>
-            <ul>{questions.whatRemainsHumanOnly.map((item) => <li key={item}>{item}</li>)}</ul>
-          </div>
-        </div>
+        <section className="inspector-block is-human" aria-labelledby="mission-inspector-human-title">
+          <p className="inspector-label" id="mission-inspector-human-title">
+            What remains human-only
+          </p>
+          <RecordList
+            items={questions.whatRemainsHumanOnly}
+            empty="No person-owned action is outstanding."
+          />
+        </section>
 
-        <details className="webmcp-tool-disclosure">
+        <details className="inspector-disclosure">
           <summary>
+            <CaretRight size={13} weight="bold" aria-hidden="true" />
             Tool contracts
-            <span>{activeTools.length} active · {inspector.registration.totalToolCount} bounded</span>
+            <span>
+              {activeTools.length} active · {inspector.registration.totalToolCount} bounded
+            </span>
           </summary>
           {activeTools.length ? (
-            <ol className="webmcp-capability-list">
+            <ol className="inspector-tools">
               {activeTools.map((tool) => (
                 <li key={tool.name}>
-                  <CheckCircle size={18} weight="fill" aria-hidden="true" />
-                  <div>
+                  <p className="inspector-tool-name">
                     <strong>{tool.title}</strong>
-                    <p>{tool.description}</p>
                     <code>{tool.name}</code>
-                    <details className="webmcp-schema-disclosure">
-                      <summary>Input schema</summary>
-                      <pre>{JSON.stringify(tool.inputSchema, null, 2)}</pre>
-                    </details>
-                  </div>
+                  </p>
+                  <p className="inspector-prose">{tool.description}</p>
+                  <details className="inspector-schema">
+                    <summary>Input schema</summary>
+                    <pre>{JSON.stringify(tool.inputSchema, null, 2)}</pre>
+                  </details>
                 </li>
               ))}
             </ol>
           ) : (
-            <div className="webmcp-capability-empty">
-              <Pulse size={20} weight="duotone" aria-hidden="true" />
-              <span>{syncing ? "Capability sync in progress" : "No agent tool contracts are active"}</span>
-            </div>
+            <p className="inspector-empty">
+              {syncing ? "Capability sync in progress." : "No agent tool contracts are active."}
+            </p>
           )}
         </details>
-        <p className="webmcp-library-note">{inspector.humanFallback.message}</p>
+
+        <p className="inspector-foot">{inspector.humanFallback.message}</p>
       </section>
     </div>
   );

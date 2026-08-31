@@ -9,6 +9,7 @@ const report = readFileSync(new URL("../src/workspaces/ReportWorkspace.jsx", imp
 const inspector = readFileSync(new URL("../src/workspaces/WebMcpCapabilitySheet.jsx", import.meta.url), "utf8");
 const missionSummary = readFileSync(new URL("../src/ui/AuditMissionSummary.jsx", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
+const landingStyles = readFileSync(new URL("../src/landing.css", import.meta.url), "utf8");
 
 test("uses one main landmark, a keyboard skip target, and deliberate focus restoration", () => {
   assert.match(app, /<div className=\{`app-shell \$\{mode\}`\}>/);
@@ -74,4 +75,12 @@ test("retains visible focus and 390 px touch and reflow safeguards", () => {
   assert.match(styles, /human-browser-review textarea,[\s\S]*font-size: 16px;/s);
   assert.match(styles, /max-height: calc\(100dvh - 20px\)/);
   assert.match(styles, /@media \(prefers-reduced-motion: reduce\)/);
+  assert.match(landingStyles, /\.hero-loop-link\s*\{[^}]*min-height: 44px;/s);
+  assert.match(landingStyles, /\.evidence-loop-link\s*\{[^}]*min-height: 44px;/s);
+  assert.match(landingStyles, /\.landing-footer-column a\s*\{[^}]*min-height: 44px;/s);
+  assert.match(landingStyles, /\.landing-footer-maker\s*\{[^}]*min-height: 44px;/s);
+  assert.match(app, /aria-label="Knightware — opens in a new tab"/);
+  assert.match(landingStyles, /\.app-shell\.landing \.audit-composer\s*\{[^}]*background: #0b0e12;/s);
+  assert.match(landingStyles, /\.app-shell\.landing \.audit-composer-body\s*\{[^}]*background: var\(--fm-paper\);/s);
+  assert.match(landingStyles, /\.app-shell\.landing \.audit-focus-options label\s*\{[^}]*min-height: 54px;/s);
 });

@@ -4,11 +4,16 @@ import {
   Browser,
   Check,
   CheckCircle,
+  Crosshair,
+  FileCode,
+  Gauge,
   Info,
   MagnifyingGlass,
   Pulse,
   Robot,
+  SealCheck,
   ShieldCheck,
+  Signature,
   Sparkle,
   Warning,
   X,
@@ -27,6 +32,7 @@ import { AuditMissionSummary } from "./ui/AuditMissionSummary.jsx";
 import { humanMissionMutationFailure } from "./ui/human-mission-recovery.js";
 import { LazyWorkspace } from "./ui/LazyWorkspace.jsx";
 import { useDialogFocus } from "./ui/use-dialog-focus.js";
+import { useRevealOnScroll } from "./ui/use-reveal-on-scroll.js";
 import {
   contextualFrontmendToolNames,
   registerFrontmendTools,
@@ -35,28 +41,33 @@ import {
 const HERO_SPECIMENS = [
   {
     id: "measured",
+    index: "01",
     label: "Measured",
-    facts: ["Insufficient text contrast", "Mobile + desktop"],
+    facts: [{ text: "Insufficient text contrast" }, { text: "Mobile + desktop" }],
   },
   {
     id: "investigation",
+    index: "02",
     label: "Browser investigation",
-    facts: [".hero__title", "390 × 844"],
+    facts: [{ text: ".hero__title", mono: true }, { text: "390 × 844", mono: true }],
   },
   {
     id: "diagnosis",
+    index: "03",
     label: "Repository diagnosis",
-    facts: ["src/styles.css:42", "No source upload"],
+    facts: [{ text: "src/styles.css:42", mono: true }, { text: "No source upload" }],
   },
   {
     id: "review",
+    index: "04",
     label: "Human review",
-    facts: ["Awaiting explicit approval"],
+    facts: [{ text: "Awaiting explicit approval" }],
   },
   {
     id: "verification",
+    index: "05",
     label: "Fresh verification",
-    facts: ["Root + retained route", "Regression guardrails passed"],
+    facts: [{ text: "Root + retained route" }, { text: "Regression guardrails passed" }],
   },
 ];
 const EVIDENCE_LOOP_STAGES = [
@@ -64,42 +75,190 @@ const EVIDENCE_LOOP_STAGES = [
     id: "measured",
     index: "01",
     label: "Measured",
-    facts: ["Insufficient text contrast", "Mobile + desktop", "Lighthouse evidence"],
+    Icon: Gauge,
+    summary:
+      "A public measurement opens the mission. The rule that failed is named, with the viewports it was observed at and the provider that observed it.",
+    record: [
+      { term: "Finding", value: "Insufficient text contrast" },
+      { term: "Observed at", value: "Mobile + desktop" },
+      { term: "Source", value: "Lighthouse evidence" },
+    ],
   },
   {
     id: "investigation",
     index: "02",
     label: "Browser investigation",
-    facts: [".hero__title", "390 × 844", "Rendered observation"],
+    Icon: Crosshair,
+    summary:
+      "A rendered browser check finds what static analysis cannot: the exact element, at the exact viewport, as a visitor actually sees it.",
+    record: [
+      { term: "Target", value: ".hero__title" },
+      { term: "Viewport", value: "390 × 844" },
+      { term: "Method", value: "Rendered observation" },
+    ],
   },
   {
     id: "diagnosis",
     index: "03",
     label: "Repository diagnosis",
-    facts: ["src/styles.css:42", "No source upload", "Bounded ownership"],
+    Icon: FileCode,
+    summary:
+      "The finding is mapped to the declaration that causes it. Ownership stays bounded to what the public page and a connected agent can account for.",
+    record: [
+      { term: "Location", value: "src/styles.css:42" },
+      { term: "Input", value: "No source upload" },
+      { term: "Scope", value: "Bounded ownership" },
+    ],
   },
   {
     id: "review",
     index: "04",
     label: "Human review",
-    facts: ["Awaiting explicit approval", "Agent cannot approve"],
+    Icon: Signature,
+    summary:
+      "The repair is a proposal with its rationale attached. It waits here until a person decides — an agent cannot move it forward.",
+    record: [
+      { term: "State", value: "Awaiting explicit approval" },
+      { term: "Authority", value: "Agent cannot approve" },
+      { term: "Rationale", value: "Meets WCAG AA on this background" },
+    ],
   },
   {
     id: "verification",
     index: "05",
     label: "Fresh verification",
-    facts: ["Root + retained route", "Exact rule resolved", "Regression guardrails passed"],
+    Icon: SealCheck,
+    summary:
+      "Only a fresh measurement closes the loop. The exact rule that failed is rerun, and the receipt links the audit IDs to the outcome.",
+    record: [
+      { term: "Rechecked", value: "Root + retained route" },
+      { term: "Outcome", value: "Exact rule resolved" },
+      { term: "Guardrails", value: "Regression guardrails passed" },
+    ],
   },
 ];
-const EVIDENCE_LOOP_CAPTIONS = [
-  { title: "Measure the live URL", detail: "Public evidence starts the mission." },
+const EVIDENCE_LOOP_MOVES = [
   {
-    title: "Investigate what automation misses",
-    detail: "Rendered context and bounded diagnosis stay attached.",
+    index: "01",
+    title: "Measure the live URL",
+    lede: "Public evidence starts the mission.",
+    detail:
+      "Frontmend retains mobile, desktop, and document evidence with its provider and limits attached, so every later step can say where a claim came from.",
+    marks: ["Public pages only", "Provider and fallback stay visible", "No account for the first audit"],
   },
   {
+    index: "02",
+    title: "Investigate what automation misses",
+    lede: "Rendered context and bounded diagnosis stay attached.",
+    detail:
+      "A browser agent takes one exact rendered check at a time through WebMCP, then maps a real issue to repository ownership. The same bounded task is available in Human mode.",
+    marks: ["One check at a time", "Rendered, not inferred", "No source upload"],
+  },
+  {
+    index: "03",
     title: "Review the fix, then prove it",
-    detail: "A human approves. Fresh measurement closes the loop.",
+    lede: "A human approves. Fresh measurement closes the loop.",
+    detail:
+      "The site owner controls approval and deployment. Frontmend reruns the exact rule that failed and exports the receipt linking audit IDs, rule outcome, and metric deltas.",
+    marks: ["Explicit approval", "Exact-rule recheck", "Exportable receipt"],
+  },
+];
+const AGENT_CAPABILITIES = [
+  "Start an audit from a public URL",
+  "Take one bounded rendered-browser check at a time",
+  "Map a finding to repository ownership",
+  "Draft a repair and the rationale behind it",
+  "Request a fresh measurement after a deployment",
+];
+const HUMAN_ONLY_AUTHORITY = [
+  "Decide what the repair should be",
+  "Approve a proposed repair",
+  "Deploy it to the live site",
+  "Attest that it actually shipped",
+];
+/*
+ * One illustrative receipt per audit focus area. Every rule id is a real
+ * Lighthouse audit, and the accessibility ratios are the true WCAG figures for
+ * the two colours in the repair diff shown elsewhere on the page
+ * (#6b7280 -> #111827 on --fm-paper). Illustrations, not measurements.
+ */
+const CLOSING_PROOFS = [
+  {
+    id: "accessibility",
+    area: "Accessibility",
+    rule: "color-contrast",
+    target: ".hero__title",
+    rechecked: "Root + retained route",
+    before: { value: "4.19:1", note: "failed" },
+    after: { value: "15.3:1", note: "passes AA" },
+  },
+  {
+    id: "seo",
+    area: "SEO",
+    rule: "meta-description",
+    target: "<head>",
+    rechecked: "Root + retained route",
+    before: { value: "absent", note: "no summary" },
+    after: { value: "148 ch", note: "within range" },
+  },
+  {
+    id: "performance",
+    area: "Performance",
+    rule: "largest-contentful-paint",
+    target: "/hero-poster.jpg",
+    rechecked: "Mobile + desktop",
+    before: { value: "4.8 s", note: "poor" },
+    after: { value: "2.1 s", note: "good" },
+  },
+  {
+    id: "security",
+    area: "Security",
+    rule: "csp-xss",
+    target: "Response headers",
+    rechecked: "Root + retained route",
+    before: { value: "absent", note: "no policy" },
+    after: { value: "enforced", note: "9 directives" },
+  },
+  {
+    id: "reliability",
+    area: "Reliability",
+    rule: "errors-in-console",
+    target: "Rendered page",
+    rechecked: "Mobile + desktop",
+    before: { value: "3", note: "console errors" },
+    after: { value: "0", note: "clean" },
+  },
+];
+const LANDING_FAQ = [
+  {
+    question: "Does Frontmend change my website?",
+    answer:
+      "No. It measures public pages and drafts a repair for you to review. A person approves, deploys, and attests the deployment — Frontmend never edits or ships the site it audited.",
+  },
+  {
+    question: "Do I need to upload my source code?",
+    answer:
+      "No. Diagnosis is bounded to what the public page reveals plus the repository ownership a connected agent reports. There is no source upload step and no repository access.",
+  },
+  {
+    question: "What does it actually measure?",
+    answer:
+      "Accessibility, SEO, performance, security, and reliability. Frontmend uses PageSpeed Insights and Lighthouse when the provider is available, and falls back to a bounded live-document read when it is not. The evidence mode and its limits stay visible on every finding.",
+  },
+  {
+    question: "What can it reach?",
+    answer:
+      "Public pages only. Credentials, private and loopback networks, metadata endpoints, unsafe schemes, and redirects that cross into blocked targets are all rejected on the server, and time, byte, and rate limits apply before any URL is accepted.",
+  },
+  {
+    question: "What is WebMCP doing here?",
+    answer:
+      "A browser agent can drive the same audit through structured tools that call the same validated services the human interface uses. WebMCP is a control surface, not the engine — and the complete workflow stays usable when document.modelContext is unavailable.",
+  },
+  {
+    question: "How do I know the fix held?",
+    answer:
+      "Verification reruns the exact rule that failed against a fresh measurement, across the root and any retained route. Frontmend only reports a finding as resolved when a comparable fresh audit no longer observes that rule.",
   },
 ];
 const HOW_IT_WORKS_STEPS = [
@@ -385,6 +544,36 @@ function EvidenceSpecimen({ stage }) {
 }
 
 function EvidenceLoop() {
+  const [activeId, setActiveId] = useState(EVIDENCE_LOOP_STAGES[0].id);
+  const tabRefs = useRef({});
+  const activeIndex = Math.max(
+    0,
+    EVIDENCE_LOOP_STAGES.findIndex((stage) => stage.id === activeId),
+  );
+  const active = EVIDENCE_LOOP_STAGES[activeIndex];
+
+  const moveTo = (index) => {
+    const next = EVIDENCE_LOOP_STAGES[(index + EVIDENCE_LOOP_STAGES.length) % EVIDENCE_LOOP_STAGES.length];
+    setActiveId(next.id);
+    tabRefs.current[next.id]?.focus();
+  };
+
+  const onKeyDown = (event) => {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      moveTo(activeIndex + 1);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveTo(activeIndex - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      moveTo(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      moveTo(EVIDENCE_LOOP_STAGES.length - 1);
+    }
+  };
+
   return (
     <section className="evidence-loop" id="evidence-loop" aria-labelledby="evidence-loop-title">
       <div className="evidence-loop-intro">
@@ -408,7 +597,8 @@ function EvidenceLoop() {
             One issue. Five accountable handoffs.
           </h2>
           <p className="evidence-loop-lede">
-            The finding never loses its source, owner, approval state, or proof.
+            The finding never loses its source, owner, approval state, or proof. Step through the
+            same contrast issue as it changes hands.
           </p>
           <a className="evidence-loop-link" href="/how-it-works">
             Follow one contrast issue
@@ -419,44 +609,82 @@ function EvidenceLoop() {
 
       <div className="evidence-loop-field">
         <div className="evidence-loop-shell">
-          <ol className="evidence-ribbon">
-            {EVIDENCE_LOOP_STAGES.map((stage) => (
-              <li className="ribbon-stage" key={stage.id} data-stage={stage.id}>
-                <div className="ribbon-head">
-                  <p className="ribbon-step">
-                    <span className="ribbon-index" aria-hidden="true">{stage.index}</span>
-                    {stage.label}
-                  </p>
-                  <ul className="ribbon-facts">
-                    {stage.facts.map((fact) => (
-                      <li key={fact}>{fact}</li>
-                    ))}
-                  </ul>
-                </div>
-                <span className="ribbon-tie" aria-hidden="true">
-                  <span className="ribbon-bracket" />
-                  <span className="ribbon-drop" />
-                  <span className="ribbon-node" />
-                </span>
-                <div className="ribbon-panel" aria-hidden="true">
-                  <EvidenceSpecimen stage={stage.id} />
-                </div>
-              </li>
-            ))}
-          </ol>
-          <p className="sr-only">
-            The strip above is an illustration of one example contrast issue. It is not a
-            measurement of a real website.
-          </p>
+          <div
+            className="stage-rail"
+            role="tablist"
+            aria-label="The five evidence handoffs"
+            aria-orientation="horizontal"
+            onKeyDown={onKeyDown}
+          >
+            <span className="stage-rail-track" aria-hidden="true">
+              <span
+                className="stage-rail-fill"
+                style={{
+                  "--rail-fill": `${(activeIndex / (EVIDENCE_LOOP_STAGES.length - 1)) * 100}%`,
+                }}
+              />
+            </span>
+            {EVIDENCE_LOOP_STAGES.map((stage, index) => {
+              const selected = stage.id === activeId;
+              return (
+                <button
+                  key={stage.id}
+                  ref={(node) => {
+                    tabRefs.current[stage.id] = node;
+                  }}
+                  type="button"
+                  role="tab"
+                  id={`stage-tab-${stage.id}`}
+                  className="stage-tab"
+                  data-stage={stage.id}
+                  data-state={index < activeIndex ? "done" : selected ? "current" : "upcoming"}
+                  aria-selected={selected}
+                  aria-controls="stage-panel"
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => setActiveId(stage.id)}
+                >
+                  <span className="stage-tab-mark" aria-hidden="true">
+                    <stage.Icon size={19} weight="bold" />
+                  </span>
+                  <span className="stage-tab-index" aria-hidden="true">{stage.index}</span>
+                  <span className="stage-tab-label">{stage.label}</span>
+                </button>
+              );
+            })}
+          </div>
 
-          <ul className="evidence-loop-captions">
-            {EVIDENCE_LOOP_CAPTIONS.map((caption) => (
-              <li key={caption.title}>
-                <strong>{caption.title}</strong>
-                <span>{caption.detail}</span>
-              </li>
-            ))}
-          </ul>
+          <div
+            className="stage-panel"
+            id="stage-panel"
+            role="tabpanel"
+            aria-labelledby={`stage-tab-${active.id}`}
+            data-stage={active.id}
+            key={active.id}
+            tabIndex={-1}
+          >
+            <div className="stage-detail">
+              <p className="stage-detail-index" aria-hidden="true">{active.index}</p>
+              <h3 className="stage-detail-title">{active.label}</h3>
+              <p className="stage-detail-summary">{active.summary}</p>
+              <dl className="stage-detail-facts">
+                {active.record.map((entry) => (
+                  <div key={entry.term}>
+                    <dt>{entry.term}</dt>
+                    <dd>{entry.value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </div>
+            <figure className="stage-exhibit">
+              <div className="stage-exhibit-frame" aria-hidden="true">
+                <EvidenceSpecimen stage={active.id} />
+              </div>
+              <figcaption>
+                Illustration of one example contrast issue at this handoff. It is not a measurement
+                of a real website.
+              </figcaption>
+            </figure>
+          </div>
 
           <p className="evidence-loop-boundary">
             Agents cannot approve repairs or attest deployment.
@@ -464,6 +692,306 @@ function EvidenceLoop() {
         </div>
       </div>
     </section>
+  );
+}
+
+function EvidenceMoves() {
+  const revealRef = useRevealOnScroll();
+  return (
+    <section className="moves" aria-labelledby="moves-title" ref={revealRef}>
+      <div className="evidence-loop-shell">
+        <p className="section-kicker">Three moves</p>
+        <h2 id="moves-title" className="section-title">
+          Measure it. Investigate it. Prove it held.
+        </h2>
+        <ol className="moves-list">
+          {EVIDENCE_LOOP_MOVES.map((move) => (
+            <li className="move" key={move.index} data-reveal-item>
+              <p className="move-index" aria-hidden="true">{move.index}</p>
+              <div className="move-body">
+                <h3>{move.title}</h3>
+                <p className="move-lede">{move.lede}</p>
+                <p className="move-detail">{move.detail}</p>
+              </div>
+              <ul className="move-marks">
+                {move.marks.map((mark) => (
+                  <li key={mark}>{mark}</li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ol>
+      </div>
+    </section>
+  );
+}
+
+function AuthorityLedger() {
+  const revealRef = useRevealOnScroll();
+  return (
+    <section className="ledger" aria-labelledby="ledger-title" ref={revealRef}>
+      <div className="evidence-loop-shell">
+        <div className="ledger-head">
+          <div>
+            <p className="section-kicker">The authority boundary</p>
+            <h2 id="ledger-title" className="section-title">
+              An agent can do the work.<span className="editorial-break"> </span>
+              Only a person can approve it.
+            </h2>
+          </div>
+          <p className="ledger-note">
+            Frontmend exposes the same validated services to a browser agent and to you. The line
+            between preparing work and authorising it never moves.
+          </p>
+        </div>
+        <div className="ledger-columns">
+          <div className="ledger-column" data-side="agent">
+            <h3>
+              <Robot size={17} weight="bold" aria-hidden="true" />
+              An agent may
+            </h3>
+            <ul>
+              {AGENT_CAPABILITIES.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+          <div className="ledger-column" data-side="human">
+            <h3>
+              <ShieldCheck size={17} weight="bold" aria-hidden="true" />
+              Only a person may
+            </h3>
+            <ul>
+              {HUMAN_ONLY_AUTHORITY.map((item) => (
+                <li key={item}>{item}</li>
+              ))}
+            </ul>
+          </div>
+        </div>
+        <p className="ledger-fallback">
+          The complete workflow stays usable when <code>document.modelContext</code> is unavailable.
+        </p>
+      </div>
+    </section>
+  );
+}
+
+function LandingFaq() {
+  const revealRef = useRevealOnScroll();
+  return (
+    <section className="faq" aria-labelledby="faq-title" ref={revealRef}>
+      <div className="evidence-loop-shell">
+        <div className="faq-head">
+          <p className="section-kicker">Before you start</p>
+          <h2 id="faq-title" className="section-title">
+            What Frontmend does, and what it will not do.
+          </h2>
+        </div>
+        <div className="faq-list">
+          {LANDING_FAQ.map((entry) => (
+            <details className="faq-entry" key={entry.question}>
+              <summary>
+                <span>{entry.question}</span>
+                <span className="faq-marker" aria-hidden="true" />
+              </summary>
+              <div className="faq-answer">
+                <p>{entry.answer}</p>
+              </div>
+            </details>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+/*
+ * A revolving set of illustrative receipts, one per audit focus area, so the
+ * closing mark shows breadth rather than a single example.
+ *
+ * Rotation is genuinely optional: it never starts under reduced motion, pauses
+ * on hover and focus, stops for good once a control is used, and ships a real
+ * pause button so the motion can always be stopped (WCAG 2.2.2). Only the
+ * active card is exposed to assistive technology, so the rotation never
+ * announces itself.
+ */
+/*
+ * A hand of five illustrative receipts, one per audit focus area, that sweeps:
+ * each card lifts to the front in turn.
+ *
+ * The sweep never starts under reduced motion, and it pauses while the pointer
+ * or keyboard focus is anywhere in the closing card. There is deliberately no
+ * pause control — see DESIGN.md for the tradeoff that carries.
+ */
+const FAN_SPAN = 2;
+
+/** Signed slot for a card, wrapped so the deck reads as a loop. */
+function fanOffset(position, index, total) {
+  let offset = position - index;
+  if (offset > FAN_SPAN) offset -= total;
+  if (offset < -FAN_SPAN) offset += total;
+  return offset;
+}
+
+function ClosingProofs({ held }) {
+  // `jump` is the one card that teleports from the far left slot to the far
+  // right on each advance. It renders without a transition in the same commit
+  // as its new slot, so it never flies back across the deck.
+  const [fan, setFan] = useState({ index: 0, jump: -1 });
+
+  useEffect(() => {
+    if (held) return undefined;
+    const reduced = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (reduced?.matches) return undefined;
+    const total = CLOSING_PROOFS.length;
+    const timer = window.setInterval(() => {
+      setFan(({ index }) => {
+        const next = (index + 1) % total;
+        return { index: next, jump: (next + FAN_SPAN) % total };
+      });
+    }, 3600);
+    const stop = () => {
+      if (reduced.matches) window.clearInterval(timer);
+    };
+    reduced?.addEventListener?.("change", stop);
+    return () => {
+      window.clearInterval(timer);
+      reduced?.removeEventListener?.("change", stop);
+    };
+  }, [held]);
+
+  return (
+    <>
+      <div className="closing-proof" aria-hidden="true">
+        <div className="closing-proof-stage">
+          {CLOSING_PROOFS.map((proof, position) => {
+            const offset = fanOffset(position, fan.index, CLOSING_PROOFS.length);
+            return (
+              <div
+                className="closing-proof-card"
+                key={proof.id}
+                data-active={offset === 0 ? "true" : "false"}
+                data-jump={position === fan.jump ? "true" : undefined}
+                style={{ "--fan-offset": offset, "--fan-abs": Math.abs(offset) }}
+              >
+                <p className="closing-proof-head">
+                  {proof.area}
+                  <span className="closing-proof-seal">
+                    <SealCheck size={14} weight="fill" />
+                  </span>
+                </p>
+                <div className="closing-proof-delta">
+                  <span className="is-before">
+                    <strong>{proof.before.value}</strong>
+                    <small>{proof.before.note}</small>
+                  </span>
+                  <ArrowRight size={15} weight="bold" />
+                  <span className="is-after">
+                    <strong>{proof.after.value}</strong>
+                    <small>{proof.after.note}</small>
+                  </span>
+                </div>
+                <dl className="closing-proof-rows">
+                  <div>
+                    <dt>Rule</dt>
+                    <dd>{proof.rule}</dd>
+                  </div>
+                  <div>
+                    <dt>Target</dt>
+                    <dd>{proof.target}</dd>
+                  </div>
+                  <div>
+                    <dt>Rechecked</dt>
+                    <dd>{proof.rechecked}</dd>
+                  </div>
+                </dl>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <p className="sr-only">
+        Illustrative verification receipts, one for each area Frontmend audits: accessibility, SEO,
+        performance, security, and reliability. They are examples of the record a closed repair loop
+        produces, not measurements of a real website.
+      </p>
+    </>
+  );
+}
+
+function ClosingCta({ onStart }) {
+  const revealRef = useRevealOnScroll();
+  const [held, setHeld] = useState(false);
+  return (
+    <section className="closing" aria-labelledby="closing-title" ref={revealRef}>
+      <div className="evidence-loop-shell">
+        <div
+          className="closing-card"
+          onMouseEnter={() => setHeld(true)}
+          onMouseLeave={() => setHeld(false)}
+          onFocusCapture={() => setHeld(true)}
+          onBlurCapture={() => setHeld(false)}
+        >
+          <ClosingProofs held={held} />
+          <h2 id="closing-title" className="closing-title">
+            Start with one public URL.
+          </h2>
+          <p className="closing-lede">
+            No login, no source upload, no agreement to change anything. Measure the page, see what
+            the evidence says, and decide from there.
+          </p>
+          <button type="button" className="closing-action" onClick={onStart}>
+            Start site audit
+            <ArrowRight size={18} weight="bold" aria-hidden="true" />
+          </button>
+          <p className="closing-note">Public pages only · Human approval stays required</p>
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function LandingFooter({ onHome }) {
+  return (
+    <footer className="site-footer landing-footer">
+      <div className="landing-footer-main">
+        <div className="landing-footer-identity">
+          <p className="landing-footer-statement">Evidence that survives the handoff.</p>
+          <p className="landing-footer-summary">
+            Frontmend carries one public finding through browser investigation, repository
+            diagnosis, human review, and fresh verification.
+          </p>
+        </div>
+
+        <nav className="landing-footer-links" aria-label="Footer">
+          <div className="landing-footer-column">
+            <p className="landing-footer-label">Explore</p>
+            <a href="#evidence-loop">Evidence loop</a>
+            <a href="/how-it-works">How it works</a>
+            <a className="landing-footer-primary-link" href="#site-url">Start a site audit</a>
+          </div>
+          <div className="landing-footer-column landing-footer-principles">
+            <p className="landing-footer-label">Operating model</p>
+            <span>Public pages only</span>
+            <span>No source upload</span>
+            <span>Human approval required</span>
+          </div>
+        </nav>
+      </div>
+
+      <div className="landing-footer-base">
+        <Brand onClick={onHome} />
+        <a
+          className="landing-footer-maker"
+          href="https://knightware.xyz/?utm_source=frontmend"
+          target="_blank"
+          rel="noopener noreferrer"
+          aria-label="Knightware — opens in a new tab"
+        >
+          <img src="/assets/images/knightware.png" alt="Knightware" />
+        </a>
+      </div>
+    </footer>
   );
 }
 
@@ -484,6 +1012,16 @@ function Landing({
   const focusSummary = focusAreas.length
     ? focusAreas.map((area) => AUDIT_FOCUS_COPY[area]?.label ?? area).join(" + ")
     : "Full frontend audit";
+  // The closing call to action returns to the one real form rather than
+  // rendering a second one, so there is only ever one URL field and one
+  // submission path.
+  const focusAuditField = () => {
+    const field = inputRef?.current;
+    if (!field) return;
+    const still = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    field.scrollIntoView({ behavior: still ? "auto" : "smooth", block: "center" });
+    field.focus({ preventScroll: true });
+  };
   return (
     <>
       <section className="hero" aria-labelledby="landing-title">
@@ -630,9 +1168,14 @@ function Landing({
                 <li className="specimen" key={specimen.id} data-stage={specimen.id}>
                   <span className="specimen-accent" aria-hidden="true" />
                   <div className="specimen-label">
-                    <p className="specimen-name">{specimen.label}</p>
+                    <p className="specimen-name">
+                      <span className="specimen-index" aria-hidden="true">{specimen.index}</span>
+                      {specimen.label}
+                    </p>
                     {specimen.facts.map((fact) => (
-                      <p key={fact}>{fact}</p>
+                      <p key={fact.text} className={fact.mono ? "is-code" : undefined}>
+                        {fact.text}
+                      </p>
                     ))}
                   </div>
                   <div className="specimen-visual" aria-hidden="true">
@@ -646,6 +1189,10 @@ function Landing({
       </section>
 
       <EvidenceLoop />
+      <EvidenceMoves />
+      <AuthorityLedger />
+      <LandingFaq />
+      <ClosingCta onStart={focusAuditField} />
     </>
   );
 }
@@ -836,6 +1383,7 @@ export function App() {
   const [showHow, setShowHow] = useState(false);
   const [showWebMcp, setShowWebMcp] = useState(false);
   const [showAgentActivity, setShowAgentActivity] = useState(false);
+  const [isHeaderCondensed, setIsHeaderCondensed] = useState(false);
   const [staticRoute, setStaticRoute] = useState(
     () => staticRouteFromPathname(window.location.pathname),
   );
@@ -975,6 +1523,31 @@ export function App() {
     const frame = window.requestAnimationFrame(() => mainContentRef.current?.focus());
     return () => window.cancelAnimationFrame(frame);
   }, [focusState, mode]);
+
+  useEffect(() => {
+    if (mode !== "landing") {
+      setIsHeaderCondensed(false);
+      return undefined;
+    }
+
+    let frame = 0;
+    const updateHeader = () => {
+      frame = 0;
+      const scrollTop = window.scrollY || document.documentElement.scrollTop;
+      setIsHeaderCondensed((current) => (current ? scrollTop > 36 : scrollTop > 96));
+    };
+    const onScroll = () => {
+      if (frame) return;
+      frame = window.requestAnimationFrame(updateHeader);
+    };
+
+    updateHeader();
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => {
+      window.removeEventListener("scroll", onScroll);
+      if (frame) window.cancelAnimationFrame(frame);
+    };
+  }, [mode]);
 
   useEffect(() => {
     document.title = mode === "landing"
@@ -1154,7 +1727,7 @@ export function App() {
   return (
     <div className={`app-shell ${mode}`}>
       <a className="skip-link" href="#main-content">Skip to main content</a>
-      <header className="site-header">
+      <header className={`site-header${mode === "landing" && isHeaderCondensed ? " is-condensed" : ""}`}>
         <Brand onClick={reset} />
         <div className="header-actions">
           <button
@@ -1254,10 +1827,14 @@ export function App() {
         ) : null}
       </main>
 
-      <footer className="site-footer">
-        <span>Find what broke. Prove the fix.</span>
-        <span>Frontmend · Live audit engine</span>
-      </footer>
+      {mode === "landing" ? (
+        <LandingFooter onHome={reset} />
+      ) : (
+        <footer className="site-footer">
+          <span>Find what broke. Prove the fix.</span>
+          <span>Frontmend · Live audit engine</span>
+        </footer>
+      )}
 
       {showHow ? <HowItWorks onClose={() => setShowHow(false)} /> : null}
       {showWebMcp ? (

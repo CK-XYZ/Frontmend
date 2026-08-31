@@ -37,3 +37,38 @@ The completed report navigation was replayed at 390×844 after adding **Export r
 The in-app browser then rendered the live Document profile for real audit `3e46d0a9`. The six-metric card, security-header chips, evidence caveat, issue marker, and finding queue remained visually distinct inside the existing evidence canvas. DOM inspection confirmed the metrics use semantic terms and definitions inside a named region. This audit did not reuse older narrow-viewport captures as evidence; a fresh mobile screenshot remains a separate visual check.
 
 final result: desktop pass; 390px pass; reduced-motion pass
+
+## 31 August 2026 — landing assessment composer refinement
+
+- Source visual truth: user-supplied 834 × 858 landing composer reference, inspected during the design session and not retained in the public repository.
+- Implementation screenshot: fresh 834 × 858 ChromeSight capture from the local design session, not retained in the public repository.
+- Viewport and density: source and implementation are both 834 × 858 pixels; implementation capture is 834 × 858 CSS pixels at device scale factor 1.
+- State: landing hero, optional assessment composer open, default full-audit focus, no hover or keyboard focus treatment active.
+
+### Full-view comparison
+
+The source showed the open composer as one large cobalt block, visually merging its controls into the hero background. The revised implementation intentionally preserves the hero composition, URL action, typography, spacing, content, and disclosure height while changing only the composer hierarchy: charcoal summary handle, warm paper body, dark selection controls, and an orange provenance rule. No horizontal overflow or clipped control was visible at 834px or 390px.
+
+### Focused-region comparison
+
+The composer was separately captured at desktop width in its open, selected, and closed states. The selected focus-area treatment remains legible without depending on colour alone: checkbox state, lime-tinted fill, darker border, and inset confirmation rule. The closed state remains one compact 54px disclosure row. At 390px, cards stack to one column with their 54px targets intact; the tray continues vertically without widening the page.
+
+### Required fidelity surfaces
+
+- Fonts and typography: existing Geist/display stacks, weights, wrapping, and content are unchanged; charcoal and paper surfaces improve small-copy legibility.
+- Spacing and layout rhythm: existing 660px composer width and hero alignment are retained; paper-body padding and 54px option targets create a calmer internal rhythm.
+- Colours and tokens: removed the duplicate cobalt surface; reused the existing paper, ink, lime, orange, and bone tokens with accessible foreground separation.
+- Image quality and assets: no image or brand asset was added, replaced, resized, or recompressed.
+- Copy and content: all labels, options, scope descriptions, and authority language are unchanged.
+
+### Comparison history
+
+1. Initial source — P1: the open composer read as a generic blue dashboard slab and competed with the hero.
+2. Revision — replaced the cobalt slab with a charcoal instrument header and warm evidence sheet; strengthened selected, hover, focus, open, and closed states.
+3. Post-fix evidence — same-size desktop comparison, focused component captures, and 390 × 844 browser capture found no remaining P0, P1, or P2 issue. Opening and closing the composer under a bounded DevTools session produced no console error, HTTP error, or failed load. Production build, full test suite, and `git diff --check` passed.
+
+### Follow-up polish
+
+No blocking issue remains. A future P3 pass could tune the paper warmth after viewing it on the final deployed background compression, but no further change is warranted from the current local evidence.
+
+final result: passed
