@@ -45,7 +45,18 @@ The public judging path must require only the deployed web application. Extensio
 
 ## Visual direction
 
-- Preserve the calm, warm-white, floating-search experience adapted from the selected OpenUp landing direction.
+`DESIGN.md` is the design-system reference: tokens, typography, motion, layering,
+component patterns, and the accessibility invariants that tests lock. Read it
+before any visual work. `design-qa.md` is the separate verification log.
+
+- Frontmend runs two deliberate visual systems. Do not merge them.
+  - The landing (`mode === "landing"`) uses the approved mineral-cobalt field with
+    bone-white display type, burnt orange for unresolved evidence, and acidic lime
+    for confirmation and the primary action. It lives in `src/landing.css`, scoped
+    to `.app-shell.landing`.
+  - Every workspace surface — audit progress, restoration, report, `/how-it-works` —
+    keeps the calm, warm-white experience adapted from the selected OpenUp
+    direction, in `src/styles.css`.
 - The first screen should remain focused on one dominant URL field with minimal supporting copy.
 - Audit progress should feel active and trustworthy without fake technical theatre.
 - Findings must connect evidence, viewport, affected target, proposed repair, and verification state visually.
