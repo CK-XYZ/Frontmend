@@ -11,3 +11,4 @@ dist/
 !.dev.vars.example
 /output
 /design
+DESIGN.md
