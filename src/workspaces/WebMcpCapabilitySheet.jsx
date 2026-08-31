@@ -70,7 +70,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
       >
         <header className="inspector-head">
           <div className="inspector-head-line">
-            <p className="inspector-kicker">Contextual WebMCP</p>
+            <h2 id="webmcp-sheet-title">Mission inspector</h2>
             <span
               className={`inspector-status ${supported ? "is-ready" : "is-human"}`}
               data-state={inspector.registration.status}
@@ -79,10 +79,12 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
               {registrationLabel(status)}
             </span>
           </div>
-          <h2 id="webmcp-sheet-title">Mission inspector</h2>
-          <p id="webmcp-sheet-description">
-            The current shared mission, the evidence that must return, and the actions that stay
-            person-owned.
+          <p className="inspector-state">
+            <span>{inspector.stage.replaceAll("-", " ")}</span>
+            <span>{questions.whatHappensNow.actor}</span>
+            <span>
+              {activeTools.length} of {inspector.registration.totalToolCount} contracts
+            </span>
           </p>
           <button
             className="inspector-close"
@@ -94,63 +96,57 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
           </button>
         </header>
 
-        <dl className="inspector-meta">
-          <div>
-            <dt>Stage</dt>
-            <dd>{inspector.stage.replaceAll("-", " ")}</dd>
-          </div>
-          <div>
-            <dt>Operator</dt>
-            <dd>{questions.whatHappensNow.actor}</dd>
-          </div>
-          <div>
-            <dt>Contracts</dt>
-            <dd>
-              {activeTools.length} active · {inspector.registration.totalToolCount} bounded
-            </dd>
-          </div>
-        </dl>
+        {/*
+          The structure below answers this in full - now, then the authority
+          split - so the sentence only has to reach a screen reader.
+        */}
+        <p className="sr-only" id="webmcp-sheet-description">
+          The current shared mission, the evidence that must return, and the actions that stay
+          person-owned.
+        </p>
 
-        <section className="inspector-block is-now" aria-labelledby="mission-inspector-now-title">
-          <p className="inspector-label">What happens now</p>
+        <section className="inspector-now" aria-labelledby="mission-inspector-now-title">
+          <p className="inspector-label">Now</p>
           <h3 id="mission-inspector-now-title">{questions.whatHappensNow.title}</h3>
           <p className="inspector-prose">{questions.whatHappensNow.summary}</p>
+          <p className="inspector-why">{questions.whyNow}</p>
           {questions.whatHappensNow.requiredCapability ? (
             <p className="inspector-capability">
-              <span>Required capability</span>
+              <span>Requires</span>
               <code>{questions.whatHappensNow.requiredCapability}</code>
             </p>
           ) : null}
         </section>
 
-        <section className="inspector-block" aria-labelledby="mission-inspector-why-title">
-          <p className="inspector-label" id="mission-inspector-why-title">Why now</p>
-          <p className="inspector-prose">{questions.whyNow}</p>
-        </section>
-
-        <div className="inspector-split">
-          <section aria-labelledby="mission-inspector-return-title">
-            <p className="inspector-label" id="mission-inspector-return-title">What must return</p>
+        {/*
+          The authority split is the product's whole thesis, so it is the shape
+          of the sheet rather than one more labelled band. It mirrors the
+          landing page's ledger: agent on the left, person on the right, and
+          lime marks the side only a person owns.
+        */}
+        <div className="inspector-authority">
+          <section aria-labelledby="mission-inspector-agent-title">
+            <p className="inspector-label" id="mission-inspector-agent-title">
+              The agent may
+            </p>
+            <p className="inspector-sublabel">Must return</p>
             <RecordList
               items={questions.whatMustReturn}
               empty="No further evidence is required."
             />
-          </section>
-          <section aria-labelledby="mission-inspector-unlocks-title">
-            <p className="inspector-label" id="mission-inspector-unlocks-title">What it unlocks</p>
+            <p className="inspector-sublabel">Unlocks</p>
             <RecordList items={questions.whatItUnlocks} empty="Nothing further is unlocked." />
           </section>
+          <section className="is-human" aria-labelledby="mission-inspector-human-title">
+            <p className="inspector-label" id="mission-inspector-human-title">
+              Only a person may
+            </p>
+            <RecordList
+              items={questions.whatRemainsHumanOnly}
+              empty="No person-owned action is outstanding."
+            />
+          </section>
         </div>
-
-        <section className="inspector-block is-human" aria-labelledby="mission-inspector-human-title">
-          <p className="inspector-label" id="mission-inspector-human-title">
-            What remains human-only
-          </p>
-          <RecordList
-            items={questions.whatRemainsHumanOnly}
-            empty="No person-owned action is outstanding."
-          />
-        </section>
 
         <details className="inspector-disclosure">
           <summary>

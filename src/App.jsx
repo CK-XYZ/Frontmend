@@ -261,22 +261,38 @@ const LANDING_FAQ = [
       "Verification reruns the exact rule that failed against a fresh measurement, across the root and any retained route. Frontmend only reports a finding as resolved when a comparable fresh audit no longer observes that rule.",
   },
 ];
+/*
+ * The three handoffs, as shown in the how-it-works dialog and on /how-it-works.
+ * `marks` are the standing constraints of each handoff, not measurements: they
+ * restate the same boundaries the landing page and the audit services enforce.
+ */
 const HOW_IT_WORKS_STEPS = [
   {
     label: "01",
     title: "Measure the live URL",
+    Icon: Gauge,
     detail: "Retain mobile, desktop, and document evidence with its provider and limits attached.",
+    marks: ["Public pages only", "Provider and fallback stay visible", "No account for the first audit"],
   },
   {
     label: "02",
     title: "Inspect what automation misses",
+    Icon: Crosshair,
     detail: "WebMCP gives the agent one exact rendered-browser check at a time, then maps real issues to repository ownership.",
+    marks: ["One bounded check at a time", "Rendered, not inferred", "No source upload"],
   },
   {
     label: "03",
     title: "Review the fix, then prove it",
+    Icon: SealCheck,
     detail: "The site owner controls approval and deployment; Frontmend reruns the exact rule and exports the fresh receipt.",
+    marks: ["Explicit human approval", "Exact-rule recheck", "Exportable receipt"],
   },
+];
+const HOW_IT_WORKS_BOUNDS = [
+  { term: "Reach", value: "Public pages" },
+  { term: "Source access", value: "None" },
+  { term: "Approval", value: "Person-owned" },
 ];
 const AUDIT_FOCUS_COPY = Object.freeze({
   accessibility: { label: "Accessibility", detail: "Semantics, names, contrast" },
@@ -458,80 +474,349 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
   );
 }
 
+/*
+ * How it works.
+ *
+ * This is a marketing surface, not a workspace one: it explains the same loop
+ * the landing page argues for, and it is usually the first thing a visitor
+ * clicks. So it is built in the cobalt system (see design.md section 8) and it
+ * demonstrates the loop rather than describing it - a real tablist over the
+ * three handoffs, driving the same illustrative specimens the landing uses.
+ *
+ * It plays itself through once on open and then settles on the last handoff.
+ * One pass, three beats, about 3.2s total: finite, under the 5s that WCAG
+ * 2.2.2 governs, cancelled by any interaction, and never started under
+ * prefers-reduced-motion. The mission inspector is still the reference for
+ * workspace dialogs.
+ */
+const HOW_IT_WORKS_BEAT = 1600;
+
+function HowItWorksDemo({ stage }) {
+  if (stage === "01") return <SiteSpecimen state="unresolved" split />;
+  if (stage === "02") return <SelectionSpecimen />;
+  return <VerifiedSpecimen />;
+}
+
 function HowItWorks({ onClose }) {
   const dialogRef = useDialogFocus(onClose);
+  const tabRefs = useRef({});
+  const [activeLabel, setActiveLabel] = useState(HOW_IT_WORKS_STEPS[0].label);
+  // Once the visitor takes over, the walkthrough never resumes on its own.
+  const [driving, setDriving] = useState(false);
+  const activeIndex = Math.max(
+    0,
+    HOW_IT_WORKS_STEPS.findIndex((step) => step.label === activeLabel),
+  );
+  const active = HOW_IT_WORKS_STEPS[activeIndex];
+
+  useEffect(() => {
+    if (driving) return undefined;
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return undefined;
+    // A single pass: one timer per remaining handoff, nothing reschedules.
+    const timers = HOW_IT_WORKS_STEPS.slice(1).map((step, offset) =>
+      window.setTimeout(() => setActiveLabel(step.label), HOW_IT_WORKS_BEAT * (offset + 1)),
+    );
+    return () => timers.forEach((timer) => window.clearTimeout(timer));
+  }, [driving]);
+
+  const moveTo = (index, { focus = true } = {}) => {
+    const total = HOW_IT_WORKS_STEPS.length;
+    const next = HOW_IT_WORKS_STEPS[(index + total) % total];
+    setDriving(true);
+    setActiveLabel(next.label);
+    if (focus) tabRefs.current[next.label]?.focus();
+  };
+
+  const onKeyDown = (event) => {
+    if (event.key === "ArrowRight" || event.key === "ArrowDown") {
+      event.preventDefault();
+      moveTo(activeIndex + 1);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowUp") {
+      event.preventDefault();
+      moveTo(activeIndex - 1);
+    } else if (event.key === "Home") {
+      event.preventDefault();
+      moveTo(0);
+    } else if (event.key === "End") {
+      event.preventDefault();
+      moveTo(HOW_IT_WORKS_STEPS.length - 1);
+    }
+  };
+
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
         ref={dialogRef}
         id="how-it-works-dialog"
         tabIndex="-1"
-        className="how-sheet"
+        className="loop-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="how-title"
+        aria-describedby="how-description"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button className="icon-button close-button" type="button" onClick={onClose} aria-label="Close">
+        <button
+          className="loop-dialog-close"
+          type="button"
+          onClick={onClose}
+          aria-label="Close how it works"
+        >
           <X size={18} weight="bold" />
         </button>
-        <p className="kicker">The Frontmend loop</p>
-        <h2 id="how-title">Measure. Inspect. Prove it held.</h2>
-        <ol className="how-list">
-          {HOW_IT_WORKS_STEPS.map((step) => (
-            <li key={step.label}>
-              <span>{step.label}</span>
-              <div>
-                <strong>{step.title}</strong>
-                <p>{step.detail}</p>
-              </div>
-            </li>
+
+        <header className="loop-dialog-head">
+          <div>
+            <p className="loop-dialog-kicker">The Frontmend loop</p>
+            <h2 id="how-title">Measure. Inspect. Prove it held.</h2>
+          </div>
+          <p id="how-description">
+            Three handoffs, each keeping its evidence separate — so every step states what is
+            known, who established it, and what still needs proof.
+          </p>
+        </header>
+
+        <dl className="loop-dialog-bounds">
+          {HOW_IT_WORKS_BOUNDS.map((bound) => (
+            <div key={bound.term}>
+              <dt>{bound.term}</dt>
+              <dd>{bound.value}</dd>
+            </div>
           ))}
-        </ol>
+        </dl>
+
+        <div
+          className="loop-dialog-rail"
+          role="tablist"
+          aria-label="The three evidence handoffs"
+          onKeyDown={onKeyDown}
+        >
+          {HOW_IT_WORKS_STEPS.map(({ label, title, Icon }, index) => {
+            const selected = label === activeLabel;
+            return (
+              <button
+                key={label}
+                ref={(node) => {
+                  tabRefs.current[label] = node;
+                }}
+                type="button"
+                role="tab"
+                id={`how-tab-${label}`}
+                className="loop-dialog-tab"
+                data-step={label}
+                data-state={index < activeIndex ? "done" : selected ? "current" : "upcoming"}
+                aria-selected={selected}
+                aria-controls="how-panel"
+                tabIndex={selected ? 0 : -1}
+                onClick={() => moveTo(index, { focus: false })}
+              >
+                <span className="loop-dialog-mark" aria-hidden="true">
+                  <Icon size={19} weight="bold" />
+                </span>
+                <span className="loop-dialog-index">Step {label}</span>
+                <span className="loop-dialog-tab-title">{title}</span>
+              </button>
+            );
+          })}
+        </div>
+
+        <div
+          className="loop-dialog-panel"
+          id="how-panel"
+          role="tabpanel"
+          aria-labelledby={`how-tab-${active.label}`}
+          key={active.label}
+          tabIndex={-1}
+        >
+          <div className="loop-dialog-detail">
+            <h3>{active.title}</h3>
+            <p>{active.detail}</p>
+            <ul className="loop-dialog-marks">
+              {active.marks.map((mark) => (
+                <li key={mark}>{mark}</li>
+              ))}
+            </ul>
+          </div>
+          <figure className="loop-dialog-exhibit">
+            <div className="loop-dialog-exhibit-frame" aria-hidden="true">
+              <HowItWorksDemo stage={active.label} />
+            </div>
+            <figcaption className="sr-only">
+              An illustration of one example contrast issue at this handoff. It is not a
+              measurement of a real website.
+            </figcaption>
+          </figure>
+        </div>
+
+        <footer className="loop-dialog-foot">
+          <p className="loop-dialog-authority">
+            <ShieldCheck size={20} weight="duotone" aria-hidden="true" />
+            Agents measure, investigate, and prepare reviewable work. A person keeps repair intent,
+            approval, deployment, and the attestation that it shipped.
+          </p>
+          <a className="loop-dialog-link" href="/how-it-works">
+            Full walkthrough
+            <ArrowRight size={15} weight="bold" aria-hidden="true" />
+          </a>
+        </footer>
       </section>
     </div>
   );
 }
 
+/*
+ * /how-it-works.
+ *
+ * The crawlable long-form counterpart to the loop dialog, in the same cobalt
+ * marketing system. Where the dialog shows one handoff at a time and plays
+ * itself through, the page shows all three at once with room for the full
+ * argument - a page has no interaction budget to spend.
+ *
+ * Bands alternate cobalt and cream, as every long marketing surface must.
+ */
+const GUIDE_MOVE_SPECIMENS = [SiteSpecimen, SelectionSpecimen, ReviewSpecimen];
+/* The same three marks the loop dialog uses, so the page reads as its long form. */
+const GUIDE_MOVE_ICONS = [Gauge, Crosshair, SealCheck];
+
 function HowItWorksPage() {
   return (
-    <section className="how-page" aria-labelledby="how-page-title">
-      <div className="how-page-card">
-        <div className="how-page-heading">
-          <div>
-            <p className="kicker">The Frontmend loop</p>
-            <h1 id="how-page-title">Measure. Inspect. Prove it held.</h1>
-          </div>
-          <p>
-            Frontmend keeps provider, browser, repository, and verification evidence separate,
-            so every next step says what is known and what still needs proof.
+    <>
+      <section className="guide-hero" aria-labelledby="how-page-title">
+        <div className="evidence-loop-shell">
+          <p className="section-kicker">The Frontmend loop</p>
+          <h1 id="how-page-title" className="guide-hero-title">
+            Measure. Inspect.<span className="editorial-break"> </span>Prove it held.
+          </h1>
+          <p className="guide-hero-lede">
+            Frontmend keeps provider, browser, repository, and verification evidence separate, so
+            every next step says what is known, who established it, and what still needs proof.
           </p>
-        </div>
-        <ol className="how-list how-page-list">
-          {HOW_IT_WORKS_STEPS.map((step) => (
-            <li key={step.label}>
-              <span>{step.label}</span>
-              <div>
-                <strong>{step.title}</strong>
-                <p>{step.detail}</p>
+          <dl className="guide-bounds">
+            {HOW_IT_WORKS_BOUNDS.map((bound) => (
+              <div key={bound.term}>
+                <dt>{bound.term}</dt>
+                <dd>{bound.value}</dd>
               </div>
-            </li>
-          ))}
-        </ol>
-        <div className="how-page-boundary">
-          <ShieldCheck size={23} weight="duotone" aria-hidden="true" />
-          <p>
-            <strong>The authority boundary stays visible.</strong>
-            Agents can measure, investigate, and prepare reviewable work. A person retains repair
-            intent, approval, deployment, and deployment attestation.
+            ))}
+          </dl>
+        </div>
+      </section>
+
+      <section className="guide-moves" aria-labelledby="guide-moves-title">
+        <div className="evidence-loop-shell">
+          <h2 id="guide-moves-title" className="sr-only">The three handoffs</h2>
+          <ol className="guide-move-list">
+            {EVIDENCE_LOOP_MOVES.map((move, index) => {
+              const Specimen = GUIDE_MOVE_SPECIMENS[index];
+              const Icon = GUIDE_MOVE_ICONS[index];
+              return (
+                <li className="guide-move" key={move.index}>
+                  <p className="guide-move-mark" aria-hidden="true">
+                    <Icon size={20} weight="bold" />
+                  </p>
+                  <div className="guide-move-body">
+                    <p className="guide-move-index">{move.index}</p>
+                    <h3>{move.title}</h3>
+                    <p className="guide-move-lede">{move.lede}</p>
+                    <p className="guide-move-detail">{move.detail}</p>
+                    <ul className="guide-move-marks">
+                      {move.marks.map((mark) => (
+                        <li key={mark}>{mark}</li>
+                      ))}
+                    </ul>
+                  </div>
+                  <figure className="guide-move-exhibit">
+                    <div className="loop-dialog-exhibit-frame" aria-hidden="true">
+                      {index === 0 ? <Specimen state="unresolved" split /> : <Specimen />}
+                    </div>
+                    <figcaption className="sr-only">
+                      An illustration of one example contrast issue at this handoff. It is not a
+                      measurement of a real website.
+                    </figcaption>
+                  </figure>
+                </li>
+              );
+            })}
+          </ol>
+        </div>
+      </section>
+
+      <section className="ledger" aria-labelledby="guide-ledger-title">
+        <div className="evidence-loop-shell">
+          <div className="ledger-head">
+            <div>
+              <p className="section-kicker">The authority boundary</p>
+              <h2 id="guide-ledger-title" className="section-title">
+                An agent can do the work.<span className="editorial-break"> </span>
+                Only a person can approve it.
+              </h2>
+            </div>
+            <p className="ledger-note">
+              Frontmend exposes the same validated services to a browser agent and to you. The line
+              between preparing work and authorising it never moves.
+            </p>
+          </div>
+          <div className="ledger-columns">
+            <div className="ledger-column" data-side="agent">
+              <h3>
+                <Robot size={17} weight="bold" aria-hidden="true" />
+                An agent may
+              </h3>
+              <ul>
+                {AGENT_CAPABILITIES.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+            <div className="ledger-column" data-side="human">
+              <h3>
+                <ShieldCheck size={17} weight="bold" aria-hidden="true" />
+                Only a person may
+              </h3>
+              <ul>
+                {HUMAN_ONLY_AUTHORITY.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            </div>
+          </div>
+          <p className="ledger-fallback">
+            The complete workflow stays usable when <code>document.modelContext</code> is
+            unavailable.
           </p>
         </div>
-        <a className="how-page-cta" href="/">
-          Start a site audit
-          <ArrowRight size={18} weight="bold" aria-hidden="true" />
-        </a>
-      </div>
-    </section>
+      </section>
+
+      <section className="guide-closing" aria-labelledby="guide-closing-title">
+        <div className="evidence-loop-shell">
+          <div className="guide-closing-card">
+            <div>
+              <p className="section-kicker">Close the loop</p>
+              <h2 id="guide-closing-title" className="guide-closing-title">
+                Start with one public URL.
+              </h2>
+              <p>
+                No account for the first audit. Frontmend measures the public page, prepares a
+                reviewable repair, and reruns the exact rule once you have deployed it.
+              </p>
+              <a className="guide-closing-cta" href="/">
+                Start a site audit
+                <ArrowRight size={17} weight="bold" aria-hidden="true" />
+              </a>
+            </div>
+            <figure className="guide-closing-exhibit">
+              <div className="loop-dialog-exhibit-frame" aria-hidden="true">
+                <VerifiedSpecimen />
+              </div>
+              <figcaption className="sr-only">
+                An illustration of the same example page after a verified repair. It is not a
+                measurement of a real website.
+              </figcaption>
+            </figure>
+          </div>
+        </div>
+      </section>
+    </>
   );
 }
 
@@ -824,6 +1109,14 @@ function LandingFaq() {
  * pause control — see DESIGN.md for the tradeoff that carries.
  */
 const FAN_SPAN = 2;
+/*
+ * The sweep's cadence, split so the intent stays readable: a card animates for
+ * FAN_TRANSITION_MS, then holds at centre for FAN_REST_MS before the next
+ * advance. FAN_TRANSITION_MS must track the .closing-proof-card transition in
+ * landing.css - if that changes and this does not, the rest shortens silently.
+ */
+const FAN_TRANSITION_MS = 620;
+const FAN_REST_MS = 2000;
 
 /** Signed slot for a card, wrapped so the deck reads as a loop. */
 function fanOffset(position, index, total) {
@@ -849,7 +1142,7 @@ function ClosingProofs({ held }) {
         const next = (index + 1) % total;
         return { index: next, jump: (next + FAN_SPAN) % total };
       });
-    }, 3600);
+    }, FAN_TRANSITION_MS + FAN_REST_MS);
     const stop = () => {
       if (reduced.matches) window.clearInterval(timer);
     };
@@ -951,7 +1244,13 @@ function ClosingCta({ onStart }) {
   );
 }
 
-function LandingFooter({ onHome }) {
+/*
+ * The marketing footer, shared by the landing and /how-it-works. Its two
+ * in-page anchors only resolve on the landing itself, so off-route they are
+ * rewritten to point back at the landing's copy of the same target.
+ */
+function LandingFooter({ onHome, onLanding = true }) {
+  const landingAnchor = (fragment) => (onLanding ? fragment : `/${fragment}`);
   return (
     <footer className="site-footer landing-footer">
       <div className="landing-footer-main">
@@ -966,9 +1265,11 @@ function LandingFooter({ onHome }) {
         <nav className="landing-footer-links" aria-label="Footer">
           <div className="landing-footer-column">
             <p className="landing-footer-label">Explore</p>
-            <a href="#evidence-loop">Evidence loop</a>
+            <a href={landingAnchor("#evidence-loop")}>Evidence loop</a>
             <a href="/how-it-works">How it works</a>
-            <a className="landing-footer-primary-link" href="#site-url">Start a site audit</a>
+            <a className="landing-footer-primary-link" href={landingAnchor("#site-url")}>
+              Start a site audit
+            </a>
           </div>
           <div className="landing-footer-column landing-footer-principles">
             <p className="landing-footer-label">Operating model</p>
@@ -1827,8 +2128,8 @@ export function App() {
         ) : null}
       </main>
 
-      {mode === "landing" ? (
-        <LandingFooter onHome={reset} />
+      {mode === "landing" || mode === "guide" ? (
+        <LandingFooter onHome={reset} onLanding={mode === "landing"} />
       ) : (
         <footer className="site-footer">
           <span>Find what broke. Prove the fix.</span>

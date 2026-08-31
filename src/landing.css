@@ -26,12 +26,12 @@
 
 /* ------------------------------------------------------------------ shell */
 
-.app-shell.landing {
+:is(.app-shell.landing, .app-shell.guide) {
   overflow: visible;
   background: var(--fm-cobalt-deep);
 }
 
-.app-shell.landing .site-header {
+:is(.app-shell.landing, .app-shell.guide) .site-header {
   left: 50%;
   width: 100%;
   border: 1px solid transparent;
@@ -50,7 +50,7 @@
     box-shadow 260ms ease;
 }
 
-.app-shell.landing .site-header::before {
+:is(.app-shell.landing, .app-shell.guide) .site-header::before {
   content: "";
   position: absolute;
   inset: 0;
@@ -63,12 +63,12 @@
   transition: opacity 220ms ease;
 }
 
-.app-shell.landing .site-header > * {
+:is(.app-shell.landing, .app-shell.guide) .site-header > * {
   position: relative;
   z-index: 1;
 }
 
-.app-shell.landing .site-header.is-condensed {
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed {
   position: fixed;
   top: 14px;
   width: min(860px, calc(100% - 32px));
@@ -85,117 +85,228 @@
   pointer-events: auto;
 }
 
-.app-shell.landing .site-header.is-condensed::before {
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed::before {
   opacity: 1;
 }
 
-.app-shell.landing .site-header.is-condensed .brand {
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed .brand {
   padding: 2px 4px;
 }
 
-.app-shell.landing .site-header.is-condensed .header-actions {
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed .header-actions {
   gap: 4px;
 }
 
-.app-shell.landing .site-header.is-condensed .agent-activity-trigger,
-.app-shell.landing .site-header.is-condensed .text-button,
-.app-shell.landing .site-header.is-condensed .webmcp-status {
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed .agent-activity-trigger,
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed .text-button,
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed .webmcp-status {
   min-height: 36px;
   border-radius: 999px;
 }
 
-.app-shell.landing .site-header.is-condensed .agent-activity-trigger {
-  padding-inline: 11px;
-  border-color: rgba(245, 243, 241, 0.18);
-  background: rgba(245, 243, 241, 0.055);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+/*
+ * Inside the condensed island the glass comes back OFF.
+ *
+ * The island is the single glass surface (section 8); stacking a second glass
+ * material inside it turns one coherent object into a row of floating cards,
+ * and nesting backdrop-filters is both muddy and expensive. The controls keep
+ * their pill geometry and drop to flat, low-alpha fills on the island's own
+ * material.
+ */
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed :is(
+  .agent-activity-trigger,
+  .text-button,
+  .webmcp-status
+) {
+  padding-inline: 12px;
+  border-color: rgba(245, 243, 241, 0.16);
+  /*
+   * The colour reset matters: the expanded Agent log is a white pill with
+   * dark type, and without this it keeps that dark type on the island's dark
+   * surface and disappears.
+   */
+  color: var(--fm-bone);
+  background-color: rgba(245, 243, 241, 0.05);
+  background-image: none;
+  backdrop-filter: none;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
-.app-shell.landing .site-header.is-condensed .text-button,
-.app-shell.landing .site-header.is-condensed .webmcp-status {
-  padding-inline: 11px;
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed .agent-activity-trigger svg {
+  color: var(--fm-bone);
 }
 
-.app-shell.landing .site-header.is-condensed :is(
+:is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed :is(
   .agent-activity-trigger,
   .text-button,
   .webmcp-status
 ):hover {
-  background: rgba(245, 243, 241, 0.1);
+  border-color: rgba(245, 243, 241, 0.28);
+  background-color: rgba(245, 243, 241, 0.11);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 
-.app-shell.landing .brand {
+:is(.app-shell.landing, .app-shell.guide) .brand {
   color: var(--fm-bone);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 
-.app-shell.landing .text-button {
+:is(.app-shell.landing, .app-shell.guide) .text-button {
   color: var(--fm-bone);
   font-weight: 560;
 }
 
-.app-shell.landing .text-button:hover {
+:is(.app-shell.landing, .app-shell.guide) .text-button:hover {
   color: var(--fm-lime);
 }
 
-.app-shell.landing .text-button svg {
+:is(.app-shell.landing, .app-shell.guide) .text-button svg {
   display: none;
 }
 
-.app-shell.landing .webmcp-status {
+/*
+ * The Agent log control.
+ *
+ * The one glass object in the expanded header: a bright white pill with dark
+ * type, floating on the cobalt field. This extends the scoped glass exception
+ * in section 11 - same header, same field - and it stops here. The other two
+ * controls stay typographic on purpose; three glass pills read as a toolbar
+ * and flatten the hierarchy.
+ */
+:is(.app-shell.landing, .app-shell.guide) .agent-activity-trigger {
+  min-height: 38px;
+  padding-inline: 15px;
+  border: 1px solid rgba(255, 255, 255, 0.42);
+  border-radius: 999px;
+  color: var(--fm-ink);
+  font-size: 13px;
+  /*
+   * Real frost, not a white chip: the fill stays well under opaque so the
+   * cobalt field and the terrain art read through it, and the blur does the
+   * legibility work instead. Saturation lifts the colour it picks up.
+   */
+  backdrop-filter: blur(22px) saturate(1.9);
+  /*
+   * Three edges, which is what separates glass from a flat fill: a bright lit
+   * top edge, a faint returning light along the bottom inner edge, and the
+   * shadow the pill casts on the field.
+   */
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.78),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.22),
+    0 8px 26px rgba(0, 8, 38, 0.34);
+  /*
+   * The specular wash lives in background-image, not a ::before: a pseudo at
+   * z-index -1 paints behind the button's own background, and this control
+   * creates no stacking context to rescue it. Keeping the fill in
+   * background-color also leaves hover something it can interpolate -
+   * gradients do not.
+   */
+  background-color: rgba(255, 255, 255, 0.66);
+  background-image:
+    radial-gradient(circle at 24% -55%, rgba(255, 255, 255, 0.7), transparent 62%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.42), rgba(255, 255, 255, 0));
+  transition:
+    background-color 200ms ease,
+    border-color 200ms ease,
+    box-shadow 200ms ease;
+}
+
+:is(.app-shell.landing, .app-shell.guide) .agent-activity-trigger:hover {
+  border-color: rgba(255, 255, 255, 0.66);
+  background-color: rgba(255, 255, 255, 0.79);
+  color: var(--fm-ink);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.9),
+    inset 0 -1px 0 rgba(255, 255, 255, 0.28),
+    0 10px 30px rgba(0, 8, 38, 0.38);
+}
+
+:is(.app-shell.landing, .app-shell.guide) .agent-activity-trigger svg {
+  color: var(--fm-ink);
+}
+
+/*
+ * WebMCP status: a readout, not a control.
+ *
+ * The mark is a three-bar signal glyph rather than a status pip - it says
+ * "connected", which is what the state actually is, and it is drawn from the
+ * one existing .status-dot span with no extra DOM. Sentence-case mono keeps
+ * the technical register without shouting at the pill beside it.
+ */
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status {
+  gap: 9px;
+  padding-inline: 4px;
+  border: 0;
+  background: none;
+  color: var(--fm-bone-muted);
+  font-family: var(--fm-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  transition: color 200ms ease;
+}
+
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status:hover,
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status[aria-expanded="true"] {
+  background: none;
   color: var(--fm-bone);
-  font-weight: 560;
-  font-size: 14px;
 }
 
-.app-shell.landing .webmcp-status:hover,
-.app-shell.landing .webmcp-status[aria-expanded="true"],
-.app-shell.landing .webmcp-status:focus-visible {
-  background: rgba(245, 243, 241, 0.12);
+/*
+ * Three ascending bars, painted as three background layers so the glyph needs
+ * no pseudo-elements and no markup change. currentcolor is set per state
+ * below, which is also why the bars must not carry their own colour here.
+ */
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status .status-dot {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+  color: var(--fm-bone-muted);
+  background-color: transparent;
+  background-image:
+    linear-gradient(currentcolor, currentcolor),
+    linear-gradient(currentcolor, currentcolor),
+    linear-gradient(currentcolor, currentcolor);
+  background-size: 2px 4px, 2px 8px, 2px 12px;
+  background-position: 0 100%, 5px 100%, 10px 100%;
+  background-repeat: no-repeat;
+  transition: color 200ms ease;
+}
+
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status.ready {
   color: var(--fm-bone);
 }
 
-.app-shell.landing .webmcp-status.ready {
-  color: var(--fm-bone);
-}
-
-.app-shell.landing .webmcp-status.ready .status-dot {
-  background: var(--fm-lime);
-  box-shadow: 0 0 0 4px rgba(220, 239, 59, 0.2);
-}
-
-.app-shell.landing .webmcp-status.error {
-  color: var(--fm-orange);
-}
-
-.app-shell.landing .webmcp-status.error .status-dot {
-  background: var(--fm-orange);
-  box-shadow: 0 0 0 4px rgba(255, 122, 41, 0.22);
-}
-
-.app-shell.landing .agent-activity-trigger {
-  border-color: rgba(245, 243, 241, 0.32);
-  background: transparent;
-  color: var(--fm-bone);
-}
-
-.app-shell.landing .agent-activity-trigger:hover {
-  border-color: var(--fm-lime);
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status.ready .status-dot {
   color: var(--fm-lime);
 }
 
-.app-shell.landing .agent-activity-trigger span {
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status.error {
+  color: var(--fm-orange);
+}
+
+/* Unresolved evidence is orange, and a stalled registration is unresolved. */
+:is(.app-shell.landing, .app-shell.guide) .webmcp-status.error .status-dot {
+  color: var(--fm-orange);
+  background-size: 2px 4px, 2px 8px, 2px 4px;
+}
+
+:is(.app-shell.landing, .app-shell.guide) .agent-activity-trigger span {
   background: var(--fm-lime);
   color: var(--fm-cobalt-deep);
 }
 
-.app-shell.landing :is(button, a, input, select, summary):focus-visible {
+:is(.app-shell.landing, .app-shell.guide) :is(button, a, input, select, summary):focus-visible {
   outline: 3px solid var(--fm-lime);
   outline-offset: 3px;
 }
 
-.app-shell.landing .site-footer {
+:is(.app-shell.landing, .app-shell.guide) .site-footer {
   position: static;
   display: block;
   width: var(--fm-page);
@@ -503,50 +614,55 @@
 }
 
 /*
- * The optional composer reads as a compact instrument drawer: a charcoal
- * handle in the hero, then a warm evidence sheet when it opens. Keeping the
- * tray off cobalt stops a dense form state becoming a second blue dashboard.
+ * The optional composer is one paper sheet, handle and tray together - the
+ * same material as the URL field above it, so the hero reads as a single form
+ * rather than a field plus a separate charcoal drawer.
+ *
+ * It was charcoal with an orange rule. Note the risk this re-opens: section 8
+ * warns that a borrowed workspace panel left pale reads as a card floating on
+ * cobalt. What keeps this deliberate rather than accidental is that the fill
+ * is the landing's own --fm-paper (not the workspace's translucent white), it
+ * is fully opaque, and it carries a real border and shadow.
  */
 .app-shell.landing .audit-composer {
   width: min(660px, 100%);
   margin: 18px 0 0;
-  border-color: rgba(245, 243, 241, 0.34);
+  border-color: rgba(18, 22, 28, 0.16);
   border-radius: 5px;
-  background: #0b0e12;
-  color: var(--fm-bone);
-  box-shadow: 0 16px 38px rgba(0, 7, 28, 0.34);
+  background: var(--fm-paper);
+  color: var(--fm-ink);
+  box-shadow: 0 16px 38px rgba(0, 7, 28, 0.28);
 }
 
 .app-shell.landing .audit-composer:hover {
-  border-color: rgba(245, 243, 241, 0.56);
+  border-color: rgba(18, 22, 28, 0.3);
 }
 
 .app-shell.landing .audit-composer > summary {
   min-height: 54px;
-  border-left: 3px solid var(--fm-orange);
-  background: #0b0e12;
+  background: var(--fm-paper);
   transition: background-color 160ms ease;
 }
 
 .app-shell.landing .audit-composer > summary:hover,
 .app-shell.landing .audit-composer > summary:focus-visible {
-  background: #13171d;
+  background: #e9e4dd;
 }
 
 .app-shell.landing .audit-composer > summary strong {
-  color: var(--fm-bone);
+  color: var(--fm-ink);
 }
 
 .app-shell.landing .audit-composer > summary :is(small, em) {
-  color: var(--fm-bone-muted);
+  color: var(--fm-ink-muted);
 }
 
 .app-shell.landing .audit-composer > summary em {
-  color: rgba(245, 243, 241, 0.74);
+  color: var(--fm-ink-muted);
 }
 
 .app-shell.landing .audit-composer > summary::after {
-  color: var(--fm-lime);
+  color: var(--fm-ink-muted);
 }
 
 /*
@@ -558,7 +674,7 @@
   gap: 0;
   padding: 18px 18px 20px;
   grid-template-columns: minmax(0, 1fr);
-  border-top-color: rgba(18, 22, 28, 0.18);
+  border-top-color: rgba(18, 22, 28, 0.14);
   background: var(--fm-paper);
   color: var(--fm-ink);
 }
@@ -1762,75 +1878,75 @@
   overflow: hidden;
 }
 
-.stage-exhibit-frame > * {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) > * {
   align-content: start;
 }
 
-.stage-exhibit-frame .specimen-site {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-site {
   grid-template-rows: auto minmax(0, 1fr);
 }
 
-.stage-exhibit-frame .specimen-site-body {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-site-body {
   display: grid;
   align-content: center;
 }
 
-.stage-exhibit-frame :is(.specimen-site, .specimen-code, .specimen-review) {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) :is(.specimen-site, .specimen-code, .specimen-review) {
   border-radius: 0;
   box-shadow: none;
 }
 
-.stage-exhibit-frame .specimen-site-title {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-site-title {
   font-size: clamp(20px, 2vw, 32px);
 }
 
-.stage-exhibit-frame .specimen-site-copy {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-site-copy {
   gap: 26px;
   margin-top: 14px;
   font-size: clamp(9px, 0.78vw, 12px);
 }
 
-.stage-exhibit-frame .specimen-chrome {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-chrome {
   padding: 11px 16px 8px;
   font-size: 10px;
 }
 
-.stage-exhibit-frame .specimen-site-body {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-site-body {
   padding: 26px 30px 34px;
 }
 
-.stage-exhibit-frame .specimen-code {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-code {
   align-content: center;
   padding: 24px 0;
   font-size: clamp(11px, 0.98vw, 15px);
 }
 
-.stage-exhibit-frame .specimen-code-line {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-code-line {
   grid-template-columns: 44px minmax(0, 1fr);
   padding-right: 20px;
 }
 
-.stage-exhibit-frame .specimen-review {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-review {
   align-content: center;
   padding: 30px 32px;
   font-size: clamp(10px, 0.88vw, 13px);
 }
 
-.stage-exhibit-frame .specimen-review-title {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-review-title {
   font-size: clamp(11px, 0.95vw, 14px);
 }
 
-.stage-exhibit-frame .specimen-pill {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-pill {
   padding: 7px 11px;
   font-size: clamp(10px, 0.85vw, 12px);
 }
 
-.stage-exhibit-frame :is(.specimen-flag, .specimen-seal, .specimen-review-seal) {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) :is(.specimen-flag, .specimen-seal, .specimen-review-seal) {
   width: 28px;
   height: 28px;
 }
 
-.stage-exhibit-frame .specimen-selection-tag {
+:is(.stage-exhibit-frame, .loop-dialog-exhibit-frame) .specimen-selection-tag {
   bottom: -11px;
   padding: 3px 7px;
   font-size: 10px;
@@ -2533,7 +2649,7 @@
     --fan-gap: 88px;
   }
 
-  .app-shell.landing .site-header.is-condensed {
+  :is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed {
     top: 12px;
     width: calc(100% - 24px);
   }
@@ -2581,17 +2697,17 @@
 }
 
 @media (max-width: 620px) {
-  .app-shell.landing .site-header.is-condensed {
+  :is(.app-shell.landing, .app-shell.guide) .site-header.is-condensed {
     top: 8px;
     width: calc(100% - 16px);
     padding: 4px 6px 4px 10px;
   }
 
-  .app-shell.landing .text-button svg {
+  :is(.app-shell.landing, .app-shell.guide) .text-button svg {
     display: block;
   }
 
-  .app-shell.landing .webmcp-status {
+  :is(.app-shell.landing, .app-shell.guide) .webmcp-status {
     font-size: 0;
   }
 
@@ -2748,7 +2864,7 @@
     font-size: clamp(26px, 7.6vw, 34px);
   }
 
-  .app-shell.landing .site-footer {
+  :is(.app-shell.landing, .app-shell.guide) .site-footer {
     padding: 48px var(--fm-gutter) 26px;
   }
 
@@ -2770,5 +2886,922 @@
     align-items: flex-start;
     flex-direction: column;
     gap: 20px;
+  }
+}
+
+/* ============================================================ how it works
+ *
+ * The loop dialog.
+ *
+ * "How it works" is the marketing explainer of the same loop the landing page
+ * argues for, and it is usually the first thing a visitor clicks — so it is
+ * built in the cobalt system rather than the warm-white workspace one. It is
+ * the second deliberate exception to the two-system split (the scrolled header
+ * island is the first): an overlay above a dimmed page, not a workspace
+ * surface, so it keeps these styles on every route.
+ *
+ * Landscape by design: three columns, all three handoffs readable at once,
+ * no scrolling on a normal desktop viewport. The workspace dialog reference
+ * is still the mission inspector in styles.css.
+ */
+.loop-dialog {
+  --loop-pad: clamp(22px, 3vw, 44px);
+  --loop-gap: clamp(20px, 3vw, 44px);
+  position: relative;
+  width: min(1080px, 100%);
+  max-height: calc(100vh - 48px);
+  max-height: calc(100dvh - 48px);
+  overflow: auto;
+  border: 1px solid rgba(197, 213, 255, 0.3);
+  border-radius: 6px;
+  background: var(--fm-cobalt-deep);
+  color: var(--fm-bone);
+  box-shadow: 0 40px 110px rgba(0, 12, 46, 0.55);
+}
+
+.loop-dialog :is(button, a):focus-visible {
+  outline: 3px solid var(--fm-lime);
+  outline-offset: 3px;
+}
+
+.loop-dialog-close {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  z-index: 2;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--fm-bone-muted);
+  cursor: pointer;
+}
+
+.loop-dialog-close:hover {
+  border-color: var(--fm-cobalt-line);
+  color: var(--fm-bone);
+}
+
+/* ------------------------------------------------------------------ head */
+
+.loop-dialog-head {
+  display: grid;
+  gap: clamp(16px, 2.4vw, 44px);
+  grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
+  align-items: end;
+  padding: clamp(28px, 3.4vw, 44px) var(--loop-pad) clamp(24px, 2.8vw, 34px);
+  padding-right: max(var(--loop-pad), 70px);
+  border-bottom: 1px solid var(--fm-cobalt-line);
+}
+
+.loop-dialog-kicker {
+  margin: 0;
+  color: var(--fm-orange);
+  font-size: 12px;
+  font-weight: 740;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.loop-dialog h2 {
+  margin: 14px 0 0;
+  max-width: 14ch;
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(30px, 3.6vw, 50px);
+  font-weight: 600;
+  letter-spacing: -0.032em;
+  line-height: 0.98;
+}
+
+.loop-dialog-head > p {
+  margin: 0 0 6px;
+  max-width: 46ch;
+  color: var(--fm-bone-muted);
+  font-size: clamp(14px, 1.05vw, 16px);
+  line-height: 1.6;
+}
+
+/* ---------------------------------------------------------------- bounds */
+
+.loop-dialog-bounds {
+  display: grid;
+  margin: 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-bottom: 1px solid var(--fm-cobalt-line);
+}
+
+.loop-dialog-bounds > div {
+  padding: 14px var(--loop-pad) 16px;
+}
+
+.loop-dialog-bounds > div + div {
+  border-left: 1px solid var(--fm-cobalt-line);
+}
+
+.loop-dialog-bounds dt {
+  color: var(--fm-bone-muted);
+  font-size: 10px;
+  font-weight: 740;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.loop-dialog-bounds dd {
+  margin: 6px 0 0;
+  color: var(--fm-bone);
+  font-family: var(--fm-mono);
+  font-size: clamp(13px, 1vw, 15px);
+  line-height: 1.4;
+}
+
+/* --------------------------------------------------------------- handoffs
+ *
+ * A real tablist over the three handoffs, driving the same illustrative
+ * specimens the landing uses. Same keyboard pattern and the same three mark
+ * states as the evidence-loop rail - see the stage-rail notes above.
+ */
+
+.loop-dialog-rail {
+  display: grid;
+  padding: clamp(24px, 2.8vw, 34px) var(--loop-pad) 0;
+  gap: var(--loop-gap);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.loop-dialog-tab {
+  position: relative;
+  display: grid;
+  padding: 0;
+  border: 0;
+  align-content: start;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+/*
+ * The thread, as a dim track with a lime fill that wipes across it when a
+ * handoff completes. Nothing may sit on this line: a label there renders as a
+ * strikethrough, the same trap as a transparent stage mark.
+ */
+.loop-dialog-tab::before,
+.loop-dialog-tab::after {
+  content: "";
+  position: absolute;
+  top: 19px;
+  left: 46px;
+  right: calc(8px - var(--loop-gap));
+  height: 1px;
+}
+
+.loop-dialog-tab::before {
+  background: var(--fm-cobalt-line);
+}
+
+.loop-dialog-tab::after {
+  background: var(--fm-lime);
+  transform: scaleX(0);
+  transform-origin: left center;
+  transition: transform 520ms cubic-bezier(0.22, 0.75, 0.3, 1);
+}
+
+.loop-dialog-tab[data-state="done"]::after {
+  transform: scaleX(1);
+}
+
+.loop-dialog-tab:last-child::before,
+.loop-dialog-tab:last-child::after {
+  display: none;
+}
+
+/*
+ * A light chip with a dark icon, opaque so the thread stops at each mark.
+ * Three states carry the loop's progress, exactly as on the stage rail.
+ */
+.loop-dialog-mark {
+  position: relative;
+  z-index: 1;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  margin: 0;
+  place-items: center;
+  border: 1px solid rgba(18, 22, 28, 0.22);
+  border-radius: 4px;
+  background: var(--fm-paper);
+  color: var(--fm-ink-muted);
+  transition: background 240ms ease, border-color 240ms ease, color 240ms ease,
+    transform 240ms ease, box-shadow 240ms ease;
+}
+
+.loop-dialog-tab[data-state="done"] .loop-dialog-mark {
+  border-color: var(--fm-lime-deep);
+  background: #eaeea0;
+  color: var(--fm-ink);
+}
+
+.loop-dialog-tab[data-state="current"] .loop-dialog-mark {
+  border-color: var(--fm-lime);
+  background: var(--fm-lime);
+  color: var(--fm-ink);
+  transform: scale(1.07);
+  box-shadow: 0 0 0 5px rgba(220, 239, 59, 0.18);
+}
+
+/*
+ * Step 01 is where the unresolved finding is measured, so its current face is
+ * orange. The palette's meaning does not bend for a UI state.
+ */
+.loop-dialog-tab[data-step="01"][data-state="current"] .loop-dialog-mark {
+  border-color: #fe6b07;
+  background: #fe6b07;
+  box-shadow: 0 0 0 5px rgba(254, 107, 7, 0.18);
+}
+
+.loop-dialog-index {
+  margin: 18px 0 0;
+  color: var(--fm-bone-muted);
+  font-family: var(--fm-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  transition: color 240ms ease;
+}
+
+.loop-dialog-tab-title {
+  margin-top: 7px;
+  color: var(--fm-bone-muted);
+  font-size: clamp(14px, 1.05vw, 16px);
+  font-weight: 620;
+  letter-spacing: -0.012em;
+  line-height: 1.28;
+  text-wrap: balance;
+  transition: color 240ms ease;
+}
+
+.loop-dialog-tab[data-state="current"] :is(.loop-dialog-index, .loop-dialog-tab-title),
+.loop-dialog-tab:hover :is(.loop-dialog-index, .loop-dialog-tab-title) {
+  color: var(--fm-bone);
+}
+
+/* ------------------------------------------------------------ the exhibit */
+
+.loop-dialog-panel {
+  display: grid;
+  padding: clamp(22px, 2.6vw, 32px) var(--loop-pad) clamp(26px, 3vw, 36px);
+  gap: clamp(24px, 3vw, 48px);
+  grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
+  align-items: center;
+}
+
+.loop-dialog-panel:focus {
+  outline: none;
+}
+
+.loop-dialog-detail h3 {
+  margin: 0;
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(22px, 2.1vw, 30px);
+  font-weight: 600;
+  letter-spacing: -0.026em;
+  line-height: 1.06;
+  text-wrap: balance;
+}
+
+.loop-dialog-detail > p {
+  margin: 12px 0 0;
+  color: var(--fm-bone-muted);
+  font-size: clamp(13.5px, 1vw, 15px);
+  line-height: 1.6;
+}
+
+.loop-dialog-marks {
+  display: grid;
+  margin: 18px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.loop-dialog-marks li {
+  padding: 9px 0;
+  border-top: 1px solid var(--fm-cobalt-line);
+  color: var(--fm-bone);
+  font-size: clamp(12.5px, 0.95vw, 14px);
+  line-height: 1.45;
+}
+
+.loop-dialog-exhibit {
+  margin: 0;
+}
+
+.loop-dialog-exhibit-frame {
+  display: grid;
+  min-height: clamp(198px, 17vw, 258px);
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow: 0 28px 66px rgba(0, 8, 38, 0.5);
+}
+
+/*
+ * The flag and the seal are pinned to the specimen's top-right corner. This
+ * frame is narrower than the landing's, so the chrome's nav word needs to get
+ * out of their way.
+ */
+.loop-dialog-exhibit-frame .specimen-chrome {
+  padding-right: 42px;
+}
+
+/* ------------------------------------------------------------------ foot */
+
+.loop-dialog-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  padding: clamp(18px, 2vw, 24px) var(--loop-pad);
+  border-top: 1px solid var(--fm-cobalt-line);
+  background: rgba(220, 239, 59, 0.05);
+}
+
+.loop-dialog-authority {
+  display: flex;
+  margin: 0;
+  max-width: 66ch;
+  align-items: flex-start;
+  gap: 12px;
+  color: var(--fm-bone-muted);
+  font-size: clamp(13px, 1vw, 15px);
+  line-height: 1.55;
+}
+
+.loop-dialog-authority svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--fm-lime);
+}
+
+.loop-dialog-link {
+  min-height: 44px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+  padding: 0 18px;
+  border: 1px solid var(--fm-cobalt-line);
+  border-radius: 4px;
+  color: var(--fm-bone);
+  font-size: 13px;
+  font-weight: 680;
+  text-decoration: none;
+}
+
+.loop-dialog-link:hover {
+  border-color: var(--fm-lime);
+  color: var(--fm-lime);
+}
+
+@media (max-width: 960px) {
+  .loop-dialog-head,
+  .loop-dialog-bounds,
+  .loop-dialog-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .loop-dialog-head {
+    align-items: start;
+  }
+
+  .loop-dialog-head > p {
+    margin-bottom: 0;
+  }
+
+  .loop-dialog h2 {
+    max-width: 18ch;
+  }
+
+  .loop-dialog-bounds > div + div {
+    border-top: 1px solid var(--fm-cobalt-line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  /* The rail rotates to a vertical spine, exactly as the stage rail does. */
+  .loop-dialog-rail {
+    gap: 0;
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .loop-dialog-tab {
+    padding-left: 54px;
+  }
+
+  .loop-dialog-tab + .loop-dialog-tab {
+    padding-top: 22px;
+  }
+
+  /*
+   * Vertical segments now, each running from its own mark down to the next.
+   * The first mark sits at the tab's top edge; every later mark is pushed
+   * down by the 22px separation, so its segment starts lower.
+   */
+  .loop-dialog-tab::before,
+  .loop-dialog-tab::after {
+    top: 46px;
+    right: auto;
+    bottom: -14px;
+    left: 19px;
+    width: 1px;
+    height: auto;
+  }
+
+  .loop-dialog-tab + .loop-dialog-tab::before,
+  .loop-dialog-tab + .loop-dialog-tab::after {
+    top: 68px;
+  }
+
+  .loop-dialog-tab::after {
+    transform: scaleY(0);
+    transform-origin: center top;
+  }
+
+  .loop-dialog-tab[data-state="done"]::after {
+    transform: scaleY(1);
+  }
+
+  .loop-dialog-mark {
+    position: absolute;
+    top: 0;
+    left: 0;
+  }
+
+  .loop-dialog-tab + .loop-dialog-tab .loop-dialog-mark {
+    top: 22px;
+  }
+
+  .loop-dialog-index {
+    min-height: 38px;
+    display: flex;
+    margin-top: 0;
+    align-items: center;
+  }
+}
+
+@media (max-width: 620px) {
+  .loop-dialog {
+    --loop-gap: 26px;
+  }
+
+  .loop-dialog-close {
+    top: 10px;
+    right: 10px;
+  }
+}
+
+/*
+ * Loop dialog motion.
+ *
+ * Opt-in only, per the motion contract: the base state above is the finished
+ * composition, so a reduced-motion visitor sees the whole dialog with nothing
+ * hidden and nothing moving. Every animation here is finite and settles; the
+ * walkthrough's own advance is a one-pass timer in HowItWorks, not a loop.
+ */
+@media (prefers-reduced-motion: no-preference) {
+  .loop-dialog {
+    animation: loop-dialog-rise 360ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+
+  /* The panel is keyed on the active handoff, so these replay on every change. */
+  .loop-dialog-detail {
+    animation: loop-detail-in 420ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+
+  .loop-dialog-exhibit-frame {
+    animation: loop-exhibit-in 540ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+
+  .loop-dialog-marks li {
+    animation: loop-evidence-in 380ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+
+  .loop-dialog-marks li:nth-child(1) {
+    animation-delay: 130ms;
+  }
+
+  .loop-dialog-marks li:nth-child(2) {
+    animation-delay: 200ms;
+  }
+
+  .loop-dialog-marks li:nth-child(3) {
+    animation-delay: 270ms;
+  }
+
+  @keyframes loop-dialog-rise {
+    from {
+      opacity: 0;
+      transform: translateY(16px) scale(0.985);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes loop-detail-in {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  /*
+   * The exhibit is placed, not faded: it reaches full opacity early so the
+   * specimen never lingers translucent over the field behind it.
+   */
+  @keyframes loop-exhibit-in {
+    from {
+      opacity: 0;
+      transform: translateY(18px) scale(0.965);
+    }
+
+    38% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes loop-evidence-in {
+    from {
+      opacity: 0;
+      transform: translateX(-9px);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+}
+
+/* ============================================================= /how-it-works
+ *
+ * The crawlable long-form counterpart to the loop dialog, in the same cobalt
+ * system. The dialog shows one handoff at a time and plays itself through; the
+ * page shows all three at once, because a page has no interaction budget to
+ * spend. Bands alternate cobalt and cream, as every long surface must.
+ */
+.guide-hero {
+  position: relative;
+  z-index: 4;
+  background: var(--fm-cobalt-deep);
+  color: var(--fm-bone);
+}
+
+.guide-hero > .evidence-loop-shell {
+  padding-block: clamp(112px, 15vh, 176px) clamp(48px, 6vh, 72px);
+}
+
+.guide-hero-title {
+  margin: 18px 0 0;
+  max-width: 15ch;
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(44px, 7vw, 96px);
+  font-weight: 600;
+  letter-spacing: -0.036em;
+  line-height: 0.94;
+}
+
+.guide-hero-lede {
+  margin: clamp(22px, 3vh, 34px) 0 0;
+  max-width: 62ch;
+  color: var(--fm-bone-muted);
+  font-size: clamp(15px, 1.25vw, 19px);
+  line-height: 1.6;
+}
+
+.guide-bounds {
+  display: grid;
+  margin: clamp(34px, 4.5vh, 54px) 0 0;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  border-top: 1px solid var(--fm-cobalt-line);
+  border-bottom: 1px solid var(--fm-cobalt-line);
+}
+
+.guide-bounds > div {
+  padding: 18px 0 20px;
+}
+
+.guide-bounds > div + div {
+  padding-left: clamp(20px, 3vw, 44px);
+  border-left: 1px solid var(--fm-cobalt-line);
+}
+
+.guide-bounds dt {
+  color: var(--fm-bone-muted);
+  font-size: 11px;
+  font-weight: 740;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.guide-bounds dd {
+  margin: 8px 0 0;
+  color: var(--fm-bone);
+  font-family: var(--fm-mono);
+  font-size: clamp(14px, 1.1vw, 17px);
+}
+
+/* ------------------------------------------------------- the three handoffs */
+
+.guide-moves {
+  position: relative;
+  z-index: 4;
+  background: var(--fm-paper);
+  color: var(--fm-ink);
+}
+
+.guide-moves > .evidence-loop-shell {
+  padding-block: clamp(56px, 8vh, 96px);
+}
+
+.guide-move-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+/*
+ * A mark gutter, the body, then the exhibit. The marks carry the same icons as
+ * the loop dialog's rail and are joined by a thread down the band, so the page
+ * reads as the dialog's long form rather than three unrelated rows.
+ */
+.guide-move {
+  /*
+   * Where the mark's centre sits, measured from the row's top edge: the row's
+   * own padding, the mark's 4px nudge onto the index line, then half the mark.
+   * The thread's two endpoints are derived from it, so they always meet the
+   * outer marks exactly rather than the row's centre.
+   */
+  --guide-mark-center: calc(clamp(34px, 5vh, 58px) + 27px);
+  position: relative;
+  display: grid;
+  padding: clamp(34px, 5vh, 58px) 0;
+  gap: clamp(20px, 3vw, 44px);
+  grid-template-columns: 46px minmax(0, 1fr) minmax(0, 0.96fr);
+  align-items: center;
+  border-top: 1px solid rgba(18, 22, 28, 0.14);
+}
+
+/* Lime on paper, and it stops at each mark because the marks are opaque. */
+.guide-move::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 23px;
+  width: 1px;
+  background: var(--fm-lime-deep);
+  opacity: 0.5;
+}
+
+.guide-move:first-child::before {
+  top: var(--guide-mark-center);
+}
+
+.guide-move:last-child::before {
+  bottom: calc(100% - var(--guide-mark-center));
+}
+
+.guide-move-mark {
+  position: relative;
+  z-index: 1;
+  width: 46px;
+  height: 46px;
+  display: grid;
+  margin: 4px 0 0;
+  align-self: start;
+  place-items: center;
+  border: 1px solid rgba(18, 22, 28, 0.2);
+  border-radius: 5px;
+  background: #fffdfa;
+  color: var(--fm-ink);
+}
+
+.guide-move:first-child {
+  --guide-mark-center: 27px;
+  padding-top: 0;
+  border-top: 0;
+}
+
+.guide-move:last-child {
+  padding-bottom: 0;
+}
+
+.guide-move-index {
+  margin: 0;
+  color: var(--fm-orange-paper);
+  font-family: var(--fm-mono);
+  font-size: clamp(13px, 1.1vw, 16px);
+  letter-spacing: 0.06em;
+}
+
+.guide-move-body h3 {
+  margin: 12px 0 0;
+  color: var(--fm-ink);
+  font-family: var(--fm-display);
+  font-size: clamp(26px, 2.8vw, 42px);
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.guide-move-lede {
+  margin: 12px 0 0;
+  color: var(--fm-ink);
+  font-size: clamp(15px, 1.2vw, 18px);
+  font-weight: 550;
+}
+
+.guide-move-detail {
+  margin: 12px 0 0;
+  max-width: 54ch;
+  color: var(--fm-ink-muted);
+  font-size: clamp(14px, 1.1vw, 16px);
+  line-height: 1.62;
+}
+
+.guide-move-marks {
+  display: grid;
+  margin: 20px 0 0;
+  padding: 0;
+  gap: 10px;
+  list-style: none;
+}
+
+.guide-move-marks li {
+  position: relative;
+  padding-left: 20px;
+  color: var(--fm-ink-muted);
+  font-size: clamp(13px, 1vw, 15px);
+  line-height: 1.45;
+}
+
+.guide-move-marks li::before {
+  content: "";
+  position: absolute;
+  top: 0.55em;
+  left: 0;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--fm-lime-deep);
+}
+
+.guide-move-exhibit,
+.guide-closing-exhibit {
+  margin: 0;
+}
+
+/* The cobalt drop shadow would read as soot on a cream band. */
+.guide-moves .loop-dialog-exhibit-frame {
+  min-height: clamp(226px, 22vw, 330px);
+  box-shadow: 0 22px 50px rgba(18, 22, 28, 0.16);
+}
+
+/* ---------------------------------------------------------------- closing */
+
+.guide-closing {
+  position: relative;
+  z-index: 4;
+  background: var(--fm-paper);
+  color: var(--fm-ink);
+}
+
+/*
+ * The footer already contributes ~109px of its own top padding below this
+ * band, so the closing section keeps its bottom short. Two generous paddings
+ * stacked across the cream-to-cobalt change read as a void.
+ */
+.guide-closing > .evidence-loop-shell {
+  padding-block: clamp(56px, 8vh, 92px) clamp(26px, 3.2vh, 40px);
+}
+
+/*
+ * The marketing footer is tuned for the landing, which earns its air after a
+ * six-section page. This one is shorter, so its tail was reading as a void:
+ * 92px of footer top padding under the closing band, then 86px of empty
+ * footer before the base rule. Scoped to the guide route only.
+ */
+.app-shell.guide .site-footer {
+  padding-top: clamp(44px, 4.4vw, 62px);
+}
+
+.app-shell.guide .landing-footer-main {
+  padding-bottom: clamp(34px, 3.6vw, 50px);
+}
+
+.guide-closing-card {
+  display: grid;
+  padding: clamp(32px, 4vw, 58px);
+  gap: clamp(28px, 4vw, 64px);
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.86fr);
+  align-items: center;
+  border-radius: 6px;
+  background: var(--fm-cobalt-deep);
+  color: var(--fm-bone);
+}
+
+.guide-closing-card .section-kicker {
+  color: var(--fm-orange);
+}
+
+.guide-closing-title {
+  margin: 16px 0 0;
+  max-width: 14ch;
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(30px, 3.4vw, 52px);
+  font-weight: 600;
+  letter-spacing: -0.032em;
+  line-height: 0.99;
+}
+
+.guide-closing-card > div > p {
+  margin: 16px 0 0;
+  max-width: 46ch;
+  color: var(--fm-bone-muted);
+  font-size: clamp(14px, 1.1vw, 16px);
+  line-height: 1.6;
+}
+
+.guide-closing-cta {
+  min-height: 50px;
+  display: inline-flex;
+  margin-top: clamp(24px, 3vh, 32px);
+  align-items: center;
+  gap: 12px;
+  padding: 0 22px;
+  border-radius: 4px;
+  background: var(--fm-lime);
+  color: var(--fm-cobalt-deep);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.guide-closing-cta:hover {
+  background: var(--fm-bone);
+}
+
+@media (max-width: 960px) {
+  .guide-closing-card {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide-move {
+    gap: 24px;
+    grid-template-columns: 46px minmax(0, 1fr);
+  }
+
+  .guide-move-exhibit {
+    grid-column: 2;
+  }
+
+  .guide-hero-title {
+    max-width: 18ch;
+  }
+}
+
+@media (max-width: 620px) {
+  .guide-bounds {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide-bounds > div + div {
+    padding-left: 0;
+    border-top: 1px solid var(--fm-cobalt-line);
+    border-left: 0;
   }
 }

@@ -31,8 +31,10 @@ test("connects URL errors and audit progress to assistive technology", () => {
 });
 
 test("keeps modal focus, descriptions, scroll containment, and restoration bounded", () => {
+  // Scroll containment is now the shared reference-counted lock below, not a
+  // per-dialog snapshot: two overlapping dialogs corrupted the restore.
   assert.match(dialogFocus, /document\.body\.style\.overflow = "hidden"/);
-  assert.match(dialogFocus, /document\.body\.style\.overflow = previousBodyOverflow/);
+  assert.match(dialogFocus, /document\.body\.style\.overflow = scrollLockPrevious/);
   assert.match(dialogFocus, /\(focusables\(\)\[0\] \?\? dialog\)\.focus\(\)/);
   assert.match(dialogFocus, /focusToRestore\?\.isConnected/);
   assert.match(dialogFocus, /restoreFocusRef\?\.current \?\? previousFocus/);
@@ -80,7 +82,34 @@ test("retains visible focus and 390 px touch and reflow safeguards", () => {
   assert.match(landingStyles, /\.landing-footer-column a\s*\{[^}]*min-height: 44px;/s);
   assert.match(landingStyles, /\.landing-footer-maker\s*\{[^}]*min-height: 44px;/s);
   assert.match(app, /aria-label="Knightware — opens in a new tab"/);
-  assert.match(landingStyles, /\.app-shell\.landing \.audit-composer\s*\{[^}]*background: #0b0e12;/s);
+  // The composer must be deliberately refilled for the landing, not left as a
+  // translucent workspace panel floating on cobalt. Handle and tray now share
+  // one opaque paper sheet; the value changed, the requirement did not.
+  assert.match(landingStyles, /\.app-shell\.landing \.audit-composer\s*\{[^}]*background: var\(--fm-paper\);/s);
+  assert.match(landingStyles, /\.app-shell\.landing \.audit-composer > summary\s*\{[^}]*background: var\(--fm-paper\);/s);
   assert.match(landingStyles, /\.app-shell\.landing \.audit-composer-body\s*\{[^}]*background: var\(--fm-paper\);/s);
+  assert.doesNotMatch(landingStyles, /\.app-shell\.landing \.audit-composer > summary\s*\{[^}]*border-left:/s);
   assert.match(landingStyles, /\.app-shell\.landing \.audit-focus-options label\s*\{[^}]*min-height: 54px;/s);
+});
+
+/*
+ * Overlapping dialogs must not corrupt the body-scroll lock.
+ *
+ * Each dialog used to snapshot and restore document.body.style.overflow on its
+ * own. LazyWorkspace wraps WebMcpCapabilitySheet and both call useDialogFocus,
+ * so the parent snapshotted the child's "hidden" and restored it after the
+ * child had cleared it — leaving every route unscrollable for the rest of the
+ * session. The lock is reference counted now; keep it that way.
+ */
+test("shares one reference-counted body scroll lock across overlapping dialogs", () => {
+  assert.match(dialogFocus, /let scrollLockCount = 0;/);
+  assert.match(dialogFocus, /if \(scrollLockCount === 0\) scrollLockPrevious = document\.body\.style\.overflow;/);
+  assert.match(dialogFocus, /if \(scrollLockCount > 0\) return;/);
+  assert.match(dialogFocus, /lockBodyScroll\(\);/);
+  assert.match(dialogFocus, /releaseBodyScroll\(\);/);
+  // No dialog may snapshot or clear the shared lock on its own again.
+  assert.doesNotMatch(dialogFocus, /const previousBodyOverflow/);
+  for (const source of [app, lazyWorkspace, inspector]) {
+    assert.doesNotMatch(source, /body\.style\.overflow/);
+  }
 });
