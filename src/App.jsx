@@ -398,7 +398,7 @@ function WebMcpStatus({ status, expanded, restoring, onClick, buttonRef }) {
   );
 }
 
-function AgentActivityDrawer({ activities, onClose, onClear }) {
+function AgentActivityDrawer({ activities, onClose }) {
   const dialogRef = useDialogFocus(onClose);
   return (
     <div className="agent-activity-backdrop" role="presentation" onMouseDown={onClose}>
@@ -433,15 +433,9 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
         </div>
         <p className="agent-activity-boundary" id="agent-activity-boundary">
           <ShieldCheck size={15} weight="duotone" aria-hidden="true" />
-          {/*
-           * "here" is load-bearing and stays: this panel does not log them. It
-           * is not a claim about what the server does. The retention bound is
-           * the honest answer to the question the first sentence provokes -
-           * `agentActivities` is in-memory and sliced to 20.
-           */}
           <span>
             Semantic actions only. Tool inputs, URLs, patches, prompts, and secrets are not logged
-            here. The last 20 stay in memory for this session.
+            here. The last 20 completed actions are retained with this audit.
           </span>
         </p>
         {activities.length ? (
@@ -465,6 +459,9 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
                     {activity.auditId ? ` · audit ${activity.auditId.slice(0, 8)}` : ""}
                     {activity.repairId ? ` · repair ${activity.repairId.slice(0, 8)}` : ""}
                     {activity.errorCode ? ` · ${activity.errorCode}` : ""}
+                    {Number.isInteger(activity.missionRevisionBefore) && Number.isInteger(activity.missionRevisionAfter)
+                      ? ` · revision ${activity.missionRevisionBefore}→${activity.missionRevisionAfter}`
+                      : ""}
                   </small>
                 </div>
                 <time dateTime={new Date(activity.startedAt).toISOString()}>
@@ -484,11 +481,6 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
             <p>When a browser agent uses a Frontmend tool, its lifecycle will appear here.</p>
           </div>
         )}
-        {activities.length ? (
-          <button className="clear-agent-activity" type="button" onClick={onClear}>
-            Clear log
-          </button>
-        ) : null}
       </aside>
     </div>
   );
@@ -2302,7 +2294,6 @@ export function App() {
         <AgentActivityDrawer
           activities={agentActivities}
           onClose={() => setShowAgentActivity(false)}
-          onClear={() => auditService.clearAgentActivities()}
         />
       ) : null}
     </div>

@@ -48,6 +48,13 @@ test("keeps modal focus, descriptions, scroll containment, and restoration bound
   assert.match(inspector, /aria-describedby="webmcp-sheet-description"/);
 });
 
+test("describes the Agent log as durable audit metadata without a misleading local clear", () => {
+  assert.match(app, /The last 20 completed actions are retained with this audit/);
+  assert.match(app, /revision \$\{activity\.missionRevisionBefore\}→\$\{activity\.missionRevisionAfter\}/);
+  assert.doesNotMatch(app, /stay in memory for this session/);
+  assert.doesNotMatch(app, />\s*Clear log\s*</);
+});
+
 test("describes diagnosis against retained evidence without inventing a measured provider issue", () => {
   assert.match(missionSummary, /open_diagnostic_mission: "Agent opens the retained issue for diagnosis"/);
   assert.doesNotMatch(missionSummary, /open_diagnostic_mission: "Agent opens the measured issue for diagnosis"/);

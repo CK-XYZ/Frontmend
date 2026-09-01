@@ -2,6 +2,11 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import { createRuntimeBuildDescriptor } from "../src/protocol-contract.js";
 import {
+  activityLedgerBoundary,
+  activityLedgerSnapshot,
+  mergeActivityLedger,
+} from "../src/activity-ledger-contract.js";
+import {
   auditMissionSignature,
   auditMissionSnapshot,
   assessmentFindings,
@@ -781,6 +786,25 @@ async function routeApi(request, env, url) {
     return new Response(response.body, response);
   }
 
+  const activityMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/activities$/);
+  if (activityMatch) {
+    if (!["GET", "POST"].includes(request.method)) {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "The activity ledger supports GET and POST only."));
+    }
+    let body;
+    if (request.method === "POST") {
+      assertSameOrigin(request);
+      body = await readJsonBody(request);
+    }
+    const response = await proxyJobRequest(
+      jobFromId(env, activityMatch[1]),
+      "/activities",
+      request,
+      body,
+    );
+    return new Response(response.body, response);
+  }
+
   const repairPolicyMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
   if (repairPolicyMatch) {
     if (!["GET", "POST"].includes(request.method)) {
@@ -1119,6 +1143,40 @@ export class FrontmendAuditJob {
     if (!state) {
       return errorResponse(new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."));
     }
+    if (url.pathname === "/activities") {
+      if (!["GET", "POST"].includes(request.method)) {
+        return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "The activity ledger supports GET and POST only."));
+      }
+      const current = activityLedgerSnapshot(
+        await this.ctx.storage.get("activityLedger"),
+        state.id,
+      );
+      if (request.method === "GET") {
+        return json({
+          ok: true,
+          data: await checkpointedJobData(this.ctx, state, {
+            auditId: state.id,
+            activities: current,
+            boundary: activityLedgerBoundary,
+          }),
+        });
+      }
+      try {
+        const input = await readJsonBody(request);
+        const activities = mergeActivityLedger(current, input, state.id);
+        await this.ctx.storage.put("activityLedger", activities);
+        return json({
+          ok: true,
+          data: await checkpointedJobData(this.ctx, state, {
+            auditId: state.id,
+            activities,
+            boundary: activityLedgerBoundary,
+          }),
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
     if (request.method === "DELETE" && url.pathname === "/") {
       if (["complete", "failed", "cancelled"].includes(state.status)) {
         return json({ ok: true, data: auditSnapshot(state, await auditJobCheckpoint(this.ctx, state)) });
@@ -1435,11 +1493,12 @@ export class FrontmendAuditJob {
         return errorResponse(new AuditError("AUDIT_NOT_READY", "The audit is still running."));
       }
       try {
-        const [diagnosticMissions, browserReview, repairs, explorations] = await Promise.all([
+        const [diagnosticMissions, browserReview, repairs, explorations, activities] = await Promise.all([
           this.ctx.storage.get("diagnosticMissions"),
           this.ctx.storage.get("browserReview"),
           this.ctx.storage.get("repairs"),
           this.ctx.storage.get("explorations"),
+          this.ctx.storage.get("activityLedger"),
         ]);
         const receipt = createAssessmentReceipt({
           report: state.report,
@@ -1448,6 +1507,7 @@ export class FrontmendAuditJob {
           browserReview: browserReview ?? null,
           repairs: repairs ?? [],
           explorations: explorations ?? [],
+          activities: activities ?? [],
         });
         return new Response(assessmentReceiptMarkdown(receipt), {
           headers: {

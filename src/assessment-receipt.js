@@ -3,6 +3,7 @@ import { browserReviewSnapshot } from "./browser-review-contract.js";
 import { diagnosticEvidenceChain, diagnosticMissionSnapshot } from "./diagnostic-contract.js";
 import { AuditError } from "./url-policy.js";
 import { createBuildDescriptor } from "./protocol-contract.js";
+import { activityLedgerBoundary, activityLedgerSnapshot } from "./activity-ledger-contract.js";
 
 const MAX_PRIORITIES = 5;
 
@@ -67,6 +68,7 @@ export function createAssessmentReceipt({
   browserReview: browserReviewValue = null,
   repairs = [],
   explorations = [],
+  activities = [],
   build = createBuildDescriptor(),
 }) {
   if (!report?.auditId || !report?.engine?.provider) {
@@ -194,6 +196,10 @@ export function createAssessmentReceipt({
           })),
         }
       : null,
+    activityLedger: {
+      ...activityLedgerBoundary,
+      entries: activityLedgerSnapshot(activities, report.auditId),
+    },
     priorities,
     authority: {
       sourceContentsReceived: false,
@@ -280,6 +286,32 @@ export function assessmentReceiptMarkdown(receipt) {
         ...(check.observedRoutes ?? []).map((path) => `- Server-validated rendered route: ${markdownText(path, 256)}`),
       );
     }
+  }
+  lines.push(
+    "",
+    "## Semantic activity ledger",
+    "",
+    `- Retention: ${markdownText(receipt.activityLedger?.retention ?? "last-20-per-audit", 80)}`,
+    `- Excluded: ${(receipt.activityLedger?.excluded ?? []).map((item) => markdownText(item, 80)).join(", ") || "URLs, prompts, tool inputs, patches, source contents, credentials, secrets"}`,
+  );
+  if (receipt.activityLedger?.entries?.length) {
+    lines.push(
+      "",
+      "| Actor | Tool | Status | Mission revision | Related records | Completed |",
+      "| --- | --- | --- | --- | --- | --- |",
+      ...receipt.activityLedger.entries.map((entry) => {
+        const related = [
+          entry.repairId ? `repair ${entry.repairId}` : null,
+          entry.diagnosticMissionId ? `diagnosis ${entry.diagnosticMissionId}` : null,
+          entry.browserReviewId ? `browser review ${entry.browserReviewId}` : null,
+          entry.explorationId ? `exploration ${entry.explorationId}` : null,
+          entry.errorCode ? `error ${entry.errorCode}` : null,
+        ].filter(Boolean).join("; ") || "—";
+        return `| ${markdownText(entry.actorClass, 40)} | \`${entry.tool}\` | ${markdownText(entry.status, 40)} | ${entry.missionRevisionBefore} → ${entry.missionRevisionAfter} | ${markdownText(related, 400)} | ${timestamp(entry.completedAt)} |`;
+      }),
+    );
+  } else {
+    lines.push("- Entries: none retained for this audit");
   }
   for (const priority of receipt.priorities ?? []) {
     lines.push(

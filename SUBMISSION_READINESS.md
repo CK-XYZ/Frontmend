@@ -47,7 +47,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Verification emits a visible and agent-readable before/after receipt with audit provenance, metric deltas, and the frozen repository implementation receipt when one was recorded.
 - [x] Repeated same-rule repairs retain a bounded audit lineage with root preservation, per-attempt evidence signatures and baseline metric-comparability verdicts, plus compaction after eight receipts.
 - [x] Completed verification proof exports as bounded Markdown through both a human download and semantic WebMCP tool.
-- [x] Browser-agent calls emit a bounded, session-only visible activity ledger that excludes inputs, URLs, patches, prompts, and secrets.
+- [x] Browser-agent calls append idempotent completed events to a durable audit-scoped last-twenty activity ledger. The visible log and assessment receipt show semantic tool, actor, status, related workflow IDs, and mission revision before/after while the contract rejects or excludes inputs, URLs, patches, prompts, source contents, credentials, and secrets; telemetry cannot advance mission authority or mask a semantic tool result.
 - [x] Provider payloads are byte-bounded, evidence images are passively allowlisted, jobs expire, and the provider has per-client plus service-wide budgets.
 - [x] Stable `/audits/:id` routes restore completed and in-progress jobs after reload.
 - [x] WebMCP registration follows visible application state and removes inapplicable tools as the audit, review, and verification mission changes.

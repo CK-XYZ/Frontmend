@@ -7,6 +7,12 @@ import {
 } from "./audit-mission-contract.js";
 import { createAssessmentReceipt } from "./assessment-receipt.js";
 import { auditMissionRevision, createMissionCheckpoint } from "./mission-checkpoint-contract.js";
+import {
+  ACTIVITY_TOOL_TITLES,
+  activityLedgerSnapshot,
+  createActivityLedgerRecord,
+  mergeActivityLedger,
+} from "./activity-ledger-contract.js";
 
 export { AuditError, normalizePublicUrl } from "./url-policy.js";
 
@@ -112,6 +118,24 @@ export function createHttpAuditTransport(options = {}) {
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/explorations/${encodeURIComponent(missionId)}`,
           { headers: { accept: "application/json" } },
         ),
+      );
+    },
+
+    async listActivities(auditId) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/activities`, {
+          headers: { accept: "application/json" },
+        }),
+      );
+    },
+
+    async recordActivity(auditId, activity) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/activities`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify(activity),
+        }),
       );
     },
 
@@ -409,7 +433,8 @@ export function createAuditService(options = {}) {
   const repairPolicies = new Map();
   const explorations = new Map();
   const listeners = new Set();
-  let agentActivities = [];
+  const agentActivitiesByAudit = new Map();
+  let pendingAgentActivities = [];
   let activitySequence = 0;
   let activeAuditId = null;
   let generation = 0;
@@ -665,6 +690,26 @@ export function createAuditService(options = {}) {
     return remember(audit, expectedGeneration);
   };
 
+  const restoreActivityLedger = async (auditId, expectedGeneration = generation) => {
+    if (typeof transport.listActivities !== "function") return [];
+    try {
+      const workspace = assertResponseIdentity(
+        await transport.listActivities(auditId),
+        "auditId",
+        auditId,
+      );
+      const retained = activityLedgerSnapshot(workspace.activities, auditId);
+      if (expectedGeneration === generation) {
+        agentActivitiesByAudit.set(auditId, retained);
+        emit();
+      }
+      return retained;
+    } catch {
+      // Activity history is operational context. Its read cannot invalidate evidence state.
+      return agentActivitiesByAudit.get(auditId) ?? [];
+    }
+  };
+
   const refreshMissionWorkspace = async (auditId, options = {}) => {
     if (typeof auditId !== "string" || !auditId) {
       throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
@@ -847,8 +892,10 @@ export function createAuditService(options = {}) {
   };
 
   const restoreAuditWorkspace = async (auditId) => {
+    const expectedGeneration = generation;
     const audit = await readAudit(auditId);
     if (audit?.status !== "complete") {
+      await restoreActivityLedger(auditId, expectedGeneration);
       return {
         audit,
         missionCheckpoint: audit?.missionCheckpoint ?? null,
@@ -876,6 +923,7 @@ export function createAuditService(options = {}) {
         "The audit workspace changed while Frontmend restored it. Open the stable audit address again.",
       );
     }
+    await restoreActivityLedger(auditId, expectedGeneration);
     return { ...workspace, audit: restoredAudit };
   };
 
@@ -1661,6 +1709,9 @@ export function createAuditService(options = {}) {
         browserReview: browserReviews.get(auditId) ?? null,
         explorations: explorations.get(auditId) ?? [],
         repairs: repairs.get(auditId) ?? [],
+        activities: (agentActivitiesByAudit.get(auditId) ?? []).filter(
+          (activity) => activity.status === "succeeded" || activity.status === "failed",
+        ),
       });
     },
 
@@ -1714,48 +1765,127 @@ export function createAuditService(options = {}) {
       });
     },
 
-    beginAgentActivity({ tool, title }) {
+    beginAgentActivity({ tool, auditId = null, missionRevisionBefore = null }) {
       activitySequence += 1;
+      const semanticTool = String(tool ?? "").slice(0, 80);
+      const semanticTitle = ACTIVITY_TOOL_TITLES[semanticTool];
+      if (!semanticTitle) {
+        throw new AuditError("INVALID_ACTIVITY_LEDGER", "Only current Frontmend semantic actions can enter the activity ledger.");
+      }
+      const currentAudit = typeof auditId === "string" && auditId
+        ? jobs.get(auditId)
+        : activeAuditId ? jobs.get(activeAuditId) : null;
+      const retainedAuditId = typeof auditId === "string" && auditId
+        ? auditId.slice(0, 80)
+        : currentAudit?.id ?? null;
+      const retainedRevision = Number.isInteger(missionRevisionBefore) && missionRevisionBefore >= 0
+        ? missionRevisionBefore
+        : currentAudit ? auditMissionRevision(currentAudit) : 0;
       const activity = {
-        id: `agent-${activitySequence}`,
-        tool: String(tool ?? "unknown").slice(0, 80),
-        title: String(title ?? tool ?? "Agent action").slice(0, 120),
+        id: `activity-${globalThis.crypto?.randomUUID?.() ?? `${now()}-${activitySequence}`}`,
+        tool: semanticTool,
+        title: semanticTitle,
         status: "running",
-        auditId: null,
+        actorClass: "webmcp-agent",
+        auditId: retainedAuditId,
         repairId: null,
+        diagnosticMissionId: null,
+        browserReviewId: null,
+        explorationId: null,
         errorCode: null,
+        missionRevisionBefore: retainedRevision,
+        missionRevisionAfter: retainedRevision,
         startedAt: now(),
         completedAt: null,
       };
-      agentActivities = [activity, ...agentActivities].slice(0, 20);
+      if (retainedAuditId) {
+        agentActivitiesByAudit.set(
+          retainedAuditId,
+          [activity, ...(agentActivitiesByAudit.get(retainedAuditId) ?? [])].slice(0, 20),
+        );
+      } else {
+        pendingAgentActivities = [activity, ...pendingAgentActivities].slice(0, 20);
+      }
       emit();
       return activity.id;
     },
 
-    finishAgentActivity(activityId, result) {
+    async finishAgentActivity(activityId, result) {
       const status = result?.status === "failed" ? "failed" : "succeeded";
-      agentActivities = agentActivities.map((activity) =>
-        activity.id === activityId
-          ? {
-              ...activity,
-              status,
-              auditId: typeof result?.auditId === "string" ? result.auditId.slice(0, 80) : null,
-              repairId: typeof result?.repairId === "string" ? result.repairId.slice(0, 80) : null,
-              errorCode: typeof result?.errorCode === "string" ? result.errorCode.slice(0, 80) : null,
-              completedAt: now(),
-            }
-          : activity,
+      let retained = pendingAgentActivities.find((activity) => activity.id === activityId) ?? null;
+      pendingAgentActivities = pendingAgentActivities.filter((activity) => activity.id !== activityId);
+      for (const [auditId, activities] of agentActivitiesByAudit) {
+        const candidate = activities.find((activity) => activity.id === activityId);
+        if (candidate) retained = candidate;
+        agentActivitiesByAudit.set(auditId, activities.filter((activity) => activity.id !== activityId));
+      }
+      if (!retained) return;
+      const auditId = typeof result?.auditId === "string" && result.auditId
+        ? result.auditId.slice(0, 80)
+        : retained.auditId;
+      const currentAudit = auditId ? jobs.get(auditId) : null;
+      const missionRevisionAfter = Number.isInteger(result?.missionRevisionAfter)
+        ? result.missionRevisionAfter
+        : currentAudit ? auditMissionRevision(currentAudit) : retained.missionRevisionBefore;
+      if (!auditId) {
+        pendingAgentActivities = [{
+          ...retained,
+          status,
+          errorCode: typeof result?.errorCode === "string" ? result.errorCode.slice(0, 80) : null,
+          missionRevisionAfter,
+          completedAt: now(),
+        }, ...pendingAgentActivities].slice(0, 20);
+        emit();
+        return;
+      }
+      const activity = createActivityLedgerRecord({
+        ...retained,
+        status,
+        auditId,
+        repairId: typeof result?.repairId === "string" ? result.repairId.slice(0, 80) : null,
+        diagnosticMissionId: typeof result?.diagnosticMissionId === "string"
+          ? result.diagnosticMissionId.slice(0, 160)
+          : null,
+        browserReviewId: typeof result?.browserReviewId === "string"
+          ? result.browserReviewId.slice(0, 160)
+          : null,
+        explorationId: typeof result?.explorationId === "string"
+          ? result.explorationId.slice(0, 160)
+          : null,
+        errorCode: typeof result?.errorCode === "string" ? result.errorCode.slice(0, 80) : null,
+        missionRevisionAfter: Math.max(retained.missionRevisionBefore, missionRevisionAfter),
+        completedAt: now(),
+      }, auditId);
+      agentActivitiesByAudit.set(
+        auditId,
+        mergeActivityLedger(agentActivitiesByAudit.get(auditId), activity, auditId),
       );
       emit();
+      if (typeof transport.recordActivity !== "function") return;
+      try {
+        const workspace = assertResponseIdentity(
+          await transport.recordActivity(auditId, activity),
+          "auditId",
+          auditId,
+        );
+        agentActivitiesByAudit.set(
+          auditId,
+          activityLedgerSnapshot(workspace.activities, auditId),
+        );
+        emit();
+      } catch {
+        // A telemetry write never changes or masks the semantic tool outcome.
+      }
     },
 
-    getAgentActivities() {
-      return agentActivities.map((activity) => ({ ...activity }));
-    },
-
-    clearAgentActivities() {
-      agentActivities = [];
-      emit();
+    getAgentActivities(auditId = activeAuditId) {
+      const retained = typeof auditId === "string" && auditId
+        ? agentActivitiesByAudit.get(auditId) ?? []
+        : [];
+      return [...pendingAgentActivities, ...retained]
+        .sort((left, right) => right.startedAt - left.startedAt)
+        .slice(0, 20)
+        .map((activity) => ({ ...activity }));
     },
 
     reset() {
@@ -1766,6 +1896,8 @@ export function createAuditService(options = {}) {
       browserReviews.clear();
       repairPolicies.clear();
       explorations.clear();
+      agentActivitiesByAudit.clear();
+      pendingAgentActivities = [];
       emit();
     },
 

@@ -371,6 +371,7 @@ test("related-page tool starts only an observed route through the shared service
 
 test("site-exploration tools start and read one durable cross-page mission", async () => {
   const calls = [];
+  const activities = [];
   const exploration = {
     id: "232d593c-6c81-48c3-b137-a3df269454ff",
     rootAuditId: "audit-1",
@@ -391,6 +392,14 @@ test("site-exploration tools start and read one durable cross-page mission", asy
       calls.push(["get", auditId, missionId]);
       return { ...exploration, status: "complete", progress: 100 };
     },
+    getMissionCheckpoint: () => ({ auditId: "audit-1", missionRevision: 5 }),
+    beginAgentActivity: (activity) => {
+      activities.push(["begin", activity]);
+      return `activity-${activities.length}`;
+    },
+    finishAgentActivity: async (activityId, activity) => {
+      activities.push(["finish", activityId, activity]);
+    },
   };
   const tools = createFrontmendTools(service);
   const started = await findTool(tools, "start_site_exploration").execute({
@@ -410,7 +419,12 @@ test("site-exploration tools start and read one durable cross-page mission", asy
   assert.equal(read.ok, true);
   assert.equal(read.data.status, "complete");
   assert.match(read.data.reportPath, new RegExp(`${exploration.id}/report$`));
+  assert.equal(read.protocol.workspacePath, "/audits/audit-1");
   assert.deepEqual(calls[1], ["get", "audit-1", exploration.id]);
+  assert.equal(activities[1][2].auditId, "audit-1");
+  assert.equal(activities[1][2].explorationId, exploration.id);
+  assert.equal(activities[3][2].auditId, "audit-1");
+  assert.equal(activities[3][2].explorationId, exploration.id);
 });
 
 test("agent tools use the same audit service as the human interface", async () => {

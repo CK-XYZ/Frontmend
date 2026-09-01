@@ -7281,17 +7281,6 @@ summary:focus-visible,
   line-height: 1.5;
 }
 
-.clear-agent-activity {
-  margin-top: 15px;
-  padding: 10px;
-  border: 0;
-  background: transparent;
-  color: var(--muted);
-  font: inherit;
-  font-size: 9px;
-  cursor: pointer;
-}
-
 /*
  * Mission inspector.
  *
@@ -7923,8 +7912,7 @@ summary:focus-visible,
 }
 
 .agent-activity-boundary,
-.agent-activity-empty p,
-.clear-agent-activity {
+.agent-activity-empty p {
   font-size: 11px;
 }
 

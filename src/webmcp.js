@@ -148,7 +148,24 @@ const TOOL_CAPABILITIES = Object.freeze({
 
 function activeAuditId(service, result, input) {
   const data = result?.data;
-  const candidate = data?.auditId ?? data?.id ?? input?.auditId ?? service?.getActiveAudit?.()?.id;
+  const candidate = data?.auditId
+    ?? data?.rootAuditId
+    ?? data?.baselineAuditId
+    ?? input?.auditId
+    ?? service?.getActiveAudit?.()?.id
+    ?? data?.id;
+  return typeof candidate === "string" && candidate ? candidate : null;
+}
+
+function activityAuditId(service, result, input, auditIdBefore) {
+  const data = result?.data;
+  const candidate = data?.auditId
+    ?? data?.rootAuditId
+    ?? data?.baselineAuditId
+    ?? input?.auditId
+    ?? auditIdBefore
+    ?? data?.id
+    ?? service?.getActiveAudit?.()?.id;
   return typeof candidate === "string" && candidate ? candidate : null;
 }
 
@@ -1969,10 +1986,14 @@ export function createFrontmendTools(service) {
       inputSchema,
       async execute(input) {
         let activityId = null;
+        const auditIdBefore = activeAuditId(service, null, input);
+        const checkpointBefore = safeCheckpoint(service, auditIdBefore, null);
         try {
           activityId = service.beginAgentActivity?.({
             tool: definition.name,
             title: definition.title,
+            auditId: auditIdBefore,
+            missionRevisionBefore: checkpointBefore?.missionRevision ?? 0,
           }) ?? null;
         } catch {
           activityId = null;
@@ -1981,11 +2002,26 @@ export function createFrontmendTools(service) {
         if (activityId) {
           const data = result?.data;
           try {
-            service.finishAgentActivity?.(activityId, {
+            const auditId = activityAuditId(service, result, input, auditIdBefore);
+            const checkpointAfter = safeCheckpoint(service, auditId, result);
+            await service.finishAgentActivity?.(activityId, {
               status: result?.ok ? "succeeded" : "failed",
-              auditId: data?.auditId ?? data?.id,
+              auditId,
               repairId: data?.repairId,
+              diagnosticMissionId: data?.diagnosticMissionId
+                ?? data?.diagnosticMission?.id
+                ?? (["open_diagnostic_mission", "submit_runtime_diagnosis", "record_diagnostic_blocker"].includes(definition.name)
+                  ? data?.mission?.id ?? input?.missionId
+                  : null),
+              browserReviewId: data?.browserReviewId ?? data?.browserReview?.id ?? input?.reviewId,
+              explorationId: data?.explorationId
+                ?? (["start_site_exploration", "get_site_exploration"].includes(definition.name)
+                  ? data?.missionId ?? data?.id ?? input?.missionId
+                  : null),
               errorCode: result?.error?.code,
+              missionRevisionAfter: checkpointAfter?.missionRevision
+                ?? checkpointBefore?.missionRevision
+                ?? 0,
             });
           } catch {
             // Activity telemetry never changes the semantic tool result.

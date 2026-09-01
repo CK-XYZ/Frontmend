@@ -2,6 +2,11 @@ import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import { createRuntimeBuildDescriptor } from "../src/protocol-contract.js";
 import {
+  activityLedgerBoundary,
+  activityLedgerSnapshot,
+  mergeActivityLedger,
+} from "../src/activity-ledger-contract.js";
+import {
   auditMissionSignature,
   auditMissionSnapshot,
   assessmentFindings,
@@ -384,6 +389,7 @@ export function createLocalAuditRuntime(options = {}) {
       createdAt: now,
       completedAt: null,
       explorations: [],
+      activityLedger: [],
     };
     jobs.set(job.id, job);
     recentUrls.set(reuseKey, { id: job.id, createdAt: now });
@@ -711,6 +717,40 @@ export function createLocalAuditRuntime(options = {}) {
           return response.end(siteExplorationMarkdown(aggregate));
         }
         return sendJson(response, 200, { ok: true, data: checkpointedLocal(root, aggregate) });
+      }
+
+      const activityMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/activities$/);
+      if (activityMatch) {
+        const auditId = activityMatch[1];
+        const job = jobs.get(auditId);
+        if (!job) {
+          return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        }
+        if (!["GET", "POST"].includes(request.method)) {
+          return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "The activity ledger supports GET and POST only."), 405);
+        }
+        const current = activityLedgerSnapshot(job.activityLedger, auditId);
+        if (request.method === "GET") {
+          return sendJson(response, 200, {
+            ok: true,
+            data: checkpointedLocal(job, {
+              auditId,
+              activities: current,
+              boundary: activityLedgerBoundary,
+            }),
+          });
+        }
+        assertSameOrigin(request);
+        const input = await readBody(request);
+        job.activityLedger = mergeActivityLedger(current, input, auditId);
+        return sendJson(response, 200, {
+          ok: true,
+          data: checkpointedLocal(job, {
+            auditId,
+            activities: job.activityLedger,
+            boundary: activityLedgerBoundary,
+          }),
+        });
       }
 
       const repairPolicyMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
@@ -1551,6 +1591,7 @@ export function createLocalAuditRuntime(options = {}) {
             browserReview: job.browserReview ?? null,
             repairs: job.repairs ?? [],
             explorations: job.explorations ?? [],
+            activities: job.activityLedger ?? [],
           });
           response.statusCode = 200;
           response.setHeader("content-type", "text/markdown; charset=utf-8");

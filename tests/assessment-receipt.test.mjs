@@ -216,7 +216,30 @@ test("exports measured and contributed evidence with separate provenance and aut
     confidence: "high",
   }, "agent", 300);
 
-  const receipt = createAssessmentReceipt({ report, mission, diagnosticMissions: [diagnosed], browserReview });
+  const activities = [{
+    id: "activity-1",
+    tool: "submit_runtime_diagnosis",
+    title: "Submit runtime diagnosis",
+    status: "succeeded",
+    actorClass: "webmcp-agent",
+    auditId: report.auditId,
+    repairId: null,
+    diagnosticMissionId: diagnosed.id,
+    browserReviewId: null,
+    explorationId: null,
+    errorCode: null,
+    missionRevisionBefore: 6,
+    missionRevisionAfter: 7,
+    startedAt: 290,
+    completedAt: 300,
+  }];
+  const receipt = createAssessmentReceipt({
+    report,
+    mission,
+    diagnosticMissions: [diagnosed],
+    browserReview,
+    activities,
+  });
   assert.equal(receipt.assessment.complete, true);
   assert.equal(receipt.assessment.priorityCount, 1);
   assert.equal(receipt.priorities[0].measuredSource.provider, "Lighthouse");
@@ -234,6 +257,10 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.equal(receipt.build.app, "frontmend");
   assert.equal(receipt.build.protocolVersion, 1);
   assert.equal(receipt.build.toolCount, 23);
+  assert.equal(receipt.activityLedger.retention, "last-20-per-audit");
+  assert.equal(receipt.activityLedger.entries[0].tool, "submit_runtime_diagnosis");
+  assert.equal(receipt.activityLedger.entries[0].missionRevisionAfter, 7);
+  assert.equal(JSON.stringify(receipt.activityLedger).includes("https://"), false);
 
   const markdown = assessmentReceiptMarkdown(receipt);
   assert.match(markdown, /^# Frontmend assessment receipt/m);
@@ -248,6 +275,10 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.match(markdown, /does not prove a repair, deployment, or resolution/);
   assert.match(markdown, /Frontmend build: unidentified/);
   assert.match(markdown, /Protocol: v1; tool library v2; 23 contracts/);
+  assert.match(markdown, /## Semantic activity ledger/);
+  assert.match(markdown, /submit_runtime_diagnosis/);
+  assert.match(markdown, /6 → 7/);
+  assert.match(markdown, /tool inputs, patches, source contents, credentials, secrets/);
 });
 
 test("exports an honest complete receipt when the retained focus has no matching failures", () => {

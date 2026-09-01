@@ -392,6 +392,60 @@ test("proxies a same-origin human browser-review withdrawal to the authoritative
   assert.deepEqual(calls[0].input, body);
 });
 
+test("proxies audit-scoped activity reads and privacy-safe appends", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const activity = {
+    id: "activity-1",
+    tool: "get_mission_summary",
+    title: "Read mission summary",
+    status: "succeeded",
+    actorClass: "webmcp-agent",
+    auditId,
+    repairId: null,
+    diagnosticMissionId: null,
+    browserReviewId: null,
+    explorationId: null,
+    errorCode: null,
+    missionRevisionBefore: 4,
+    missionRevisionAfter: 4,
+    startedAt: 100,
+    completedAt: 110,
+  };
+  const calls = [];
+  const env = {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init = {}) => {
+          calls.push({ pathname: new URL(url).pathname, method: init.method, body: init.body });
+          return Response.json({ ok: true, data: { auditId, activities: [activity] } });
+        },
+      }),
+    },
+  };
+
+  const read = await worker.fetch(
+    new Request(`https://frontmend.test/api/audits/${auditId}/activities`),
+    env,
+  );
+  const append = await worker.fetch(new Request(
+    `https://frontmend.test/api/audits/${auditId}/activities`,
+    {
+      method: "POST",
+      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      body: JSON.stringify(activity),
+    },
+  ), env);
+
+  assert.equal(read.status, 200);
+  assert.equal(append.status, 200);
+  assert.deepEqual(calls.map((call) => [call.pathname, call.method]), [
+    ["/activities", "GET"],
+    ["/activities", "POST"],
+  ]);
+  assert.deepEqual(JSON.parse(calls[1].body), activity);
+});
+
 test("proxies server-issued verification candidates and aggregate repair receipts", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
@@ -707,6 +761,66 @@ test("Durable Object mission workspace reads carry the current authoritative che
     assert.equal(payload.data.missionCheckpoint.auditId, auditId, pathname);
     assert.equal(payload.data.missionCheckpoint.missionRevision, 7, pathname);
   }
+});
+
+test("Durable Object keeps an idempotent activity ledger outside mission authority", async () => {
+  const auditId = "activity-ledger-audit";
+  const state = {
+    id: auditId,
+    missionRevision: 7,
+    url: "https://example.com/",
+    source: "agent",
+    mission: null,
+    status: "running",
+    phase: "capture",
+    progress: 40,
+    report: null,
+  };
+  const values = new Map([["state", state]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const activity = {
+    id: "activity-1",
+    tool: "check_site_audit_progress",
+    title: "Check audit progress",
+    status: "succeeded",
+    actorClass: "webmcp-agent",
+    auditId,
+    repairId: null,
+    diagnosticMissionId: null,
+    browserReviewId: null,
+    explorationId: null,
+    errorCode: null,
+    missionRevisionBefore: 7,
+    missionRevisionAfter: 7,
+    startedAt: 100,
+    completedAt: 110,
+  };
+  const append = () => job.fetch(new Request("https://frontmend.internal/activities", {
+    method: "POST",
+    body: JSON.stringify(activity),
+  }));
+
+  assert.equal((await append()).status, 200);
+  assert.equal((await append()).status, 200);
+  const read = await job.fetch(new Request("https://frontmend.internal/activities"));
+  const payload = await read.json();
+  assert.equal(payload.data.activities.length, 1);
+  assert.equal(payload.data.boundary.retention, "last-20-per-audit");
+  assert.equal(payload.data.missionCheckpoint.missionRevision, 7);
+  assert.equal(values.get("state").missionRevision, 7);
+
+  const rejected = await job.fetch(new Request("https://frontmend.internal/activities", {
+    method: "POST",
+    body: JSON.stringify({ ...activity, id: "activity-2", url: "https://secret.example/" }),
+  }));
+  assert.equal(rejected.status, 400);
+  assert.equal((await rejected.json()).error.code, "INVALID_ACTIVITY_LEDGER");
+  assert.equal(values.get("activityLedger").length, 1);
 });
 
 test("starts one durable site exploration through atomic batch admission", async () => {
@@ -1619,6 +1733,39 @@ test("local development exports completed evidence and adopts it without a secon
   assert.match(report.body, /https:\/\/removemyexif\.com\//);
   assert.match(report.body, /does not claim it deployed, changed/);
 
+  const activity = {
+    id: "activity-local-1",
+    tool: "get_site_audit_results",
+    title: "Get site audit results",
+    status: "succeeded",
+    actorClass: "webmcp-agent",
+    auditId,
+    repairId: null,
+    diagnosticMissionId: null,
+    browserReviewId: null,
+    explorationId: null,
+    errorCode: null,
+    missionRevisionBefore: 2,
+    missionRevisionAfter: 2,
+    startedAt: 100,
+    completedAt: 110,
+  };
+  const appendActivity = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/activities`,
+    headers: {
+      host: "localhost:3434",
+      origin: "http://localhost:3434",
+    },
+    body: JSON.stringify(activity),
+  });
+  assert.equal(appendActivity.status, 200);
+  assert.equal(JSON.parse(appendActivity.body).data.missionCheckpoint.missionRevision, 2);
+  const restoredActivities = await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/activities`,
+  });
+  assert.deepEqual(JSON.parse(restoredActivities.body).data.activities, [activity]);
+
   const assessment = await callLocalRuntime(middleware, {
     url: `/api/audits/${auditId}/assessment`,
   });
@@ -1628,6 +1775,8 @@ test("local development exports completed evidence and adopts it without a secon
   assert.equal(assessment.headers.get("cache-control"), "no-store");
   assert.match(assessment.body, /^# Frontmend assessment receipt/m);
   assert.match(assessment.body, /does not prove a repair, deployment, or resolution/);
+  assert.match(assessment.body, /## Semantic activity ledger/);
+  assert.match(assessment.body, /get_site_audit_results/);
 
   const checkpoint = await callLocalRuntime(middleware, {
     url: `/api/audits/${auditId}/checkpoint`,

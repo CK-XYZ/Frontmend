@@ -76,6 +76,7 @@ The intended live demonstration uses Codex inside a controlled target repository
 - Explicit `prepare_site_repair` transition that freezes one finding before repair staging is eligible.
 - Twenty-three contextual WebMCP tools; only actions valid for the visible mission state are registered, while `get_mission_summary` and `get_evidence_chain` avoid replaying the full report for routine continuation and one-priority handoff.
 - Public build identity at `/api/version`, in the mission inspector, and in portable receipts makes the deployed commit, build time, protocol, and actual tool count independently checkable.
+- A durable audit-scoped activity ledger makes WebMCP participation inspectable across reloads: the last twenty completed semantic actions retain actor, status, related workflow IDs, and mission revision before/after, while a strict contract excludes URLs, prompts, raw inputs, patches, source contents, credentials, and secrets. Ledger writes never change mission authority or mask a tool result.
 - Source-safe repository fix briefs, bounded repository plans, human review/revision, and optional low-risk delegated-auto approval capped at three uses.
 - Agent implementation receipts that accept only relative files, check outcomes, a summary, and optional Git object ID.
 - Person-only deployment attestation and fresh rule-by-rule verification across every captured strategy, with deltas withheld when coverage is not comparable.

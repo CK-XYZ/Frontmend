@@ -2008,6 +2008,44 @@ test("HTTP transport uses the browser-review singleton and sequenced check route
   });
 });
 
+test("HTTP transport reads and appends the audit-scoped activity ledger", async () => {
+  const calls = [];
+  const activity = {
+    id: "activity-1",
+    tool: "get_mission_summary",
+    title: "Read mission summary",
+    status: "succeeded",
+    actorClass: "webmcp-agent",
+    auditId: AUDIT_ID,
+    repairId: null,
+    diagnosticMissionId: null,
+    browserReviewId: null,
+    explorationId: null,
+    errorCode: null,
+    missionRevisionBefore: 7,
+    missionRevisionAfter: 7,
+    startedAt: 100,
+    completedAt: 110,
+  };
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { auditId: AUDIT_ID, activities: [activity] } });
+    },
+  });
+
+  await transport.listActivities(AUDIT_ID);
+  await transport.recordActivity(AUDIT_ID, activity);
+
+  const expectedUrl = `https://frontmend.test/api/audits/${AUDIT_ID}/activities`;
+  assert.equal(calls[0].url, expectedUrl);
+  assert.equal(calls[0].init.method, undefined);
+  assert.equal(calls[1].url, expectedUrl);
+  assert.equal(calls[1].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].init.body), activity);
+});
+
 test("HTTP transport exposes verification candidates and aggregate repair proof without changing tool names", async () => {
   const calls = [];
   const transport = createHttpAuditTransport({
@@ -2901,7 +2939,7 @@ test("submits person-attributed diagnostic evidence with the loaded mission revi
   });
 });
 
-test("keeps a bounded metadata-only browser-agent activity ledger", () => {
+test("keeps a bounded metadata-only browser-agent activity ledger", async () => {
   let timestamp = 100;
   const service = createAuditService({ now: () => timestamp++ });
   const firstId = service.beginAgentActivity({
@@ -2910,25 +2948,71 @@ test("keeps a bounded metadata-only browser-agent activity ledger", () => {
     url: "https://should-not-be-recorded.test/",
   });
   assert.equal(service.getAgentActivities()[0].status, "running");
-  service.finishAgentActivity(firstId, {
+  await service.finishAgentActivity(firstId, {
     status: "succeeded",
     auditId: AUDIT_ID,
     rawInput: "must not persist",
   });
-  const first = service.getAgentActivities()[0];
+  const first = service.getAgentActivities(AUDIT_ID)[0];
   assert.equal(first.status, "succeeded");
   assert.equal(first.auditId, AUDIT_ID);
   assert.equal("url" in first, false);
   assert.equal("rawInput" in first, false);
 
   for (let index = 0; index < 24; index += 1) {
-    const id = service.beginAgentActivity({ tool: `tool-${index}`, title: `Tool ${index}` });
-    service.finishAgentActivity(id, { status: index === 23 ? "failed" : "succeeded" });
+    const id = service.beginAgentActivity({
+      tool: index % 2 ? "get_mission_summary" : "get_evidence_chain",
+      title: `Tool ${index}`,
+    });
+    await service.finishAgentActivity(id, { status: index === 23 ? "failed" : "succeeded" });
   }
   assert.equal(service.getAgentActivities().length, 20);
   assert.equal(service.getAgentActivities()[0].status, "failed");
-  service.clearAgentActivities();
-  assert.deepEqual(service.getAgentActivities(), []);
+});
+
+test("persists and restores audit-scoped activity without making telemetry authoritative", async () => {
+  const retained = [];
+  const transport = {
+    async start(input) {
+      return { id: AUDIT_ID, url: input.url, source: input.source, status: "running", missionRevision: 3 };
+    },
+    async get() {
+      return { id: AUDIT_ID, url: "https://example.com/", source: "agent", status: "running", missionRevision: 3 };
+    },
+    async recordActivity(auditId, activity) {
+      retained.splice(0, retained.length, activity);
+      return { auditId, activities: retained };
+    },
+    async listActivities(auditId) {
+      return { auditId, activities: retained };
+    },
+  };
+  const first = createAuditService({ transport, now: (() => { let value = 100; return () => value++; })() });
+  await first.startAudit({ url: "example.com", source: "agent" });
+  const activityId = first.beginAgentActivity({
+    tool: "get_mission_summary",
+    title: "Read mission summary",
+    auditId: AUDIT_ID,
+    missionRevisionBefore: 3,
+  });
+  await first.finishAgentActivity(activityId, {
+    status: "succeeded",
+    auditId: AUDIT_ID,
+    missionRevisionAfter: 3,
+  });
+  assert.equal(retained.length, 1);
+
+  const restored = createAuditService({ transport });
+  await restored.restoreAuditWorkspace(AUDIT_ID);
+  assert.equal(restored.getAgentActivities(AUDIT_ID)[0].id, activityId);
+  assert.equal(restored.getMissionCheckpoint(AUDIT_ID).missionRevision, 3);
+
+  const unavailable = createAuditService({
+    transport: { ...transport, listActivities: async () => { throw new Error("telemetry unavailable"); } },
+  });
+  const { audit } = await unavailable.restoreAuditWorkspace(AUDIT_ID);
+  assert.equal(audit.id, AUDIT_ID);
+  assert.deepEqual(unavailable.getAgentActivities(AUDIT_ID), []);
 });
 
 test("synchronizes staged repairs, human approval, export, and verification jobs", async () => {
