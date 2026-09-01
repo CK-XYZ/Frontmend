@@ -1,6 +1,6 @@
 export const FRONTMEND_APP_VERSION = "0.1.0";
 export const FRONTMEND_PROTOCOL_VERSION = 1;
-export const FRONTMEND_TOOL_LIBRARY_VERSION = 2;
+export const FRONTMEND_TOOL_LIBRARY_VERSION = 3;
 export const FRONTMEND_TOOL_COUNT = 23;
 
 const COMMIT_PATTERN = /^[0-9a-f]{7,40}$/i;

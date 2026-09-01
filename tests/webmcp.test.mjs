@@ -837,6 +837,16 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.equal(result.data.missionState.assessmentComplete, false);
   assert.deepEqual(result.data.missionState.nextAction.input, {});
   assert.equal(result.data.resultProjection.mode, "persisted-mission");
+  assert.equal(result.data.resultProjection.detailLevel, "summary");
+  assert.equal(result.data.measurementStatus, "complete");
+  assert.equal(result.data.assessmentStatus, "incomplete");
+  assert.equal(result.data.checkpointStatus, "action-available");
+  assert.equal("findings" in result.data, false);
+
+  const fullResult = await tool.execute({ detailLevel: "full" });
+  assert.equal(fullResult.data.resultProjection.detailLevel, "full");
+  assert.ok(Array.isArray(fullResult.data.findings));
+  assert.ok(JSON.stringify(result.data).length < JSON.stringify(fullResult.data).length);
 
   browserReview = completedBrowserReview({ auditId, mission });
   const browserContributed = await tool.execute({});
@@ -1091,6 +1101,9 @@ test("browser review tools turn one exact browser task at a time into attributed
   const tools = createFrontmendTools(service);
   const opened = await findTool(tools, "open_browser_review").execute({});
   assert.equal(opened.ok, true);
+  assert.equal("tasks" in opened.data.browserReview, false);
+  assert.equal("results" in opened.data.browserReview, false);
+  assert.equal("history" in opened.data.browserReview, false);
   assert.equal(opened.data.nextAction.browserTask.id, "rendered-structure");
   assert.match(opened.data.nextAction.browserTask.boundary, /Do not repeat the provider score/);
 
@@ -1121,6 +1134,7 @@ test("browser review tools turn one exact browser task at a time into attributed
     }],
   });
   assert.equal(final.ok, true);
+  assert.equal("results" in final.data.browserReview, false);
   assert.equal(final.data.browserReview.state.status, "complete");
   assert.equal(final.data.browserReview.findings[0].source.provider, "Frontmend browser review");
   assert.equal(final.data.browserReview.findings[0].browserReviewEvidence.provenance, "agent-reported-browser");

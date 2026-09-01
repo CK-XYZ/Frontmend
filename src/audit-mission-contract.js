@@ -384,7 +384,7 @@ export function focusedAuditPriorities(
   };
 }
 
-function boundedSiteState(report, mission, explorations) {
+function boundedSiteState(report, mission, explorations, { routeDiscoveryPending = false } = {}) {
   const routeCandidates = report
     ? createSiteRouteCandidates(report).slice(0, mission.routeLimit)
     : [];
@@ -406,6 +406,20 @@ function boundedSiteState(report, mission, explorations) {
     .map((retained) => retained?.currentSnapshot ?? retained)
     .sort((left, right) => (right?.createdAt ?? 0) - (left?.createdAt ?? 0))[0] ?? null;
   if (!routeCandidates.length) {
+    if (routeDiscoveryPending) {
+      return {
+        requested: true,
+        status: "awaiting-route-discovery",
+        routeLimit: mission.routeLimit,
+        routeCandidates,
+        explorationId: null,
+        pagesRequested: 0,
+        pagesComplete: 0,
+        pagesFailed: 0,
+        terminal: false,
+        blockedReason: null,
+      };
+    }
     return {
       requested: true,
       status: "blocked",
@@ -489,7 +503,6 @@ export function deriveAuditMissionState({
     repairs,
     explorations,
   );
-  const siteScope = boundedSiteState(report, mission, explorations);
   const reviewPolicy = browserReviewPolicy(mission, browserReview);
   const reviewRequired = browserReviewRequired(mission, browserReview);
   const reviewAdoptionAvailable = browserReviewAdoptionAvailable(mission, browserReview);
@@ -497,6 +510,9 @@ export function deriveAuditMissionState({
   const requestedBrowserCheckCount = reviewState?.requestedCheckCount
     ?? (reviewRequired ? browserReviewChecksForMission(mission).length : 0);
   const reviewOutstanding = reviewRequired && !reviewState?.complete;
+  const siteScope = boundedSiteState(report, mission, explorations, {
+    routeDiscoveryPending: reviewOutstanding,
+  });
   const unresolved = projection.priorities.find((priority) => diagnosticNextAction(priority));
   const blocked = projection.priorities.find(
     (priority) => priority.evidenceState === "diagnosis-blocked",
@@ -632,9 +648,11 @@ export function deriveAuditMissionState({
   return {
     intent: mission.intent,
     status,
+    checkpointStatus: status,
     auditComplete,
     measurementComplete,
     assessmentStatus: assessmentComplete ? "complete" : status === "blocked" ? "blocked" : "incomplete",
+    explorationStatus: siteScope.status,
     evidenceSnapshotAvailable: measurementComplete,
     assessmentReceiptAvailable: assessmentComplete,
     assessmentComplete,

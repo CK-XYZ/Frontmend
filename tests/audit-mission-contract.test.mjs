@@ -163,6 +163,25 @@ test("keeps a zero-route bounded-site assessment blocked and receipt-ineligible"
   assert.equal(state.nextAction, null);
 });
 
+test("waits for rendered route discovery before declaring bounded scope blocked", () => {
+  const mission = createAuditMission({
+    scope: "bounded-site",
+    focusAreas: ["seo"],
+  }, "agent", 10);
+  const state = deriveAuditMissionState({
+    report: { ...report, findings: [], documentProfile: { routes: [] } },
+    mission,
+  });
+
+  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.siteScope.status, "awaiting-route-discovery");
+  assert.equal(state.siteScope.terminal, false);
+  assert.equal(state.siteScope.blockedReason, null);
+  assert.equal(state.nextAction.tool, "open_browser_review");
+  assert.equal(state.checkpointStatus, "action-available");
+  assert.equal(state.explorationStatus, "awaiting-route-discovery");
+});
+
 test("requires rendered accessibility and SEO evidence for an agent-started broad mission", () => {
   const mission = createAuditMission({}, "agent", 10);
   const state = deriveAuditMissionState({ report: { ...report, findings: [] }, mission });

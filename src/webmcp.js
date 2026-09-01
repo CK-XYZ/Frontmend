@@ -225,10 +225,61 @@ function compactPriority(priority) {
     severity: priority.severity,
     category: priority.category,
     relationship: priority.relationship,
+    whyPrioritized: priority.whyPrioritized,
     evidenceState: priority.evidenceState,
     occurrenceCount: priority.occurrenceCount,
+    distinctPageCount: priority.distinctPageCount,
     affectedStrategies: [...(priority.affectedStrategies ?? [])],
+    diagnosticMissionRequired: priority.diagnosticMissionRequired,
+    diagnosticMissionId: priority.diagnosticMissionId,
+    diagnosticBlocker: priority.diagnosticBlocker,
+    unresolvedRequirement: priority.unresolvedRequirement,
+    source: priority.source,
     nextAction: priority.nextAction ?? null,
+  };
+}
+
+function compactBrowserReview(review) {
+  if (!review) return null;
+  return {
+    id: review.id,
+    auditId: review.auditId,
+    purpose: review.purpose,
+    target: review.target,
+    requestedFocusAreas: [...(review.requestedFocusAreas ?? [])],
+    adoption: review.adoption ?? null,
+    state: review.state,
+    findings: [...(review.findings ?? [])],
+    authority: review.authority,
+  };
+}
+
+function compactMissionState(missionState) {
+  return {
+    ...missionState,
+    priorities: missionState.priorities.map(compactPriority),
+  };
+}
+
+function compactAuditReport(report) {
+  return {
+    auditId: report.auditId,
+    url: report.url,
+    finalUrl: report.finalUrl,
+    completedAt: report.completedAt,
+    score: report.score,
+    checks: report.checks,
+    findingCount: report.findingCount,
+    engine: report.engine,
+    viewports: (report.viewports ?? []).map((viewport) => ({
+      id: viewport.id,
+      strategy: viewport.strategy,
+      label: viewport.label,
+      score: viewport.score,
+      scores: viewport.scores,
+      metrics: viewport.metrics,
+      evidenceMode: viewport.evidenceMode,
+    })),
   };
 }
 
@@ -654,6 +705,10 @@ export function createFrontmendTools(service) {
           return {
             auditId: null,
             status: "idle",
+            measurementStatus: "not-started",
+            assessmentStatus: "not-started",
+            checkpointStatus: "idle",
+            explorationStatus: "not-requested",
             workspacePath: "/",
             missionCheckpoint: null,
             mission: null,
@@ -678,6 +733,10 @@ export function createFrontmendTools(service) {
           return {
             auditId: audit.id,
             status: audit.status,
+            measurementStatus: audit.status,
+            assessmentStatus: "measuring",
+            checkpointStatus: "in-progress",
+            explorationStatus: "not-started",
             phase: audit.phase,
             phaseLabel: audit.phaseLabel,
             progress: audit.progress,
@@ -703,6 +762,10 @@ export function createFrontmendTools(service) {
         return {
           auditId: audit.id,
           status: audit.status,
+          measurementStatus: audit.status,
+          assessmentStatus: missionState.assessmentStatus,
+          checkpointStatus: missionState.checkpointStatus,
+          explorationStatus: missionState.explorationStatus,
           workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
           missionCheckpoint: checkpoint,
           mission: {
@@ -738,7 +801,7 @@ export function createFrontmendTools(service) {
       name: "get_site_audit_results",
       title: "Get site audit results",
       description:
-        "Return the completed measurement and the persisted assessment mission with bounded priorities, evidence state, assessmentComplete, and an exact next tool/input. Omit focus and maximum to continue the person's original goal without restating it. Optional focus/max values are a labelled read-only result projection and never rewrite mission intent. Do not stop at Lighthouse job completion while assessmentComplete is false and the named diagnostic action is available.",
+        "Return a compact completed measurement and persisted assessment mission with bounded priorities, evidence state, assessmentComplete, and an exact next tool/input. Use detailLevel full only when raw retained report evidence is necessary; routine continuation should use this compact default or get_mission_summary, then get_evidence_chain for one priority. Optional focus/max values are a labelled read-only projection and never rewrite mission intent. Do not stop at measurement completion while assessmentComplete is false and the named action is available.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -749,12 +812,17 @@ export function createFrontmendTools(service) {
             description: "Optional areas requested by the person, such as accessibility and seo.",
           },
           maxPriorities: { type: "integer", minimum: 1, maximum: 5, description: "Maximum deduplicated priorities; defaults to 3." },
+          detailLevel: {
+            type: "string",
+            enum: ["summary", "full"],
+            description: "summary is the compact default; full includes the complete bounded provider report and browser-review record.",
+          },
         },
       },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "focusAreas", "maxPriorities"]);
+        noExtra(value, ["auditId", "focusAreas", "maxPriorities", "detailLevel"]);
         if (value.focusAreas !== undefined && (!Array.isArray(value.focusAreas) || value.focusAreas.length < 1)) {
           throw new AuditError("INVALID_INPUT", "focusAreas must contain between 1 and 3 areas when supplied.");
         }
@@ -769,17 +837,26 @@ export function createFrontmendTools(service) {
           focusAreas: value.focusAreas ?? persistedMission.focusAreas,
           maxPriorities: value.maxPriorities ?? persistedMission.maxPriorities,
         });
+        const browserReview = service?.getBrowserReview?.(auditId) ?? null;
         const missionState = deriveAuditMissionState({
           report,
           mission: projectionMission,
           diagnosticMissions: service?.getDiagnosticMissions?.(auditId) ?? [],
           repairs: service?.getRepairs?.(auditId) ?? [],
-          browserReview: service?.getBrowserReview?.(auditId) ?? null,
+          browserReview,
           explorations: service?.getSiteExplorations?.(auditId) ?? [],
         });
         const overridden = value.focusAreas !== undefined || value.maxPriorities !== undefined;
+        const detailLevel = value.detailLevel === "full" ? "full" : "summary";
+        const projectedPriorities = detailLevel === "full"
+          ? missionState.priorities
+          : missionState.priorities.map(compactPriority);
         return {
-          ...report,
+          ...(detailLevel === "full" ? report : compactAuditReport(report)),
+          measurementStatus: "complete",
+          assessmentStatus: missionState.assessmentStatus,
+          checkpointStatus: missionState.checkpointStatus,
+          explorationStatus: missionState.explorationStatus,
           mission: persistedMission,
           requestedFocusAreas: missionState.requestedFocusAreas,
           focusSummary: {
@@ -790,15 +867,16 @@ export function createFrontmendTools(service) {
               ? "Priorities are deduplicated measured rules with explicit diagnosis state. Automated evidence is not a complete manual audit."
               : "No supported failed rule matched this focus. Retained scores are automated evidence, not a complete manual audit.",
           },
-          priorities: missionState.priorities,
-          browserReview: service?.getBrowserReview?.(auditId) ?? null,
-          missionState,
+          priorities: projectedPriorities,
+          browserReview: detailLevel === "full" ? browserReview : compactBrowserReview(browserReview),
+          missionState: detailLevel === "full" ? missionState : compactMissionState(missionState),
           missionCheckpoint: report.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
             changedPersistedMission: false,
             focusAreas: missionState.requestedFocusAreas,
             maxPriorities: projectionMission.maxPriorities,
+            detailLevel,
           },
           recommendedNextAction: missionState.nextAction
             ? { tool: missionState.nextAction.tool, ...missionState.nextAction.input, reason: missionState.nextAction.reason }
@@ -964,7 +1042,7 @@ export function createFrontmendTools(service) {
         );
         return {
           auditId,
-          browserReview: review,
+          browserReview: compactBrowserReview(review),
           adoption: review.adoption,
           missionCheckpoint: review.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: {
@@ -1062,7 +1140,7 @@ export function createFrontmendTools(service) {
         const assessmentComplete = Boolean(service?.getAuditMissionState?.(auditId)?.assessmentComplete);
         return {
           auditId,
-          browserReview: review,
+          browserReview: compactBrowserReview(review),
           missionCheckpoint,
           acceptedCheck: review.results.find((result) => result.checkId === value.checkId) ?? null,
           assessmentComplete,

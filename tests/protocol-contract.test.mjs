@@ -110,6 +110,10 @@ test("returns compact mission and one-finding evidence queries with a protocol e
   const summary = await findTool(tools, "get_mission_summary").execute({});
   assert.equal(summary.ok, true);
   assert.equal(summary.data.auditId, auditId);
+  assert.equal(summary.data.measurementStatus, "complete");
+  assert.equal(summary.data.assessmentStatus, "complete");
+  assert.equal(summary.data.checkpointStatus, "complete");
+  assert.equal(summary.data.explorationStatus, "not-requested");
   assert.equal(summary.data.assessment.measurementComplete, true);
   assert.equal(summary.data.topPriorities.length, 1);
   assert.equal("report" in summary.data, false);
@@ -144,6 +148,8 @@ test("keeps the stable mission summary available before an audit and envelopes e
   const tools = createFrontmendTools({ getActiveAudit: () => null });
   const idle = await findTool(tools, "get_mission_summary").execute({});
   assert.equal(idle.data.status, "idle");
+  assert.equal(idle.data.measurementStatus, "not-started");
+  assert.equal(idle.data.assessmentStatus, "not-started");
   assert.equal(idle.data.nextAction.tool, "start_site_audit");
   assert.equal(idle.protocol.activeToolCount, 2);
   assert.equal(idle.protocol.next.tool, "start_site_audit");
