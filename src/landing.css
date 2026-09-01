@@ -2924,11 +2924,19 @@
   outline-offset: 3px;
 }
 
-.loop-dialog-close {
+.loop-dialog-controls {
   position: absolute;
   top: 16px;
   right: 16px;
   z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.loop-dialog-close,
+.loop-dialog-play {
+  position: relative;
   width: 38px;
   height: 38px;
   display: grid;
@@ -2940,9 +2948,61 @@
   cursor: pointer;
 }
 
-.loop-dialog-close:hover {
+.loop-dialog-close:hover,
+.loop-dialog-play:hover {
   border-color: var(--fm-cobalt-line);
   color: var(--fm-bone);
+}
+
+/*
+ * The walkthrough control.
+ *
+ * WCAG 2.2.2 wants a way to stop a continuous auto-update; this is it, and it
+ * is also the only progress read-out, so the visitor can see how long the
+ * handoff has left and take it back at any point. Circular because the loop is.
+ *
+ * Pausing drops the fill rather than freezing it mid-arc. Resuming re-arms a
+ * whole dwell, so a frozen arc would promise a handoff sooner than one is
+ * coming; an empty ring next to a play glyph says the true thing, which is that
+ * no time is passing.
+ */
+.loop-dialog-play[data-playing="true"] {
+  color: var(--fm-bone);
+}
+
+.loop-dialog-play-ring {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+}
+
+.loop-dialog-play-ring svg {
+  width: 34px;
+  height: 34px;
+  /* 12 o'clock, clockwise. */
+  transform: rotate(-90deg);
+  fill: none;
+  overflow: visible;
+}
+
+.loop-dialog-play-track {
+  stroke: var(--fm-cobalt-line);
+  stroke-width: 1.5;
+}
+
+/*
+ * The fill is drawn empty and stays empty without the animation below, so a
+ * paused or reduced-motion control shows a plain ring rather than a lie about
+ * elapsed time. Circumference of r=16 is 100.53.
+ */
+.loop-dialog-play-fill {
+  stroke: var(--fm-lime);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-dasharray: 100.53;
+  stroke-dashoffset: 100.53;
 }
 
 /* ------------------------------------------------------------------ head */
@@ -2953,7 +3013,7 @@
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   align-items: end;
   padding: clamp(28px, 3.4vw, 44px) var(--loop-pad) clamp(24px, 2.8vw, 34px);
-  padding-right: max(var(--loop-pad), 70px);
+  padding-right: max(var(--loop-pad), 116px);
   border-bottom: 1px solid var(--fm-cobalt-line);
 }
 
@@ -2983,6 +3043,8 @@
   color: var(--fm-bone-muted);
   font-size: clamp(14px, 1.05vw, 16px);
   line-height: 1.6;
+  /* Three lines that ended on a one-word orphan. */
+  text-wrap: pretty;
 }
 
 /* ---------------------------------------------------------------- bounds */
@@ -3135,13 +3197,18 @@
   transition: color 240ms ease;
 }
 
+/*
+ * A shade smaller than the panel's argument beneath it. The rail is the control
+ * strip, not the statement — when both were set at 16px the selected tab and
+ * the panel heading read as the same sentence typed twice.
+ */
 .loop-dialog-tab-title {
   margin-top: 7px;
   color: var(--fm-bone-muted);
-  font-size: clamp(14px, 1.05vw, 16px);
+  font-size: clamp(13.5px, 0.95vw, 15px);
   font-weight: 620;
   letter-spacing: -0.012em;
-  line-height: 1.28;
+  line-height: 1.3;
   text-wrap: balance;
   transition: color 240ms ease;
 }
@@ -3151,6 +3218,20 @@
   color: var(--fm-bone);
 }
 
+/*
+ * The rail is a tablist, and colour alone did not say so. The mark answers the
+ * pointer; the current one is already lifted and must not flinch when the
+ * pointer crosses it.
+ */
+.loop-dialog-tab:hover .loop-dialog-mark {
+  border-color: var(--fm-lime);
+}
+
+.loop-dialog-tab:not([data-state="current"]):hover .loop-dialog-mark {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0, 8, 38, 0.32);
+}
+
 /* ------------------------------------------------------------ the exhibit */
 
 .loop-dialog-panel {
@@ -3158,7 +3239,12 @@
   padding: clamp(22px, 2.6vw, 32px) var(--loop-pad) clamp(26px, 3vw, 36px);
   gap: clamp(24px, 3vw, 48px);
   grid-template-columns: minmax(0, 0.85fr) minmax(0, 1fr);
-  align-items: center;
+  /*
+   * Both columns start on the same line. Centring floated the argument against
+   * the exhibit and read as an accident, since the two are near enough in
+   * height that the offset looked like a misalignment rather than a choice.
+   */
+  align-items: start;
 }
 
 .loop-dialog-panel:focus {
@@ -3183,19 +3269,47 @@
   line-height: 1.6;
 }
 
+.loop-dialog-marks-label {
+  margin: 22px 0 0;
+  color: var(--fm-bone-muted);
+  font-size: 10px;
+  font-weight: 740;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
 .loop-dialog-marks {
   display: grid;
-  margin: 18px 0 0;
+  margin: 10px 0 0;
   padding: 0;
   list-style: none;
 }
 
 .loop-dialog-marks li {
+  display: grid;
   padding: 9px 0;
+  gap: 12px;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: baseline;
   border-top: 1px solid var(--fm-cobalt-line);
   color: var(--fm-bone);
   font-size: clamp(12.5px, 0.95vw, 14px);
   line-height: 1.45;
+}
+
+/*
+ * The same lime thread that wipes across the rail, cut to a single mark.
+ *
+ * Two pixels, not one: the rows sit on fractional offsets, so a hairline tick
+ * landed between device pixels on two rows out of three and rendered them a
+ * washed-out blue. Identical marks have to look identical.
+ */
+.loop-dialog-marks li::before {
+  content: "";
+  width: 11px;
+  height: 2px;
+  transform: translateY(-4px);
+  background: var(--fm-lime);
 }
 
 .loop-dialog-exhibit {
@@ -3217,6 +3331,203 @@
  */
 .loop-dialog-exhibit-frame .specimen-chrome {
   padding-right: 42px;
+}
+
+.loop-dialog-exhibit-note {
+  display: grid;
+  margin: 20px 0 0;
+  gap: 10px;
+  grid-template-columns: 12px minmax(0, 1fr);
+  align-items: baseline;
+  color: var(--fm-bone-muted);
+  font-family: var(--fm-mono);
+  font-size: 11px;
+  line-height: 1.5;
+  /* Two even lines, so the break does not fall inside "not a measurement". */
+  text-wrap: balance;
+}
+
+.loop-dialog-exhibit-note::before {
+  content: "";
+  width: 11px;
+  height: 2px;
+  transform: translateY(-4px);
+  background: var(--fm-cobalt-line);
+}
+
+/* ------------------------------------------------------------- instruments
+ *
+ * The specimen alone is a picture of a website. The instrument layer is what
+ * makes it an exhibit: capture brackets around the region under observation, a
+ * readout naming what this handoff is looking at, and one transient per step.
+ * All of it is decorative and sits inside the aria-hidden frame; the visible
+ * caption below the frame carries the meaning, and says it is an illustration.
+ *
+ * The layer shares the frame's single grid cell with the specimen rather than
+ * being nested inside it, so none of the specimen rules the landing shares
+ * have to change shape to accommodate it.
+ */
+.loop-dialog-exhibit-frame > * {
+  grid-area: 1 / 1;
+}
+
+.loop-demo-layer {
+  position: relative;
+  display: block;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.loop-dialog-exhibit-stage {
+  position: relative;
+}
+
+/*
+ * Registration marks around the exhibit, in cobalt space rather than on the
+ * specimen: inside the frame they fought the flag and the seal for the same
+ * corner, and they are Frontmend's marks, not the shown website's.
+ */
+.loop-demo-corners {
+  position: absolute;
+  display: block;
+  inset: -9px;
+  pointer-events: none;
+}
+
+.loop-demo-corners > span {
+  position: absolute;
+  width: 14px;
+  height: 14px;
+  border: 0 solid var(--fm-lime);
+}
+
+.loop-demo-corners > span:nth-child(1) {
+  top: 0;
+  left: 0;
+  border-top-width: 2px;
+  border-left-width: 2px;
+}
+
+.loop-demo-corners > span:nth-child(2) {
+  top: 0;
+  right: 0;
+  border-top-width: 2px;
+  border-right-width: 2px;
+}
+
+.loop-demo-corners > span:nth-child(3) {
+  right: 0;
+  bottom: 0;
+  border-right-width: 2px;
+  border-bottom-width: 2px;
+}
+
+.loop-demo-corners > span:nth-child(4) {
+  bottom: 0;
+  left: 0;
+  border-bottom-width: 2px;
+  border-left-width: 2px;
+}
+
+.loop-demo-readout {
+  position: absolute;
+  bottom: 13px;
+  left: 14px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 5px 9px;
+  border-radius: 3px;
+  background: rgb(9 13 20 / 82%);
+  color: #e8edf5;
+  font-family: var(--fm-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+/* The dot carries the palette's meaning: unresolved, under inspection, held. */
+.loop-demo-readout::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--fm-lime);
+}
+
+.loop-dialog-exhibit-frame[data-stage="01"] .loop-demo-readout::before {
+  background: var(--fm-orange);
+}
+
+.loop-dialog-exhibit-frame[data-stage="02"] .loop-demo-readout::before {
+  background: #2f6bd8;
+}
+
+/*
+ * The three transients. React only mounts these when motion is allowed - their
+ * finished state is absence, and nothing may be parked at opacity 0 outside a
+ * keyframe - so they carry no resting styles that a still visitor would see.
+ */
+.loop-demo-scan {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 38%;
+  border-bottom: 2px solid rgb(233 248 133 / 95%);
+  /* Weighted to the leading edge, and bright enough to read over burnt orange. */
+  background: linear-gradient(
+    to bottom,
+    rgb(220 239 59 / 0%) 0%,
+    rgb(220 239 59 / 10%) 58%,
+    rgb(220 239 59 / 34%) 100%
+  );
+  box-shadow: 0 7px 20px rgb(220 239 59 / 26%);
+}
+
+/*
+ * Step 03's before layer: the unresolved specimen stacked over the resolved one,
+ * clipped to the sweep's leading edge. The line runs in exactly the same
+ * direction as step 01's, because it is the same instrument on a second pass -
+ * only this time the repair travels with it, and the burnt panel, the dim title
+ * and the finding flag are already paper, ink and a seal behind it.
+ *
+ * The unresolved specimen renders without `split`, so both layers carry one
+ * column of copy and nothing reflows under the wipe.
+ */
+.loop-demo-before {
+  position: absolute;
+  display: grid;
+  inset: 0;
+}
+
+.loop-demo-cursor {
+  position: absolute;
+  top: 44%;
+  left: 11%;
+  width: 22px;
+  height: 22px;
+  color: var(--fm-lime-deep);
+  filter: drop-shadow(0 1px 2px rgb(9 13 20 / 45%));
+}
+
+.loop-demo-cursor svg {
+  width: 100%;
+  height: 100%;
+  fill: none;
+  stroke: currentcolor;
+  stroke-width: 2;
+}
+
+/* Centred on the seal: 6px inset, 28px across in this frame. */
+.loop-demo-pulse {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--fm-lime);
+  border-radius: 50%;
 }
 
 /* ------------------------------------------------------------------ foot */
@@ -3249,24 +3560,39 @@
   color: var(--fm-lime);
 }
 
+/*
+ * The dialog's one forward action, so it is a filled button now rather than the
+ * hairline ghost it was. A 26%-opacity border on the footer's tinted cobalt
+ * disappeared into the band, and a call to action nobody can pick out is not
+ * one.
+ *
+ * Bone, not lime. Lime is confirmation and the *one* primary action (§3), and
+ * the primary action is starting an audit — this is the way through to the
+ * long-form page, and it must not dress itself as the bigger commitment.
+ */
 .loop-dialog-link {
   min-height: 44px;
   display: inline-flex;
   flex: 0 0 auto;
   align-items: center;
   gap: 10px;
-  padding: 0 18px;
-  border: 1px solid var(--fm-cobalt-line);
+  padding: 0 20px;
+  border: 0;
   border-radius: 4px;
-  color: var(--fm-bone);
+  background: var(--fm-bone);
+  color: var(--fm-ink);
   font-size: 13px;
   font-weight: 680;
+  letter-spacing: -0.01em;
   text-decoration: none;
+  transition:
+    background-color 200ms ease,
+    transform 200ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .loop-dialog-link:hover {
-  border-color: var(--fm-lime);
-  color: var(--fm-lime);
+  background: #fff;
+  transform: translateY(-1px);
 }
 
 @media (max-width: 960px) {
@@ -3458,6 +3784,261 @@
     to {
       opacity: 1;
       transform: none;
+    }
+  }
+
+  /* ---------------------------------------------------------- instruments
+   *
+   * One sequence per handoff, replayed because the panel remounts on each
+   * change. Everything has settled by ~1.7s, well inside the 4s dwell, so the
+   * exhibit spends most of its time still: a paced demonstration, not a strobe.
+   *
+   * The walkthrough loops, which the no-infinite-animation rule otherwise
+   * forbids. Every animation below is finite and settles; what repeats is the
+   * dialog's own state, and WCAG 2.2.2's mechanism for stopping it is the
+   * visible control in the corner. See §8.
+   */
+  .loop-dialog-play[data-playing="true"] .loop-dialog-play-fill {
+    animation: loop-dialog-dwell 4000ms linear both;
+  }
+
+  .loop-demo-corners > span {
+    animation: loop-demo-corner-in 400ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
+  }
+
+  .loop-demo-corners > span:nth-child(1) {
+    animation-delay: 120ms;
+  }
+
+  .loop-demo-corners > span:nth-child(2) {
+    animation-delay: 180ms;
+  }
+
+  .loop-demo-corners > span:nth-child(3) {
+    animation-delay: 240ms;
+  }
+
+  .loop-demo-corners > span:nth-child(4) {
+    animation-delay: 300ms;
+  }
+
+  .loop-demo-readout {
+    animation: loop-demo-readout-in 440ms cubic-bezier(0.2, 0.8, 0.3, 1) 880ms both;
+  }
+
+  /*
+   * 01: the sweep measures, and the finding flags itself as the sweep clears
+   * the card. It used to pop mid-pass, which is the one moment in the sequence
+   * that means nothing - a measurement half taken reports nothing.
+   */
+  .loop-demo-scan {
+    animation: loop-demo-sweep 1150ms cubic-bezier(0.4, 0, 0.5, 1) 200ms both;
+  }
+
+  .loop-dialog-exhibit-frame[data-stage="01"] .specimen-flag {
+    animation: loop-demo-stamp 520ms cubic-bezier(0.2, 1.5, 0.4, 1) 1290ms both;
+  }
+
+  /* 02: the cursor travels to the element, and the element answers. */
+  .loop-demo-cursor {
+    animation: loop-demo-travel 900ms cubic-bezier(0.3, 0.9, 0.3, 1) 240ms both;
+  }
+
+  .loop-dialog-exhibit-frame[data-stage="02"] .specimen-selection::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgb(47 107 216 / 16%);
+    animation: loop-demo-flash 760ms ease 900ms both;
+  }
+
+  .loop-dialog-exhibit-frame[data-stage="02"] .specimen-selection-tag {
+    animation: loop-demo-stamp 460ms cubic-bezier(0.2, 1.5, 0.4, 1) 1000ms both;
+  }
+
+  /*
+   * 03: the before/after reveal.
+   *
+   * Both animations are `linear` and share a duration and delay, which is what
+   * keeps the wipe welded to the line rather than merely near it. The band is
+   * 38% of the frame, so translating it from -100% to 163.2% of its own height
+   * walks its leading edge from the top of the frame to the bottom - the same
+   * 0-to-100% the clip travels, at the same rate, so the two cannot drift.
+   * Ease either of them and they part company immediately.
+   */
+  .loop-dialog-exhibit-frame[data-stage="03"] .loop-demo-scan {
+    animation: loop-demo-reveal-sweep 900ms linear 260ms both;
+  }
+
+  .loop-demo-before {
+    animation: loop-demo-reveal 900ms linear 260ms both;
+  }
+
+  /*
+   * No stamp on this seal. The wipe already uncovers it as the line clears the
+   * corner; stamping it afterwards would make it vanish and re-land. The ping
+   * fires as the wipe finishes, which is the moment the fix is proven, and the
+   * readout follows it - on the other steps the readout is a setting, here it
+   * is the conclusion.
+   */
+  .loop-demo-pulse {
+    animation: loop-demo-ping 900ms cubic-bezier(0.1, 0.7, 0.3, 1) 1160ms both;
+  }
+
+  .loop-dialog-exhibit-frame[data-stage="03"] .loop-demo-readout {
+    animation-delay: 1260ms;
+  }
+
+  @keyframes loop-dialog-dwell {
+    from {
+      stroke-dashoffset: 100.53;
+    }
+
+    to {
+      stroke-dashoffset: 0;
+    }
+  }
+
+  @keyframes loop-demo-corner-in {
+    from {
+      opacity: 0;
+      transform: scale(0.72);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes loop-demo-readout-in {
+    from {
+      opacity: 0;
+      transform: translateY(7px);
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes loop-demo-sweep {
+    from {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+
+    12% {
+      opacity: 1;
+    }
+
+    88% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+      transform: translateY(285%);
+    }
+  }
+
+  @keyframes loop-demo-reveal-sweep {
+    from {
+      opacity: 0;
+      transform: translateY(-100%);
+    }
+
+    9% {
+      opacity: 1;
+    }
+
+    84% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+      transform: translateY(163.2%);
+    }
+  }
+
+  @keyframes loop-demo-reveal {
+    from {
+      clip-path: inset(0 0 0 0);
+    }
+
+    to {
+      clip-path: inset(100% 0 0 0);
+    }
+  }
+
+  /* Lands on the element, then gets out of the way of what it selected. */
+  @keyframes loop-demo-travel {
+    from {
+      opacity: 0;
+      transform: translate(-34px, 76px) scale(1.25);
+    }
+
+    18% {
+      opacity: 1;
+    }
+
+    64% {
+      opacity: 1;
+      transform: none;
+    }
+
+    82% {
+      opacity: 1;
+      transform: none;
+    }
+
+    to {
+      opacity: 0;
+      transform: scale(0.9);
+    }
+  }
+
+  @keyframes loop-demo-stamp {
+    from {
+      opacity: 0;
+      transform: scale(1.85);
+    }
+
+    46% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 1;
+      transform: none;
+    }
+  }
+
+  @keyframes loop-demo-flash {
+    from {
+      opacity: 0;
+    }
+
+    35% {
+      opacity: 1;
+    }
+
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes loop-demo-ping {
+    from {
+      opacity: 0.7;
+      transform: scale(1);
+    }
+
+    to {
+      opacity: 0;
+      transform: scale(2.1);
     }
   }
 }

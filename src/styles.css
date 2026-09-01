@@ -6878,7 +6878,9 @@ summary:focus-visible,
   box-shadow: none;
 }
 
-.lazy-workspace-state.inline .lazy-workspace-spinner {
+.lazy-workspace-state.inline .thinking-orb {
+  --orb-size: 24px;
+
   grid-row: 1 / 4;
 }
 
@@ -6913,18 +6915,177 @@ summary:focus-visible,
   box-shadow: inset 0 0 0 1px var(--line-strong);
 }
 
-.lazy-workspace-spinner {
-  width: 23px;
-  height: 23px;
-  border: 2px solid rgb(95 120 50 / 22%);
-  border-top-color: var(--lime-dark);
-  border-radius: 50%;
-  animation: lazy-workspace-spin 0.8s linear infinite;
+/*
+ * Dialog loading state: the orb alone on a dimmed page.
+ *
+ * No card, no border, no shadow — a lazy chunk is a few hundred milliseconds of
+ * wait, and a full sheet of furniture made it feel like a page transition. The
+ * dim is lighter than a real dialog's for the same reason: nothing here is
+ * asking to be read.
+ */
+.lazy-workspace-orb-backdrop {
+  background: rgb(26 32 28 / 30%);
+  backdrop-filter: blur(3px);
 }
 
-@keyframes lazy-workspace-spin {
+.lazy-workspace-orb {
+  --orb-size: 76px;
+  --orb-tint: #d3f778;
+  --orb-halo: rgb(185 237 80 / 20%);
+
+  display: grid;
+  place-items: center;
+  margin: 0;
+  padding: 4px;
+}
+
+.lazy-workspace-orb:focus-visible {
+  border-radius: 50%;
+  outline: 3px solid var(--lime);
+  outline-offset: 10px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /*
+   * Late fade-in. A cached chunk resolves inside the delay, so the common case
+   * is a modal that never visibly appeared at all — no flash of a wait that
+   * was not really a wait. `both` keeps the orb hidden only for the delay it is
+   * guaranteed to come back from.
+   */
+  .lazy-workspace-orb-backdrop {
+    animation: lazy-workspace-orb-arrive 260ms ease 140ms both;
+  }
+}
+
+@keyframes lazy-workspace-orb-arrive {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+/*
+ * Thinking orb: the shared indicator for work that is genuinely pending.
+ *
+ * A dotted globe turns behind two meridians that sweep edge-on and back, so it
+ * reads as a rotating sphere instead of an arc chasing its own tail. Adapted
+ * from the canvas thinking-orbs vocabulary as plain SVG + CSS.
+ *
+ * These loops are infinite, which the motion contract otherwise forbids. The
+ * exception holds because the loop is not theatre: it runs only while a chunk
+ * is actually in flight and stops the instant it lands, so a turning orb always
+ * means real pending work. Everything sits inside the no-preference block, and
+ * the base state below is a composed, still orb.
+ */
+.thinking-orb {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--orb-size, 26px);
+  block-size: var(--orb-size, 26px);
+  color: var(--orb-tint, var(--lime-dark));
+}
+
+.thinking-orb::before {
+  content: "";
+  position: absolute;
+  inset: -26%;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 50%, var(--orb-halo, rgb(95 120 50 / 14%)), transparent 66%);
+}
+
+.thinking-orb svg {
+  position: relative;
+  inline-size: 100%;
+  block-size: 100%;
+  /* fill and stroke inherit, so the shape rules below can override them
+     without a descendant selector out-specifying their single class. */
+  fill: none;
+  stroke: currentcolor;
+  overflow: visible;
+}
+
+.thinking-orb :is(circle, ellipse) {
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.thinking-orb-globe {
+  stroke-width: 2.6;
+  stroke-linecap: round;
+  /* 20 dots around a 113.1 circumference, so the ring has no visible seam. */
+  stroke-dasharray: 0 5.655;
+  opacity: 0.5;
+}
+
+.thinking-orb-meridian {
+  stroke-width: 1.5;
+  opacity: 0.3;
+  transform: scaleX(0.4);
+}
+
+.thinking-orb-meridian.trailing {
+  opacity: 0.18;
+  transform: scaleX(0.82);
+}
+
+.thinking-orb-core {
+  fill: currentcolor;
+  stroke: none;
+  opacity: 0.85;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .thinking-orb-globe {
+    animation: thinking-orb-turn 7s linear infinite;
+  }
+
+  .thinking-orb-meridian {
+    animation: thinking-orb-sweep 2.6s ease-in-out infinite;
+  }
+
+  .thinking-orb-meridian.trailing {
+    animation-duration: 3.5s;
+    animation-delay: -1.15s;
+  }
+
+  .thinking-orb-core {
+    animation: thinking-orb-breathe 2.6s ease-in-out infinite;
+  }
+}
+
+@keyframes thinking-orb-turn {
   to {
     transform: rotate(360deg);
+  }
+}
+
+@keyframes thinking-orb-sweep {
+  0%,
+  100% {
+    opacity: 0.14;
+    transform: scaleX(1);
+  }
+
+  50% {
+    opacity: 0.42;
+    transform: scaleX(0.06);
+  }
+}
+
+@keyframes thinking-orb-breathe {
+  0%,
+  100% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.55;
+    transform: scale(1.22);
   }
 }
 

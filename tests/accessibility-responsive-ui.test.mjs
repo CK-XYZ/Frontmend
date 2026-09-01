@@ -67,6 +67,27 @@ test("implements a complete keyboard-operated viewport tab pattern", () => {
   assert.match(report, /aria-labelledby=\{labelledBy\}/);
 });
 
+/*
+ * The loop dialog advances itself and wraps, which is a continuous auto-update.
+ * WCAG 2.2.2 requires a mechanism to stop it, and the walkthrough is one of the
+ * first things a visitor sees - so the control, the pauses that hand it back,
+ * and the reduced-motion opt-out are locked here rather than left to review.
+ */
+test("keeps the self-advancing walkthrough stoppable", () => {
+  assert.match(app, /const HOW_IT_WORKS_DWELL = \d+;/);
+  assert.match(app, /aria-label=\{playing \? "Pause the walkthrough" : "Play the walkthrough"\}/);
+  assert.match(app, /onClick=\{\(\) => setPlaying\(\(running\) => !running\)\}/);
+  // Reaching the rail, by pointer or by Tab, is taking over.
+  assert.match(app, /onFocus=\{\(\) => setPlaying\(false\)\}/);
+  assert.match(app, /if \(query\.matches\) setPlaying\(false\);/);
+  // The exhibit's transients are never in the DOM for a still visitor.
+  assert.match(
+    app,
+    /\{!still && \(stage === "01" \|\| stage === "03"\) \? <span className="loop-demo-scan" \/> : null\}/,
+  );
+  assert.match(landingStyles, /\.loop-dialog-play\[data-playing="true"\] \.loop-dialog-play-fill\s*\{[^}]*animation: loop-dialog-dwell/s);
+});
+
 test("retains visible focus and 390 px touch and reflow safeguards", () => {
   assert.match(styles, /\.skip-link:focus\s*\{[^}]*transform: translateY\(0\)/s);
   assert.match(styles, /\.webmcp-status:focus-visible\s*\{[^}]*outline: 3px solid/s);

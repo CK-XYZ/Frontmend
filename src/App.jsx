@@ -9,6 +9,8 @@ import {
   Gauge,
   Info,
   MagnifyingGlass,
+  Pause,
+  Play,
   Pulse,
   Robot,
   SealCheck,
@@ -483,13 +485,16 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
  * demonstrates the loop rather than describing it - a real tablist over the
  * three handoffs, driving the same illustrative specimens the landing uses.
  *
- * It plays itself through once on open and then settles on the last handoff.
- * One pass, three beats, about 3.2s total: finite, under the 5s that WCAG
- * 2.2.2 governs, cancelled by any interaction, and never started under
- * prefers-reduced-motion. The mission inspector is still the reference for
+ * It advances itself, 4s a handoff, and wraps. That is a continuous auto-update
+ * and WCAG 2.2.2 governs it, so the mechanism it demands is real and visible:
+ * the play control in the dialog corner pauses it, its ring shows how much of
+ * the current dwell is left, and touching the rail at all - click, arrow key,
+ * or Tab into it - pauses too, because the visitor has taken over. It never
+ * starts under prefers-reduced-motion; pressing play there is a request, and
+ * requests are honoured. The mission inspector is still the reference for
  * workspace dialogs.
  */
-const HOW_IT_WORKS_BEAT = 1600;
+const HOW_IT_WORKS_DWELL = 4000;
 
 function HowItWorksDemo({ stage }) {
   if (stage === "01") return <SiteSpecimen state="unresolved" split />;
@@ -497,32 +502,103 @@ function HowItWorksDemo({ stage }) {
   return <VerifiedSpecimen />;
 }
 
+/*
+ * The instrument layer over the specimen.
+ *
+ * The specimen alone is a picture of a website; what the visitor came to see is
+ * Frontmend working on one. This layer adds the observation - capture brackets,
+ * a readout of what this handoff is looking at, and a sequence per step: a
+ * measuring sweep that ends in a finding, a cursor that lands on the element
+ * under inspection, and the same sweep run a second time as a before/after
+ * reveal.
+ *
+ * That last one is why the sweep belongs to two steps, moving identically in
+ * both. On 03 the unresolved specimen is stacked over the resolved one and
+ * clipped to the sweep's leading edge, so the line does not describe the repair
+ * - it carries it. Behind the line the burnt panel, the dim title and the
+ * finding flag are already the paper, the ink and the seal. Both layers are the
+ * same illustrative specimens the landing uses for before and after.
+ *
+ * The transients render only when motion is allowed. Their finished state is
+ * absence, and the motion contract forbids parking anything at opacity 0
+ * outside a keyframe, so under prefers-reduced-motion they are simply not in
+ * the DOM and the exhibit stands as a complete, still composition.
+ *
+ * Every readout describes the illustration, never a measurement: the frame is
+ * aria-hidden and the visible caption below it says so.
+ */
+const HOW_IT_WORKS_READOUTS = {
+  "01": "contrast · mobile + desktop",
+  "02": "rendered · 390 × 844",
+  "03": "re-run · contrast AA",
+};
+
+function HowItWorksInstruments({ stage, still }) {
+  return (
+    <span className="loop-demo-layer" aria-hidden="true">
+      {!still && stage === "03" ? (
+        <span className="loop-demo-before">
+          <SiteSpecimen state="unresolved" />
+        </span>
+      ) : null}
+      {!still && (stage === "01" || stage === "03") ? <span className="loop-demo-scan" /> : null}
+      {!still && stage === "02" ? (
+        <span className="loop-demo-cursor">
+          <svg viewBox="0 0 24 24" focusable="false">
+            <circle cx="12" cy="12" r="5" />
+            <path d="M12 0v6M12 18v6M0 12h6M18 12h6" />
+          </svg>
+        </span>
+      ) : null}
+      {!still && stage === "03" ? <span className="loop-demo-pulse" /> : null}
+      <span className="loop-demo-readout">{HOW_IT_WORKS_READOUTS[stage]}</span>
+    </span>
+  );
+}
+
 function HowItWorks({ onClose }) {
   const dialogRef = useDialogFocus(onClose);
   const tabRefs = useRef({});
   const [activeLabel, setActiveLabel] = useState(HOW_IT_WORKS_STEPS[0].label);
-  // Once the visitor takes over, the walkthrough never resumes on its own.
-  const [driving, setDriving] = useState(false);
+  const [playing, setPlaying] = useState(true);
+  const [stillPreferred, setStillPreferred] = useState(false);
   const activeIndex = Math.max(
     0,
     HOW_IT_WORKS_STEPS.findIndex((step) => step.label === activeLabel),
   );
   const active = HOW_IT_WORKS_STEPS[activeIndex];
 
+  /*
+   * Reduced motion stops the walkthrough rather than the dialog. It is read as
+   * live state, not once, so a visitor who changes the preference mid-session
+   * is obeyed; pressing play afterwards is a request and overrides it.
+   */
   useEffect(() => {
-    if (driving) return undefined;
-    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return undefined;
-    // A single pass: one timer per remaining handoff, nothing reschedules.
-    const timers = HOW_IT_WORKS_STEPS.slice(1).map((step, offset) =>
-      window.setTimeout(() => setActiveLabel(step.label), HOW_IT_WORKS_BEAT * (offset + 1)),
-    );
-    return () => timers.forEach((timer) => window.clearTimeout(timer));
-  }, [driving]);
+    const query = window.matchMedia?.("(prefers-reduced-motion: reduce)");
+    if (!query) return undefined;
+    const sync = () => {
+      setStillPreferred(query.matches);
+      if (query.matches) setPlaying(false);
+    };
+    sync();
+    query.addEventListener?.("change", sync);
+    return () => query.removeEventListener?.("change", sync);
+  }, []);
+
+  // One timer, re-armed by the handoff it lands on, so the loop wraps.
+  useEffect(() => {
+    if (!playing) return undefined;
+    const timer = window.setTimeout(() => {
+      const next = HOW_IT_WORKS_STEPS[(activeIndex + 1) % HOW_IT_WORKS_STEPS.length];
+      setActiveLabel(next.label);
+    }, HOW_IT_WORKS_DWELL);
+    return () => window.clearTimeout(timer);
+  }, [playing, activeIndex]);
 
   const moveTo = (index, { focus = true } = {}) => {
     const total = HOW_IT_WORKS_STEPS.length;
     const next = HOW_IT_WORKS_STEPS[(index + total) % total];
-    setDriving(true);
+    setPlaying(false);
     setActiveLabel(next.label);
     if (focus) tabRefs.current[next.label]?.focus();
   };
@@ -556,14 +632,38 @@ function HowItWorks({ onClose }) {
         aria-describedby="how-description"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button
-          className="loop-dialog-close"
-          type="button"
-          onClick={onClose}
-          aria-label="Close how it works"
-        >
-          <X size={18} weight="bold" />
-        </button>
+        <div className="loop-dialog-controls">
+          {/*
+           * WCAG 2.2.2's mechanism and the progress read-out in one control:
+           * the ring fills over the dwell, and empties when the walkthrough is
+           * paused, because resuming re-arms a whole one. The circle is keyed on
+           * the handoff so it restarts with each, while the button itself - and
+           * any focus on it - survives the change.
+           */}
+          <button
+            className="loop-dialog-play"
+            type="button"
+            data-playing={playing ? "true" : "false"}
+            onClick={() => setPlaying((running) => !running)}
+            aria-label={playing ? "Pause the walkthrough" : "Play the walkthrough"}
+          >
+            <span className="loop-dialog-play-ring" aria-hidden="true">
+              <svg viewBox="0 0 36 36" focusable="false">
+                <circle className="loop-dialog-play-track" cx="18" cy="18" r="16" />
+                <circle key={activeLabel} className="loop-dialog-play-fill" cx="18" cy="18" r="16" />
+              </svg>
+            </span>
+            {playing ? <Pause size={13} weight="fill" /> : <Play size={13} weight="fill" />}
+          </button>
+          <button
+            className="loop-dialog-close"
+            type="button"
+            onClick={onClose}
+            aria-label="Close how it works"
+          >
+            <X size={18} weight="bold" />
+          </button>
+        </div>
 
         <header className="loop-dialog-head">
           <div>
@@ -590,6 +690,12 @@ function HowItWorks({ onClose }) {
           role="tablist"
           aria-label="The three evidence handoffs"
           onKeyDown={onKeyDown}
+          /*
+           * Tabbing into the rail pauses too. Someone reading with a keyboard
+           * or a screen reader should not have the panel move out from under
+           * them, and reaching the rail is the moment they have taken over.
+           */
+          onFocus={() => setPlaying(false)}
         >
           {HOW_IT_WORKS_STEPS.map(({ label, title, Icon }, index) => {
             const selected = label === activeLabel;
@@ -631,19 +737,47 @@ function HowItWorks({ onClose }) {
           <div className="loop-dialog-detail">
             <h3>{active.title}</h3>
             <p>{active.detail}</p>
+            {/*
+             * The marks are standing constraints, not measurements, and three
+             * bare rows did not say so. The label names them, and it rhymes
+             * with the bounds strip above — the same claim, narrowed to one
+             * handoff.
+             */}
+            <p className="loop-dialog-marks-label">What holds at this step</p>
             <ul className="loop-dialog-marks">
               {active.marks.map((mark) => (
                 <li key={mark}>{mark}</li>
               ))}
             </ul>
           </div>
+          {/*
+           * The caption is visible, not sr-only. The specimen is a convincing
+           * little website, and an unlabelled one sitting inside a product
+           * dialog invites the reading that Frontmend measured somebody's page.
+           * Everyone gets the disclaimer, not only screen reader users.
+           */}
           <figure className="loop-dialog-exhibit">
-            <div className="loop-dialog-exhibit-frame" aria-hidden="true">
-              <HowItWorksDemo stage={active.label} />
+            {/*
+             * The capture brackets sit outside the frame, not on the specimen.
+             * Inside, they fought the flag and the seal for the same corner, and
+             * they belong to Frontmend rather than to the website being shown —
+             * registration marks around the exhibit, in our own space.
+             */}
+            <div className="loop-dialog-exhibit-stage">
+              <div className="loop-dialog-exhibit-frame" data-stage={active.label} aria-hidden="true">
+                <HowItWorksDemo stage={active.label} />
+                <HowItWorksInstruments stage={active.label} still={stillPreferred} />
+              </div>
+              <span className="loop-demo-corners" aria-hidden="true">
+                <span />
+                <span />
+                <span />
+                <span />
+              </span>
             </div>
-            <figcaption className="sr-only">
-              An illustration of one example contrast issue at this handoff. It is not a
-              measurement of a real website.
+            <figcaption className="loop-dialog-exhibit-note">
+              Illustration of one example contrast issue at this handoff — not a measurement of a
+              real website.
             </figcaption>
           </figure>
         </div>

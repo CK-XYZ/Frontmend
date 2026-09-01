@@ -1,5 +1,9 @@
 import { Component, lazy, Suspense, useMemo, useState } from "react";
+import { ThinkingOrb } from "./ThinkingOrb.jsx";
 import { useDialogFocus } from "./use-dialog-focus.js";
+
+const RETAINED_STATE_COPY =
+  "Your current audit and mission state remain retained while this interface loads.";
 
 class WorkspaceErrorBoundary extends Component {
   constructor(props) {
@@ -26,10 +30,10 @@ class WorkspaceErrorBoundary extends Component {
 function LoadingCopy({ label, titleId, descriptionId }) {
   return (
     <>
-      <span className="lazy-workspace-spinner" aria-hidden="true" />
+      <ThinkingOrb />
       <p className="kicker">Loading workspace</p>
       <h2 id={titleId}>Opening the {label}</h2>
-      <p id={descriptionId}>Your current audit and mission state remain retained while this interface loads.</p>
+      <p id={descriptionId}>{RETAINED_STATE_COPY}</p>
     </>
   );
 }
@@ -77,25 +81,64 @@ function InlineError({ label, onRetry }) {
   );
 }
 
-function DialogState({ label, error = false, onRetry, onExit, restoreFocusRef }) {
+/*
+ * The dialog loading state is the orb on its own.
+ *
+ * A lazy chunk arrives in a few hundred milliseconds, so the full card — kicker,
+ * headline, paragraph, close button — was furniture that appeared and vanished
+ * before anyone could read it, and it read as a heavier wait than the wait
+ * actually is. What is left is the orb over a dimmed page, fading in late enough
+ * that a fast load shows nothing at all. The copy still exists for assistive
+ * technology, and Escape or a click outside still closes it.
+ *
+ * Failure keeps the whole card: an error has something to say, and the reader
+ * has a decision to make.
+ */
+function DialogLoading({ label, onExit, restoreFocusRef }) {
+  const dialogRef = useDialogFocus(onExit, restoreFocusRef);
+  return (
+    <div className="modal-backdrop lazy-workspace-orb-backdrop" role="presentation" onMouseDown={onExit}>
+      <section
+        ref={dialogRef}
+        tabIndex="-1"
+        className="lazy-workspace-orb"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="lazy-workspace-state-title"
+        aria-describedby="lazy-workspace-state-description"
+        aria-live="polite"
+        aria-busy="true"
+        onMouseDown={(event) => event.stopPropagation()}
+      >
+        <ThinkingOrb />
+        <p className="sr-only" id="lazy-workspace-state-title">Opening the {label}</p>
+        <p className="sr-only" id="lazy-workspace-state-description">{RETAINED_STATE_COPY}</p>
+      </section>
+    </div>
+  );
+}
+
+function DialogError({ label, onRetry, onExit, restoreFocusRef }) {
   const dialogRef = useDialogFocus(onExit, restoreFocusRef);
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onExit}>
       <section
         ref={dialogRef}
         tabIndex="-1"
-        className={`lazy-workspace-state dialog ${error ? "error" : ""}`}
+        className="lazy-workspace-state dialog error"
         role="dialog"
         aria-modal="true"
         aria-labelledby="lazy-workspace-state-title"
         aria-describedby="lazy-workspace-state-description"
-        aria-live={error ? "assertive" : "polite"}
-        aria-busy={!error}
+        aria-live="assertive"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        {error
-          ? <ErrorCopy label={label} onRetry={onRetry} titleId="lazy-workspace-state-title" descriptionId="lazy-workspace-state-description" />
-          : <LoadingCopy label={label} titleId="lazy-workspace-state-title" descriptionId="lazy-workspace-state-description" />}
+        <ErrorCopy
+          label={label}
+          onRetry={onRetry}
+          titleId="lazy-workspace-state-title"
+          descriptionId="lazy-workspace-state-description"
+        />
         <button className="lazy-workspace-close" type="button" onClick={onExit}>Close</button>
       </section>
     </div>
@@ -119,12 +162,12 @@ export function LazyWorkspace({
     ? { ...componentProps, restoreFocusRef }
     : componentProps;
   const loading = variant === "dialog"
-    ? <DialogState label={label} onExit={onExit} restoreFocusRef={restoreFocusRef} />
+    ? <DialogLoading label={label} onExit={onExit} restoreFocusRef={restoreFocusRef} />
     : variant === "inline"
       ? <InlineLoading label={label} />
       : <PageLoading label={label} />;
   const renderError = () => variant === "dialog"
-    ? <DialogState label={label} error onRetry={retry} onExit={onExit} restoreFocusRef={restoreFocusRef} />
+    ? <DialogError label={label} onRetry={retry} onExit={onExit} restoreFocusRef={restoreFocusRef} />
     : variant === "inline"
       ? <InlineError label={label} onRetry={retry} />
       : <PageError label={label} onRetry={retry} />;
