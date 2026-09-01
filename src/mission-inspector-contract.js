@@ -1,3 +1,9 @@
+import {
+  createBuildDescriptor,
+  FRONTMEND_TOOL_COUNT,
+  shortBuildCommit,
+} from "./protocol-contract.js";
+
 const STAGES = Object.freeze([
   "landing",
   "measurement",
@@ -22,7 +28,7 @@ function bounded(value, maximum = 600) {
 
 function activeToolDetails(toolDetails, names) {
   const byName = new Map((Array.isArray(toolDetails) ? toolDetails : []).map((tool) => [tool?.name, tool]));
-  return names.slice(0, 21).map((name) => {
+  return names.slice(0, FRONTMEND_TOOL_COUNT).map((name) => {
     const tool = byName.get(name) ?? {};
     return {
       name: bounded(name, 80),
@@ -247,15 +253,23 @@ export function createMissionInspector({
 } = {}) {
   const supported = webMcp.supported === true;
   const names = Array.isArray(contextualToolNames)
-    ? [...new Set(contextualToolNames.filter((name) => typeof name === "string"))].slice(0, 21)
+    ? [...new Set(contextualToolNames.filter((name) => typeof name === "string"))].slice(0, FRONTMEND_TOOL_COUNT)
     : [];
   const projection = stageProjection({ audit, missionState, repairs, browserReview, checkpoint });
   const preferOptionalAdoption = missionState?.browserReview?.adoptionAvailable === true;
   const humanOnly = checkpoint?.authorityBoundary?.humanOnly
     ? checkpoint.authorityBoundary.humanOnly.slice(0, 6).map((item) => bounded(item, 240))
     : [...HUMAN_ONLY];
+  const build = createBuildDescriptor();
   return {
     schemaVersion: 1,
+    protocol: {
+      ...build,
+      displayCommit: shortBuildCommit(build),
+      missionRevision: Number.isInteger(checkpoint?.missionRevision)
+        ? checkpoint.missionRevision
+        : Number.isInteger(audit?.missionRevision) ? audit.missionRevision : 0,
+    },
     stage: STAGES.includes(projection.stage) ? projection.stage : "complete",
     mode: supported ? "webmcp" : "human",
     questions: {
@@ -279,7 +293,7 @@ export function createMissionInspector({
     registration: {
       status: bounded(webMcp.status ?? (supported ? "ready" : "unsupported"), 40),
       activeToolCount: names.length,
-      totalToolCount: Number.isInteger(webMcp.totalTools) ? webMcp.totalTools : 21,
+      totalToolCount: Number.isInteger(webMcp.totalTools) ? webMcp.totalTools : FRONTMEND_TOOL_COUNT,
       errors: Array.isArray(webMcp.errors) ? webMcp.errors.slice(0, 3).map((item) => bounded(item, 300)) : [],
     },
     humanFallback: {

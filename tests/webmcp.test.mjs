@@ -12,6 +12,7 @@ import {
   recordBrowserReviewCheck,
   withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
+import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 function findTool(tools, name) {
   const tool = tools.find((item) => item.name === name);
@@ -23,7 +24,9 @@ const TOOL_NAMES = [
   "start_site_audit",
   "check_site_audit_progress",
   "cancel_site_audit",
+  "get_mission_summary",
   "get_site_audit_results",
+  "get_evidence_chain",
   "open_browser_review",
   "record_browser_review_check",
   "get_assessment_receipt",
@@ -1189,7 +1192,7 @@ test("a withdrawn untouched handoff returns contextual WebMCP to read-only asses
   assert.ok(contextual.includes("get_assessment_receipt"));
   assert.equal(contextual.includes("open_browser_review"), false);
   assert.equal(contextual.includes("record_browser_review_check"), false);
-  assert.equal(createFrontmendTools(service).length, 21);
+  assert.equal(createFrontmendTools(service).length, FRONTMEND_TOOL_COUNT);
 });
 
 test("contextual WebMCP withholds a verification receipt until exact replay and browser guardrails complete", async () => {
@@ -1288,6 +1291,7 @@ test("contextual WebMCP withholds a verification receipt until exact replay and 
     },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "open_browser_review",
   ]);
@@ -1297,6 +1301,7 @@ test("contextual WebMCP withholds a verification receipt until exact replay and 
   assert.equal(opened.data.nextAction.browserTask.id, "fresh-browser-replay");
   assert.match(opened.data.nextAction.browserTask.boundary, /Report passed only/i);
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "record_browser_review_check",
   ]);
@@ -1312,6 +1317,7 @@ test("contextual WebMCP withholds a verification receipt until exact replay and 
   assert.equal(completed.data.nextAction.tool, "record_browser_review_check");
   assert.equal(completed.data.nextAction.input.checkId, "fresh-browser-guardrail-1");
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "record_browser_review_check",
   ]);
@@ -1326,6 +1332,7 @@ test("contextual WebMCP withholds a verification receipt until exact replay and 
   assert.equal(guarded.data.verificationComplete, true);
   assert.equal(guarded.data.nextAction.tool, "get_verification_receipt");
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "get_verification_receipt",
   ]);
@@ -1512,7 +1519,9 @@ test("repair preparation updates contextual tools without exposing person-only a
   });
   await service.startAudit({ url: "example.com", source: "human", mission: { focusAreas: ["seo"] } });
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "open_browser_review",
     "get_repository_fix_brief",
     "prepare_site_repair",
@@ -1527,7 +1536,9 @@ test("repair preparation updates contextual tools without exposing person-only a
   assert.equal(prepared.data.authority.approved, false);
   assert.equal(prepared.data.authority.deployed, false);
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
     "stage_site_repair",
@@ -1953,22 +1964,23 @@ test("contextual tool availability follows the visible audit and human review st
   };
   let diagnosticMissions = [];
 
-  assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit"]);
+  assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit", "get_mission_summary"]);
 
   audit = { id: "audit-1", status: "running", report: null };
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "check_site_audit_progress",
     "cancel_site_audit",
+    "get_mission_summary",
   ]);
 
   audit = { id: "audit-1", status: "failed", report: null };
-  assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit"]);
+  assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit", "get_mission_summary"]);
 
   audit = { id: "audit-1", status: "cancelled", report: null };
-  assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit"]);
+  assert.deepEqual(contextualFrontmendToolNames(service), ["start_site_audit", "get_mission_summary"]);
 
   audit = { id: "audit-1", status: "complete", report: { findings: [] } };
-  assert.deepEqual(contextualFrontmendToolNames(service), ["get_site_audit_results"]);
+  assert.deepEqual(contextualFrontmendToolNames(service), ["get_mission_summary", "get_site_audit_results"]);
 
   audit = {
     id: "audit-1",
@@ -1989,6 +2001,7 @@ test("contextual tool availability follows the visible audit and human review st
     },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "open_browser_review",
   ]);
@@ -1999,6 +2012,7 @@ test("contextual tool availability follows the visible audit and human review st
     report: { findings: [], documentProfile: { routes: ["/privacy"] } },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "start_related_page_audit",
     "start_site_exploration",
@@ -2006,6 +2020,7 @@ test("contextual tool availability follows the visible audit and human review st
 
   explorations = [{ id: "exploration-1" }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
     "start_related_page_audit",
     "start_site_exploration",
@@ -2019,7 +2034,9 @@ test("contextual tool availability follows the visible audit and human review st
     report: { findings: [{ id: "csp" }] },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
   ]);
@@ -2028,7 +2045,9 @@ test("contextual tool availability follows the visible audit and human review st
     repairPreparation: { findingId: "csp" },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
     "stage_site_repair",
@@ -2036,7 +2055,9 @@ test("contextual tool availability follows the visible audit and human review st
 
   repairs = [{ status: "changes-requested", deploymentAttestedAt: null }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
     "stage_site_repair",
@@ -2046,7 +2067,9 @@ test("contextual tool availability follows the visible audit and human review st
 
   repairs = [{ status: "approved", deploymentAttestedAt: null }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
     "stage_site_repair",
@@ -2057,7 +2080,9 @@ test("contextual tool availability follows the visible audit and human review st
   repairs = [{ status: "approved", deploymentAttestedAt: 1_777_000_000_000 }];
   audit.report.verification = { status: "resolved" };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "get_verification_receipt",
     "prepare_site_repair",
@@ -2073,14 +2098,18 @@ test("contextual tool availability follows the visible audit and human review st
     report: { findings: [{ id: "console", diagnosticEvidence: { kind: "console-errors" } }] },
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "open_diagnostic_mission",
     "prepare_site_repair",
   ]);
   diagnosticMissions = [{ findingId: "console", state: { state: "awaiting-diagnosis" } }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "submit_runtime_diagnosis",
     "record_diagnostic_blocker",
@@ -2088,20 +2117,26 @@ test("contextual tool availability follows the visible audit and human review st
   ]);
   diagnosticMissions = [{ findingId: "console", state: { state: "blocked" } }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "submit_runtime_diagnosis",
     "prepare_site_repair",
   ]);
   diagnosticMissions = [{ findingId: "console", state: { state: "ready-for-repair" } }];
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
   ]);
   audit.mission = { repairPreparation: { findingId: "console" } };
   assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
     "get_site_audit_results",
+    "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
     "stage_site_repair",
@@ -2130,7 +2165,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.deepEqual(registered, ["start_site_audit"]);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
-  assert.equal(snapshots.at(-1).totalTools, 21);
+  assert.equal(snapshots.at(-1).totalTools, FRONTMEND_TOOL_COUNT);
   dispose();
 });
 
@@ -2156,7 +2191,7 @@ test("registration can pause every contextual tool while authoritative state res
   assert.deepEqual(registered, []);
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 0);
-  assert.equal(snapshots.at(-1).totalTools, 21);
+  assert.equal(snapshots.at(-1).totalTools, FRONTMEND_TOOL_COUNT);
   dispose();
 });
 
@@ -2224,7 +2259,7 @@ test("registration surfaces structured browser errors as useful text", async () 
   await dispose.ready;
 
   assert.equal(snapshots.at(-1).status, "error");
-  assert.equal(snapshots.at(-1).totalTools, 21);
+  assert.equal(snapshots.at(-1).totalTools, FRONTMEND_TOOL_COUNT);
   assert.deepEqual(
     snapshots.at(-1).toolNames,
     TOOL_NAMES.filter((name) => name !== "check_site_audit_progress"),

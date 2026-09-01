@@ -1,5 +1,6 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
+import { createRuntimeBuildDescriptor } from "../src/protocol-contract.js";
 import {
   auditMissionSignature,
   auditMissionSnapshot,
@@ -519,6 +520,12 @@ export function createLocalAuditRuntime(options = {}) {
     prune();
 
     try {
+      if (requestUrl.pathname === "/api/version") {
+        if (request.method !== "GET") {
+          return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "The build descriptor is read-only."), 405);
+        }
+        return sendJson(response, 200, { ok: true, data: createRuntimeBuildDescriptor(process.env) });
+      }
       if (request.method === "POST" && requestUrl.pathname === "/api/audits") {
         assertSameOrigin(request);
         const input = await readBody(request);

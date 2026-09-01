@@ -1,4 +1,5 @@
 import { AuditError } from "./url-policy.js";
+import { createBuildDescriptor } from "./protocol-contract.js";
 
 const EVALUATED_STATUSES = new Set(["passed", "failed", "not-applicable"]);
 const TERMINAL_JOB_STATUSES = new Set(["complete", "failed", "cancelled"]);
@@ -1016,6 +1017,7 @@ export function repairVerificationReceiptMarkdown(aggregate) {
       "The aggregate receipt is available only after every reviewed row reaches a terminal outcome.",
     );
   }
+  const build = createBuildDescriptor();
   const lines = [
     "# Frontmend aggregate verification receipt",
     "",
@@ -1027,6 +1029,8 @@ export function repairVerificationReceiptMarkdown(aggregate) {
     `- Matrix reviewed by: ${aggregate.reviewedBy}`,
     `- Reviewed: ${new Date(aggregate.reviewedAt).toISOString()}`,
     `- Completed: ${new Date(aggregate.completedAt).toISOString()}`,
+    `- Frontmend build: ${build.commit ? `\`${build.commit}\`` : "unidentified"}`,
+    `- Protocol: v${build.protocolVersion}; tool library v${build.toolLibraryVersion}; ${build.toolCount} contracts`,
     "",
     "## Reviewed verification matrix",
     "",

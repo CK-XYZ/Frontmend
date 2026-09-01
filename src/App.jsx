@@ -37,6 +37,7 @@ import {
   contextualFrontmendToolNames,
   registerFrontmendTools,
 } from "./webmcp.js";
+import { FRONTMEND_TOOL_COUNT } from "./protocol-contract.js";
 
 const HERO_SPECIMENS = [
   {
@@ -305,7 +306,7 @@ const HUMAN_AUDIT_FOCUS_OPTIONS = AUDIT_FOCUS_AREAS.map((id) => ({
   id,
   ...AUDIT_FOCUS_COPY[id],
 }));
-const WEBMCP_TOOL_COUNT = 21;
+const WEBMCP_TOOL_COUNT = FRONTMEND_TOOL_COUNT;
 const loadReportWorkspace = () => import("./workspaces/ReportWorkspace.jsx");
 const loadWebMcpCapabilitySheet = () => import("./workspaces/WebMcpCapabilitySheet.jsx");
 

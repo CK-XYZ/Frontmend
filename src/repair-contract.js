@@ -1,4 +1,5 @@
 import { AuditError } from "./url-policy.js";
+import { createBuildDescriptor } from "./protocol-contract.js";
 import {
   reviewRepairVerificationImpact,
   selectRepairVerificationTargets,
@@ -2218,6 +2219,7 @@ export function verificationReceiptMarkdown(report) {
         comparable: verification.comparable,
         comparisonReason: verification.comparisonReason,
       }));
+  const build = createBuildDescriptor();
   const lines = [
     "# Frontmend verification receipt",
     "",
@@ -2238,6 +2240,8 @@ export function verificationReceiptMarkdown(report) {
     `- Repository implementation: ${verification.implementationReceipt ? `agent-reported receipt revision ${verification.implementationReceipt.revision ?? 1}` : "not recorded (optional)"}`,
     `- Deployment attested by site owner: ${Number.isFinite(verification.deploymentAttestedAt) ? new Date(verification.deploymentAttestedAt).toISOString() : "—"}`,
     `- Completed: ${Number.isFinite(verification.completedAt) ? new Date(verification.completedAt).toISOString() : "—"}`,
+    `- Frontmend build: ${build.commit ? `\`${build.commit}\`` : "unidentified"}`,
+    `- Protocol: v${build.protocolVersion}; tool library v${build.toolLibraryVersion}; ${build.toolCount} contracts`,
     "",
     "## Rule-scope outcomes",
     "",

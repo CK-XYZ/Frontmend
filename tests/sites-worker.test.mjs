@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import worker, { FrontmendAuditGate, FrontmendAuditJob } from "../worker/index.js";
 import { createLocalAuditRuntime } from "../worker/local-runtime.js";
 import { compareVerification } from "../src/repair-contract.js";
+import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
@@ -144,6 +145,24 @@ test("does not turn missing API or write requests into the app shell", async () 
     assert.equal(response.status, 404);
     assert.equal(calls, assetCalls);
   }
+});
+
+test("exposes a cache-safe public build descriptor without allocating an audit", async () => {
+  const response = await worker.fetch(new Request("https://example.test/api/version"), {
+    FRONTMEND_BUILD_COMMIT: "c".repeat(40),
+    FRONTMEND_BUILT_AT: "2026-09-01T04:00:00.000Z",
+    FRONTMEND_SOURCE_DIRTY: "false",
+    FRONTMEND_VERSION: { id: "worker-version-1", tag: "c".repeat(40) },
+  });
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(payload.data.app, "frontmend");
+  assert.equal(payload.data.commit, "c".repeat(40));
+  assert.equal(payload.data.buildIdentified, true);
+  assert.equal(payload.data.toolCount, FRONTMEND_TOOL_COUNT);
+  assert.equal(payload.data.deploymentVersion, "worker-version-1");
 });
 
 test("starts a same-origin public audit through the job boundary", async () => {
@@ -3127,7 +3146,13 @@ test("builds and emits the files required by Sites packaging", { timeout: 30_000
   await access(new URL("../dist/.openai/hosting.json", import.meta.url));
   const robots = await readFile(new URL("../dist/client/robots.txt", import.meta.url), "utf8");
   const server = await readFile(new URL("../dist/server/index.js", import.meta.url), "utf8");
+  const { stdout: expectedCommit } = await execFileAsync("git", ["rev-parse", "HEAD"], {
+    cwd: projectRoot,
+    windowsHide: true,
+  });
   assert.equal(robots, "User-agent: *\nAllow: /\n");
+  assert.match(server, new RegExp(expectedCommit.trim()));
+  assert.doesNotMatch(server, /__FRONTMEND_BUILD_COMMIT__/);
   assert.match(server, /FrontmendAuditJob/);
   assert.doesNotMatch(server, /from ["'].+url-policy/);
 });

@@ -36,7 +36,7 @@ The potential impact extends beyond frontend quality. The same pattern can suppo
 
 ## How We Used AI
 
-Frontmend does not hide an autonomous model behind the page. It exposes twenty-one semantic WebMCP tools so a compatible agent can participate in the same application state as a person.
+Frontmend does not hide an autonomous model behind the page. It exposes twenty-three semantic WebMCP tools so a compatible agent can participate in the same application state as a person. Every tool result carries protocol, tool-library, contextual toolset, and mission revisions; the always-available compact mission summary gives an agent one reliable recovery surface as tools change.
 
 The agent uses reasoning where it is valuable:
 
@@ -74,7 +74,8 @@ The intended live demonstration uses Codex inside a controlled target repository
 - A structured diagnostic blocker that preserves unavailable or conflicting browser/repository evidence instead of inviting an agent to invent a cause; the mission remains visibly incomplete and resumable.
 - A portable completion receipt that becomes available only when the retained assessment is complete and carries provider evidence beside separately attributed agent contributions without claiming repair, deployment, or resolution.
 - Explicit `prepare_site_repair` transition that freezes one finding before repair staging is eligible.
-- Twenty-one contextual WebMCP tools; only actions valid for the visible mission state are registered.
+- Twenty-three contextual WebMCP tools; only actions valid for the visible mission state are registered, while `get_mission_summary` and `get_evidence_chain` avoid replaying the full report for routine continuation and one-priority handoff.
+- Public build identity at `/api/version`, in the mission inspector, and in portable receipts makes the deployed commit, build time, protocol, and actual tool count independently checkable.
 - Source-safe repository fix briefs, bounded repository plans, human review/revision, and optional low-risk delegated-auto approval capped at three uses.
 - Agent implementation receipts that accept only relative files, check outcomes, a summary, and optional Git object ID.
 - Person-only deployment attestation and fresh rule-by-rule verification across every captured strategy, with deltas withheld when coverage is not comparable.
@@ -172,7 +173,7 @@ Official live Devpost data was fetched on 29 August 2026. Submissions close at `
 
 Judging fit:
 
-- **WebMCP Leverage:** twenty-one contextual semantic tools share the human application's service, validation, persistence, and state transitions; ordered browser-review tasks make the webpage an orchestrator of external agent capabilities rather than a static command catalogue.
+- **WebMCP Leverage:** twenty-three contextual semantic tools share the human application's service, validation, persistence, and state transitions; versioned envelopes, compact mission/evidence reads, and ordered browser-review tasks make the webpage an orchestrator of external agent capabilities rather than a static command catalogue.
 - **Execution:** a coherent human product, real asynchronous evidence, durable jobs, Worker/Durable Object runtime, human fallback, 287 passing tests, production build, and a no-upload Wrangler release gate.
 - **Potential Impact:** replaces a fragmented developer workflow with a durable, inspectable path from live evidence to repository work and fresh proof.
 - **Creativity & Ambition:** applies WebMCP to a multi-actor engineering protocol with changing authority rather than a single stateless agent action.

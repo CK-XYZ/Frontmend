@@ -231,6 +231,9 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.equal(receipt.priorities[0].evidenceRecords.repository.provenance, "agent-reported-repository");
   assert.equal(receipt.authority.sourceContentsReceived, false);
   assert.equal(receipt.authority.deploymentProved, false);
+  assert.equal(receipt.build.app, "frontmend");
+  assert.equal(receipt.build.protocolVersion, 1);
+  assert.equal(receipt.build.toolCount, 23);
 
   const markdown = assessmentReceiptMarkdown(receipt);
   assert.match(markdown, /^# Frontmend assessment receipt/m);
@@ -243,6 +246,8 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.match(markdown, /&lt;unsafe&gt;\\\|/);
   assert.match(markdown, /\\`window\.vendor\\`/);
   assert.match(markdown, /does not prove a repair, deployment, or resolution/);
+  assert.match(markdown, /Frontmend build: unidentified/);
+  assert.match(markdown, /Protocol: v1; tool library v2; 23 contracts/);
 });
 
 test("exports an honest complete receipt when the retained focus has no matching failures", () => {

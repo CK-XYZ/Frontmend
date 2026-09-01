@@ -7,6 +7,7 @@ import {
   contextualFrontmendToolNames,
   createFrontmendTools,
 } from "../src/webmcp.js";
+import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 const BASE_URL = "https://frontmend.eval";
 const TARGET_URL = "https://example.com/";
@@ -644,7 +645,7 @@ function comparableShape(result) {
 }
 
 export async function runMissionEvaluation() {
-  assert.equal(FULL_TOOL_NAMES.length, 21, "The full mission evaluation must not change the twenty-one-tool library.");
+  assert.equal(FULL_TOOL_NAMES.length, FRONTMEND_TOOL_COUNT, "The full mission evaluation must cover the versioned tool library.");
   const localController = fixtureController();
   const workerController = fixtureController();
   const local = await runAdapter(createLocalAdapter(localController), localController);

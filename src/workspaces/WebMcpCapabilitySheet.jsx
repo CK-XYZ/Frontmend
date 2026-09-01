@@ -85,6 +85,9 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
             <span>
               {activeTools.length} of {inspector.registration.totalToolCount} contracts
             </span>
+            <span>
+              protocol v{inspector.protocol.protocolVersion} · {inspector.protocol.displayCommit}
+            </span>
           </p>
           <button
             className="inspector-close"

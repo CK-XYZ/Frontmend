@@ -64,8 +64,8 @@ test("restores the stable audit before mounting deferred UI and keeps retries pr
   assert.match(report, /resetKey=\{`\$\{report\.auditId\}:verification:/);
 });
 
-test("retains complete Human mode and the twenty-one contextual WebMCP contracts", () => {
-  assert.match(app, /const WEBMCP_TOOL_COUNT = 21/);
+test("retains complete Human mode and the versioned contextual WebMCP contracts", () => {
+  assert.match(app, /const WEBMCP_TOOL_COUNT = FRONTMEND_TOOL_COUNT/);
   assert.match(app, /contextualFrontmendToolNames\(auditService\)/);
   assert.match(app, /registerFrontmendTools\(/);
   assert.match(report, /function HumanBrowserReviewForm\(/);
@@ -73,4 +73,5 @@ test("retains complete Human mode and the twenty-one contextual WebMCP contracts
   assert.match(repairPolicy, /function RepairPolicyControl\(/);
   assert.match(inspector, /createFrontmendTools\(auditService\)/);
   assert.match(inspector, /createMissionInspector\(/);
+  assert.match(inspector, /protocol v\{inspector\.protocol\.protocolVersion\}/);
 });

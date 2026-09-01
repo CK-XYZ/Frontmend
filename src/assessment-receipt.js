@@ -2,6 +2,7 @@ import { auditMissionSnapshot, deriveAuditMissionState } from "./audit-mission-c
 import { browserReviewSnapshot } from "./browser-review-contract.js";
 import { diagnosticEvidenceChain, diagnosticMissionSnapshot } from "./diagnostic-contract.js";
 import { AuditError } from "./url-policy.js";
+import { createBuildDescriptor } from "./protocol-contract.js";
 
 const MAX_PRIORITIES = 5;
 
@@ -66,6 +67,7 @@ export function createAssessmentReceipt({
   browserReview: browserReviewValue = null,
   repairs = [],
   explorations = [],
+  build = createBuildDescriptor(),
 }) {
   if (!report?.auditId || !report?.engine?.provider) {
     throw new AuditError(
@@ -137,6 +139,7 @@ export function createAssessmentReceipt({
   });
   return {
     schemaVersion: 1,
+    build: createBuildDescriptor(build),
     receiptId: `assessment:${text(report.auditId, 80)}:v1`,
     auditId: text(report.auditId, 80),
     target: text(report.url, 2_048),
@@ -219,6 +222,8 @@ export function assessmentReceiptMarkdown(receipt) {
     `- Final URL: ${markdownText(receipt.finalUrl, 2_048)}`,
     `- Audit ID: \`${markdownText(receipt.auditId, 80)}\``,
     `- Completed: ${timestamp(receipt.completedAt)}`,
+    `- Frontmend build: ${receipt.build?.commit ? `\`${markdownText(receipt.build.commit, 40)}\`` : "unidentified"}`,
+    `- Protocol: v${Number.isInteger(receipt.build?.protocolVersion) ? receipt.build.protocolVersion : 1}; tool library v${Number.isInteger(receipt.build?.toolLibraryVersion) ? receipt.build.toolLibraryVersion : 1}; ${Number.isInteger(receipt.build?.toolCount) ? receipt.build.toolCount : "unknown"} contracts`,
     `- Evidence mode: ${markdownText(receipt.engine?.mode, 80)}`,
     `- Provider: ${markdownText(receipt.engine?.provider, 120)}`,
     "",

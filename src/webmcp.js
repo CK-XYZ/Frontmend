@@ -8,6 +8,7 @@ import {
 import {
   DIAGNOSTIC_BLOCKER_REASONS,
   diagnosticEvidenceChain,
+  diagnosticMissionSnapshot,
   findingRequiresDiagnosticMission,
 } from "./diagnostic-contract.js";
 import {
@@ -25,6 +26,11 @@ import {
 } from "./browser-review-contract.js";
 import { repairVerificationReceiptMarkdown } from "./verification-impact-contract.js";
 import { observedRouteRecords } from "./route-contract.js";
+import {
+  FRONTMEND_PROTOCOL_VERSION,
+  FRONTMEND_TOOL_COUNT,
+  FRONTMEND_TOOL_LIBRARY_VERSION,
+} from "./protocol-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 const expectedMissionRevisionProperty = {
@@ -122,6 +128,136 @@ function coherentResultsForTool(service, auditId) {
     : service.getResults(auditId);
 }
 
+const TOOL_CAPABILITIES = Object.freeze({
+  start_site_audit: "public-url-selection",
+  check_site_audit_progress: "progress-reading",
+  get_mission_summary: "mission-reading",
+  get_site_audit_results: "full-evidence-reading",
+  get_evidence_chain: "evidence-reading",
+  open_browser_review: "rendered-browser-inspection",
+  record_browser_review_check: "rendered-browser-inspection",
+  open_diagnostic_mission: "repository-diagnosis",
+  submit_runtime_diagnosis: "repository-diagnosis",
+  record_diagnostic_blocker: "repository-diagnosis",
+  start_site_exploration: "bounded-site-measurement",
+  stage_site_repair: "repository-repair-planning",
+  revise_site_repair: "repository-repair-planning",
+  record_repository_implementation: "repository-implementation",
+  start_repair_verification: "fresh-public-verification",
+});
+
+function activeAuditId(service, result, input) {
+  const data = result?.data;
+  const candidate = data?.auditId ?? data?.id ?? input?.auditId ?? service?.getActiveAudit?.()?.id;
+  return typeof candidate === "string" && candidate ? candidate : null;
+}
+
+function safeCheckpoint(service, auditId, result) {
+  const supplied = result?.data?.missionCheckpoint ?? result?.error?.details?.missionCheckpoint;
+  if (supplied && typeof supplied === "object") return supplied;
+  if (!auditId) return null;
+  try {
+    return service?.getMissionCheckpoint?.(auditId) ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function protocolEnvelope(service, result, input) {
+  const auditId = activeAuditId(service, result, input);
+  const checkpoint = safeCheckpoint(service, auditId, result);
+  const activeAudit = service?.getActiveAudit?.();
+  const missionRevision = Number.isInteger(checkpoint?.missionRevision)
+    ? checkpoint.missionRevision
+    : Number.isInteger(activeAudit?.missionRevision) ? activeAudit.missionRevision : 0;
+  const action = result?.data?.nextAction
+    ?? result?.data?.recommendedNextAction
+    ?? checkpoint?.action
+    ?? null;
+  let activeTools = [];
+  try {
+    activeTools = contextualFrontmendToolNames(service);
+  } catch {
+    activeTools = [];
+  }
+  return {
+    protocolVersion: FRONTMEND_PROTOCOL_VERSION,
+    toolLibraryVersion: FRONTMEND_TOOL_LIBRARY_VERSION,
+    toolCount: FRONTMEND_TOOL_COUNT,
+    toolsetRevision: missionRevision,
+    missionRevision,
+    workspacePath: result?.data?.workspacePath
+      ?? (auditId ? `/audits/${encodeURIComponent(auditId)}` : "/"),
+    activeToolCount: activeTools.length,
+    next: action?.tool
+      ? {
+          tool: action.tool,
+          requiredCapability: checkpoint?.requiredCapability
+            ?? TOOL_CAPABILITIES[action.tool]
+            ?? null,
+        }
+      : null,
+  };
+}
+
+function compactPriority(priority) {
+  return {
+    rank: priority.rank,
+    findingId: priority.findingId,
+    title: priority.title,
+    severity: priority.severity,
+    category: priority.category,
+    relationship: priority.relationship,
+    evidenceState: priority.evidenceState,
+    occurrenceCount: priority.occurrenceCount,
+    affectedStrategies: [...(priority.affectedStrategies ?? [])],
+    nextAction: priority.nextAction ?? null,
+  };
+}
+
+async function missionProjectionForTool(service, requestedAuditId) {
+  const remembered = service?.getActiveAudit?.() ?? null;
+  const auditId = requestedAuditId === undefined
+    ? remembered?.id ?? null
+    : requiredString(requestedAuditId, "auditId", 80);
+  if (!auditId) return { audit: null, report: null, missionState: null, checkpoint: null };
+  let audit = remembered?.id === auditId ? remembered : null;
+  if (!audit || audit.status !== "complete") audit = await service.getAudit(auditId);
+  if (audit.status !== "complete") {
+    return {
+      audit,
+      report: null,
+      missionState: null,
+      checkpoint: audit.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId) ?? null,
+    };
+  }
+  const report = await coherentResultsForTool(service, auditId);
+  audit = service?.getActiveAudit?.()?.id === auditId ? service.getActiveAudit() : audit;
+  const mission = auditMissionSnapshot(audit.mission);
+  const diagnosticMissions = service?.getDiagnosticMissions?.(auditId) ?? [];
+  const repairs = service?.getRepairs?.(auditId) ?? [];
+  const browserReview = service?.getBrowserReview?.(auditId) ?? null;
+  const explorations = service?.getSiteExplorations?.(auditId) ?? [];
+  return {
+    audit,
+    report,
+    mission,
+    diagnosticMissions,
+    repairs,
+    browserReview,
+    explorations,
+    missionState: deriveAuditMissionState({
+      report,
+      mission,
+      diagnosticMissions,
+      repairs,
+      browserReview,
+      explorations,
+    }),
+    checkpoint: report.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId) ?? null,
+  };
+}
+
 async function safely(operation) {
   try {
     return { ok: true, data: await operation() };
@@ -174,12 +310,14 @@ function registrationErrorMessage(error) {
 
 export function contextualFrontmendToolNames(service) {
   const audit = service?.getActiveAudit?.();
-  if (!audit || ["failed", "cancelled"].includes(audit.status)) return ["start_site_audit"];
+  if (!audit || ["failed", "cancelled"].includes(audit.status)) {
+    return ["start_site_audit", "get_mission_summary"];
+  }
   if (audit.status !== "complete") {
-    return ["check_site_audit_progress", "cancel_site_audit"];
+    return ["check_site_audit_progress", "cancel_site_audit", "get_mission_summary"];
   }
 
-  const available = new Set(["get_site_audit_results"]);
+  const available = new Set(["get_mission_summary", "get_site_audit_results"]);
   const browserReview = service?.getBrowserReview?.(audit.id) ?? null;
   const findings = assessmentFindings(audit.report, browserReview);
   const repairs = service?.getRepairs?.(audit.id) ?? [];
@@ -228,6 +366,7 @@ export function contextualFrontmendToolNames(service) {
     available.add("get_repository_fix_brief");
     available.add("prepare_site_repair");
   }
+  if (findings.length) available.add("get_evidence_chain");
   if (repairs.length) available.add("get_repair_workspace");
   if (
     !browserReview
@@ -463,6 +602,106 @@ export function createFrontmendTools(service) {
       },
     }),
     tool({
+      name: "get_mission_summary",
+      title: "Get mission summary",
+      description:
+        "Return the small stable Frontmend control-plane view: audit identity and status, protocol and mission revisions, retained intent, assessment truth, up to three priorities, completion criteria, blocker, capability requirement, and exact next action. Use this for routine continuation and stale-tool recovery; request the full results only when detailed measurement is actually needed.",
+      inputSchema: {
+        ...emptySchema,
+        properties: {
+          auditId: { type: "string", minLength: 1, maxLength: 80, description: "Optional audit ID; defaults to the visible audit." },
+        },
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: false },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId"]);
+        const projection = await missionProjectionForTool(service, value.auditId);
+        if (!projection.audit) {
+          return {
+            auditId: null,
+            status: "idle",
+            workspacePath: "/",
+            missionCheckpoint: null,
+            mission: null,
+            assessment: {
+              measurementComplete: false,
+              assessmentComplete: false,
+              status: "not-started",
+              blocker: null,
+            },
+            topPriorities: [],
+            completionCriteria: ["Choose one public HTTP or HTTPS target."],
+            requiredCapability: "public-url-selection",
+            nextAction: {
+              tool: "start_site_audit",
+              input: {},
+              reason: "No retained audit mission is active.",
+            },
+          };
+        }
+        const { audit, missionState, checkpoint } = projection;
+        if (audit.status !== "complete") {
+          return {
+            auditId: audit.id,
+            status: audit.status,
+            phase: audit.phase,
+            phaseLabel: audit.phaseLabel,
+            progress: audit.progress,
+            workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
+            missionCheckpoint: checkpoint,
+            mission: audit.mission ? auditMissionSnapshot(audit.mission) : null,
+            assessment: {
+              measurementComplete: false,
+              assessmentComplete: false,
+              status: "measuring",
+              blocker: null,
+            },
+            topPriorities: [],
+            completionCriteria: checkpoint?.completionCriteria ?? ["Retain a completed public evidence report."],
+            requiredCapability: checkpoint?.requiredCapability ?? "progress-reading",
+            nextAction: checkpoint?.action ?? {
+              tool: "check_site_audit_progress",
+              input: { auditId: audit.id },
+              reason: "The bounded measurement job is still active.",
+            },
+          };
+        }
+        return {
+          auditId: audit.id,
+          status: audit.status,
+          workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
+          missionCheckpoint: checkpoint,
+          mission: {
+            intent: projection.mission.intent,
+            requestedBy: projection.mission.requestedBy,
+            focusAreas: [...projection.mission.focusAreas],
+            scope: projection.mission.scope,
+            routeLimit: projection.mission.routeLimit,
+          },
+          assessment: {
+            measurementComplete: missionState.measurementComplete,
+            assessmentComplete: missionState.assessmentComplete,
+            status: missionState.assessmentStatus ?? missionState.status,
+            blocker: missionState.blocker ?? missionState.siteScope?.blockedReason ?? null,
+            siteScope: {
+              requested: missionState.siteScope?.requested === true,
+              status: missionState.siteScope?.status ?? "not-requested",
+              pagesComplete: missionState.siteScope?.pagesComplete ?? 0,
+              pagesRequested: missionState.siteScope?.pagesRequested ?? 0,
+            },
+          },
+          topPriorities: missionState.priorities.slice(0, 3).map(compactPriority),
+          completionCriteria: checkpoint?.completionCriteria ?? [],
+          requiredCapability: checkpoint?.requiredCapability
+            ?? TOOL_CAPABILITIES[missionState.nextAction?.tool]
+            ?? null,
+          nextAction: missionState.nextAction ?? checkpoint?.action ?? null,
+          authorityBoundary: checkpoint?.authorityBoundary ?? null,
+        };
+      },
+    }),
+    tool({
       name: "get_site_audit_results",
       title: "Get site audit results",
       description:
@@ -531,6 +770,131 @@ export function createFrontmendTools(service) {
           recommendedNextAction: missionState.nextAction
             ? { tool: missionState.nextAction.tool, ...missionState.nextAction.input, reason: missionState.nextAction.reason }
             : null,
+        };
+      },
+    }),
+    tool({
+      name: "get_evidence_chain",
+      title: "Get one evidence chain",
+      description:
+        "Return one retained priority as a compact provider, browser, repository, and planned-verification chain. Use this for a coding-agent handoff when the full report is unnecessary. The response keeps provenance explicit, includes only repository-relative locations and bounded checks, and never returns source contents, patches, credentials, or approval/deployment claims.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, maxLength: 80, description: "Optional completed audit ID; defaults to the visible audit." },
+          findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact retained priority ID from get_mission_summary or full results." },
+        },
+        required: ["findingId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "findingId"]);
+        const findingId = requiredString(value.findingId, "findingId", 160);
+        const projection = await missionProjectionForTool(service, value.auditId);
+        if (!projection.audit || projection.audit.status !== "complete") {
+          throw new AuditError("AUDIT_NOT_COMPLETE", "A completed retained assessment is required before reading an evidence chain.");
+        }
+        const priority = projection.missionState.priorities.find((item) => item.findingId === findingId);
+        if (!priority) {
+          throw new AuditError(
+            "EVIDENCE_CHAIN_NOT_FOUND",
+            "Choose an exact retained priority ID returned by the current mission summary.",
+          );
+        }
+        const diagnostic = projection.diagnosticMissions
+          .find((item) => item?.findingId === findingId);
+        const retainedDiagnostic = diagnostic ? diagnosticMissionSnapshot(diagnostic) : null;
+        const diagnosis = retainedDiagnostic?.diagnosis ?? null;
+        const provider = priority.evidenceRecords?.provider ?? null;
+        const browser = priority.evidenceRecords?.browser ?? null;
+        const chain = retainedDiagnostic
+          ? retainedDiagnostic.evidenceChain ?? diagnosticEvidenceChain(retainedDiagnostic)
+          : {
+              schemaVersion: 1,
+              status: priority.diagnosticMissionRequired ? "awaiting-diagnosis" : "measured-evidence-retained",
+              stages: [
+                {
+                  id: "measurement",
+                  label: "Measured symptom",
+                  state: provider ? "retained" : "not-observed",
+                  provenance: provider ? "measured-provider" : null,
+                  itemCount: provider?.findings?.length ?? 0,
+                },
+                {
+                  id: "browser",
+                  label: "Rendered observation",
+                  state: browser ? "retained" : "not-observed",
+                  provenance: browser?.provenance ?? null,
+                  itemCount: browser?.findings?.length ?? 0,
+                },
+                {
+                  id: "repository",
+                  label: "Repository ownership",
+                  state: priority.diagnosticMissionRequired ? "required" : "not-required",
+                  provenance: null,
+                  itemCount: 0,
+                },
+                {
+                  id: "verification",
+                  label: "Planned checks",
+                  state: priority.diagnosticMissionRequired ? "required" : "available-after-review",
+                  provenance: null,
+                  itemCount: 0,
+                },
+              ],
+            };
+        return {
+          auditId: projection.audit.id,
+          finding: {
+            ...compactPriority(priority),
+            focusAreas: [...(priority.focusAreas ?? [])],
+            evidence: priority.evidence,
+            relationshipReason: priority.relationshipReason,
+            unresolvedRequirement: priority.unresolvedRequirement ?? null,
+          },
+          evidenceChain: chain,
+          evidenceSources: {
+            provider: provider
+              ? {
+                  provider: provider.provider,
+                  ruleId: provider.ruleId,
+                  strategies: [...new Set((provider.findings ?? []).map((item) => item.strategy).filter(Boolean))],
+                  itemCount: provider.findings?.length ?? 0,
+                }
+              : null,
+            browser: browser
+              ? {
+                  provenance: browser.provenance,
+                  reviewId: browser.reviewId ?? null,
+                  summary: browser.summary ?? null,
+                  itemCount: browser.findings?.length ?? 0,
+                }
+              : null,
+            repository: retainedDiagnostic
+              ? {
+                  missionId: retainedDiagnostic.id,
+                  status: chain.status,
+                  sourceLocations: (diagnosis?.sourceLocations ?? []).map((location) => ({
+                    file: location.file,
+                    line: location.line ?? null,
+                    symbol: location.symbol ?? null,
+                    reason: location.reason,
+                  })),
+                  verificationChecks: [...(diagnosis?.verificationChecks ?? [])],
+                  confidence: diagnosis?.confidence ?? null,
+                }
+              : null,
+          },
+          missionCheckpoint: projection.checkpoint,
+          nextAction: priority.nextAction ?? projection.missionState.nextAction ?? null,
+          authority: {
+            sourceContentsReceived: false,
+            repairApprovalProved: false,
+            implementationProved: false,
+            deploymentProved: false,
+          },
         };
       },
     }),
@@ -1627,7 +1991,10 @@ export function createFrontmendTools(service) {
             // Activity telemetry never changes the semantic tool result.
           }
         }
-        return result;
+        return {
+          ...result,
+          protocol: protocolEnvelope(service, result, input),
+        };
       },
     };
   });

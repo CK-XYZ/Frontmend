@@ -12,6 +12,11 @@ function frontmendLocalAudit() {
 }
 
 export default defineConfig({
+  define: {
+    __FRONTMEND_BUILD_COMMIT__: JSON.stringify(process.env.FRONTMEND_BUILD_COMMIT ?? null),
+    __FRONTMEND_BUILT_AT__: JSON.stringify(process.env.FRONTMEND_BUILT_AT ?? null),
+    __FRONTMEND_SOURCE_DIRTY__: JSON.stringify(process.env.FRONTMEND_SOURCE_DIRTY === "true"),
+  },
   build: {
     outDir: "dist/client",
   },

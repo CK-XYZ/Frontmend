@@ -10,13 +10,14 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build && bun scripts/prepare-sites-build.mjs",
+    "build": "bun scripts/build.mjs",
     "eval:mission": "bun scripts/eval-mission.mjs",
+    "smoke:version": "bun scripts/smoke-version.mjs",
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",
     "test:contracts": "node --test tests/audit-service.test.mjs tests/pagespeed-provider.test.mjs tests/route-contract.test.mjs tests/site-exploration-contract.test.mjs tests/repair-contract.test.mjs tests/webmcp.test.mjs",
     "test:sites": "node --test tests/sites-worker.test.mjs",
-    "deploy": "bun run build && wrangler deploy --config wrangler.jsonc"
+    "deploy": "bun scripts/deploy.mjs"
   },
   "dependencies": {
     "@phosphor-icons/react": "^2.1.10",

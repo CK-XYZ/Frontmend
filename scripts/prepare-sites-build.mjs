@@ -8,6 +8,13 @@ const dist = path.join(root, "dist");
 const index = path.join(dist, "client", "index.html");
 const worker = path.join(root, "worker", "index.js");
 const hosting = path.join(root, ".openai", "hosting.json");
+const commit = process.env.FRONTMEND_BUILD_COMMIT;
+const builtAt = process.env.FRONTMEND_BUILT_AT;
+const sourceDirty = process.env.FRONTMEND_SOURCE_DIRTY === "true";
+
+if (!/^[0-9a-f]{40}$/i.test(commit ?? "") || Number.isNaN(new Date(builtAt ?? "").getTime())) {
+  throw new Error("Missing the verified Frontmend build identity. Run the complete build script.");
+}
 
 for (const file of [index, worker, hosting]) {
   if (!existsSync(file)) throw new Error(`Missing Sites build input: ${file}`);
@@ -21,6 +28,11 @@ const result = await Bun.build({
   format: "esm",
   minify: false,
   write: false,
+  define: {
+    __FRONTMEND_BUILD_COMMIT__: JSON.stringify(commit.toLowerCase()),
+    __FRONTMEND_BUILT_AT__: JSON.stringify(new Date(builtAt).toISOString()),
+    __FRONTMEND_SOURCE_DIRTY__: JSON.stringify(sourceDirty),
+  },
 });
 if (!result.success) {
   throw new AggregateError(result.logs, "Could not bundle the Frontmend server artifact.");

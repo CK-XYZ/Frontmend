@@ -4,6 +4,7 @@ import {
   MISSION_INSPECTOR_STAGES,
   createMissionInspector,
 } from "../src/mission-inspector-contract.js";
+import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 const completeAudit = {
   id: "audit-1",
@@ -25,7 +26,7 @@ function inspector(overrides = {}) {
         additionalProperties: false,
       },
     }],
-    webMcp: { supported: true, status: "ready", totalTools: 21 },
+    webMcp: { supported: true, status: "ready", totalTools: FRONTMEND_TOOL_COUNT },
     ...overrides,
   });
 }
@@ -34,7 +35,7 @@ test("answers all five mission questions for landing and complete Human mode", (
   const value = inspector({
     audit: null,
     contextualToolNames: [],
-    webMcp: { supported: false, status: "unsupported", totalTools: 21 },
+    webMcp: { supported: false, status: "unsupported", totalTools: FRONTMEND_TOOL_COUNT },
   });
   assert.equal(value.stage, "landing");
   assert.equal(value.mode, "human");
@@ -45,6 +46,9 @@ test("answers all five mission questions for landing and complete Human mode", (
   assert.equal(value.questions.whatRemainsHumanOnly.length, 4);
   assert.equal(value.humanFallback.complete, true);
   assert.match(value.humanFallback.message, /complete human workflow/i);
+  assert.equal(value.protocol.protocolVersion, 1);
+  assert.equal(value.protocol.toolCount, FRONTMEND_TOOL_COUNT);
+  assert.equal(value.protocol.displayCommit, "unidentified build");
 });
 
 test("projects the measurement state from the authoritative audit job", () => {

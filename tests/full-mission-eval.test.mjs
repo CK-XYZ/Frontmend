@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { runMissionEvaluation } from "../scripts/eval-mission.mjs";
+import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 test("executes the complete deterministic mission protocol across local and Worker adapters", { timeout: 30_000 }, async () => {
   const result = await runMissionEvaluation();
@@ -8,7 +9,7 @@ test("executes the complete deterministic mission protocol across local and Work
   assert.equal(result.evidenceMode, "deterministic-offline-protocol");
   assert.equal(result.liveBrowserProof, false);
   assert.equal(result.deploymentPerformed, false);
-  assert.equal(result.toolCount, 21);
+  assert.equal(result.toolCount, FRONTMEND_TOOL_COUNT);
   assert.deepEqual(result.adapters.map((adapter) => [adapter.adapter, adapter.status]), [
     ["local", "passed"],
     ["worker", "passed"],
