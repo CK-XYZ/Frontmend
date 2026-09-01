@@ -468,6 +468,14 @@ export function contextualFrontmendToolNames(service) {
     available.add("start_repair_verification");
   }
 
+  // The shared mission projection owns the exact next action. Keep that action
+  // discoverable even if a secondary raw-state guard has not learned a new
+  // terminal or recovery state yet; the tool's application validation remains
+  // authoritative when it executes.
+  if (missionState?.nextAction?.tool) {
+    available.add(missionState.nextAction.tool);
+  }
+
   return createFrontmendTools(service)
     .map((toolDefinition) => toolDefinition.name)
     .filter((name) => available.has(name));

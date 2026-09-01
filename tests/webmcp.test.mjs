@@ -12,6 +12,7 @@ import {
   recordBrowserReviewCheck,
   withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
+import { deriveAuditMissionState } from "../src/audit-mission-contract.js";
 import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 function findTool(tools, name) {
@@ -948,6 +949,9 @@ test("result, receipt, and repository-brief tools derive from one coherent resto
   assert.equal(result.data.browserReview.state.status, "complete");
   assert.equal(result.data.priorities[0].evidenceState, "diagnosis-contributed");
   assert.equal(result.data.missionState.assessmentComplete, true);
+  assert.equal(result.data.missionState.nextAction, null);
+  assert.ok(contextualFrontmendToolNames(service).includes("get_assessment_receipt"));
+  assert.equal(contextualFrontmendToolNames(service).includes("submit_runtime_diagnosis"), false);
 
   service.reset();
   startRevision = 3;
@@ -974,6 +978,53 @@ test("result, receipt, and repository-brief tools derive from one coherent resto
   assert.equal(brief.ok, true);
   assert.equal(brief.data.missionCheckpoint.missionRevision, 3);
   assert.equal(service.getBrowserReview(auditId).state.status, "complete");
+});
+
+test("contextual WebMCP always publishes the authoritative mission action", () => {
+  const auditId = "mission-action-invariant";
+  const mission = {
+    schemaVersion: 1,
+    intent: "assess",
+    focusAreas: ["accessibility"],
+    maxPriorities: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  const report = {
+    auditId,
+    engine: { mode: "live-lighthouse", provider: "PageSpeed Insights" },
+    findings: [{
+      id: "mobile-color-contrast",
+      title: "Text contrast is too low",
+      severity: "medium",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      evidence: "The retained foreground and background colours do not meet the measured threshold.",
+      repair: "Adjust the owned colour token after diagnosis.",
+      diagnosticEvidence: { kind: "contrast-nodes" },
+      source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+    }],
+    viewports: [{ id: "mobile", scores: { accessibility: 97 } }],
+  };
+  const browserReview = completedBrowserReview({ auditId, mission });
+  const diagnosticMissions = [{
+    id: "diagnostic-1",
+    findingId: "mobile-color-contrast",
+    state: { state: "diagnosis-recording" },
+  }];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", mission, report }),
+    getBrowserReview: () => browserReview,
+    getRepairs: () => [],
+    getDiagnosticMissions: () => diagnosticMissions,
+    getSiteExplorations: () => [],
+  };
+  const state = deriveAuditMissionState({ report, mission, browserReview, diagnosticMissions });
+  const contextual = contextualFrontmendToolNames(service);
+
+  assert.equal(state.nextAction.tool, "submit_runtime_diagnosis");
+  assert.ok(contextual.includes(state.nextAction.tool));
 });
 
 test("browser review tools turn one exact browser task at a time into attributed evidence", async () => {

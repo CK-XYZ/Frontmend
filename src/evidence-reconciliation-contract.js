@@ -157,6 +157,14 @@ function relationshipFor({ provider, browser, repository, verification }) {
       nextAction: { tool: "start_repair_verification", reason: "Fresh public evidence is required before a resolution claim." },
     };
   }
+  if (repository?.state === "ready-for-repair") {
+    return {
+      relationship: "diagnosis-contributed",
+      reason: "Bounded browser and repository evidence plus planned checks were contributed without replacing the original sources.",
+      unresolvedRequirement: null,
+      nextAction: null,
+    };
+  }
   const conflict = Boolean(provider && browser?.outcome === "passed");
   if (conflict) {
     return {
@@ -164,14 +172,6 @@ function relationshipFor({ provider, browser, repository, verification }) {
       reason: "The evidence-led browser task passed while the retained provider rule failed; neither source overrides the other.",
       unresolvedRequirement: "Contribute a bounded repository diagnosis explaining the provider/browser disagreement and name fresh checks.",
       nextAction: { tool: repository ? "submit_runtime_diagnosis" : "open_diagnostic_mission", reason: "Resolve the retained provider/browser conflict without averaging the sources." },
-    };
-  }
-  if (repository?.state === "ready-for-repair") {
-    return {
-      relationship: "diagnosis-contributed",
-      reason: "Bounded browser and repository evidence plus planned checks were contributed without replacing the original sources.",
-      unresolvedRequirement: null,
-      nextAction: null,
     };
   }
   const diagnosisRequired = Boolean(provider?.findings?.some((finding) => finding.diagnosticKind));

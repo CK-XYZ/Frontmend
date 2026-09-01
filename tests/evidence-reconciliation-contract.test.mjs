@@ -104,6 +104,35 @@ test("keeps a trigger-linked browser pass as an unresolved provider/browser conf
   assert.match(result.unresolvedRequirement, /repository diagnosis/i);
 });
 
+test("resolves a provider/browser conflict after bounded repository diagnosis", () => {
+  const result = relationship({
+    report: report(),
+    browserReview: review("passed"),
+    diagnosticMissions: [{
+      id: "diagnosis-1",
+      findingId: providerFinding.id,
+      state: { state: "ready-for-repair" },
+      diagnosis: {
+        agentReported: true,
+        summary: "The static document shell is replaced by the rendered application structure.",
+        sourceLocations: [{ file: "src/App.tsx", line: 12, reason: "Owns the rendered landmark." }],
+        verificationChecks: ["Inspect the rendered landmark after the application mounts."],
+        reportedAt: 300,
+      },
+    }],
+  });
+
+  assert.equal(result.relationship, "diagnosis-contributed");
+  assert.equal(result.evidenceRecords.browser.outcome, "passed");
+  assert.equal(result.evidenceRecords.repository.state, "ready-for-repair");
+  assert.deepEqual(result.provenance.map((item) => item.kind), ["provider", "browser", "repository"]);
+  assert.deepEqual(result.evidenceRecords.repository.verificationChecks, [
+    "Inspect the rendered landmark after the application mounts.",
+  ]);
+  assert.equal(result.unresolvedRequirement, null);
+  assert.equal(result.nextAction, null);
+});
+
 test("uses diagnosis-required for structured symptoms and diagnosis-contributed after repository evidence", () => {
   const diagnosticFinding = {
     ...providerFinding,
