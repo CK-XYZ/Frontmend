@@ -1937,7 +1937,7 @@ test("contextual tool availability follows the visible audit and human review st
   };
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_site_audit_results",
-    "get_assessment_receipt",
+    "open_browser_review",
   ]);
 
   audit = {

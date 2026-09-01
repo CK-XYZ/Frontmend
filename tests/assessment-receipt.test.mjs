@@ -110,6 +110,20 @@ test("withholds an assessment receipt when diagnosis is explicitly blocked", () 
   );
 });
 
+test("withholds a receipt when bounded-site measurement has no retained routes", () => {
+  const boundedMission = createAuditMission({
+    scope: "bounded-site",
+    focusAreas: ["performance"],
+  }, "agent", 100);
+  assert.throws(
+    () => createAssessmentReceipt({
+      report: { ...report, findings: [], documentProfile: { routes: [] } },
+      mission: boundedMission,
+    }),
+    (error) => error?.code === "ASSESSMENT_INCOMPLETE",
+  );
+});
+
 test("withholds a previously complete human assessment after rendered review adoption", () => {
   const humanMission = createAuditMission({ focusAreas: [], maxPriorities: 3 }, "human", 100);
   const adoptedReview = createBrowserReviewMission({

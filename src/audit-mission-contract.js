@@ -2,6 +2,7 @@ import {
   browserReviewAdoptionAvailable,
   browserReviewFindings,
   browserReviewChecksForMission,
+  browserReviewPolicy,
   browserReviewProvenance,
   browserReviewRequired,
   browserReviewState,
@@ -469,6 +470,7 @@ export function deriveAuditMissionState({
     explorations,
   );
   const siteScope = boundedSiteState(report, mission, explorations);
+  const reviewPolicy = browserReviewPolicy(mission, browserReview);
   const reviewRequired = browserReviewRequired(mission, browserReview);
   const reviewAdoptionAvailable = browserReviewAdoptionAvailable(mission, browserReview);
   const reviewState = browserReview ? browserReviewState(browserReview) : null;
@@ -479,10 +481,13 @@ export function deriveAuditMissionState({
   const blocked = projection.priorities.find(
     (priority) => priority.evidenceState === "diagnosis-blocked",
   );
-  const auditComplete = Boolean(report);
-  let status = auditComplete ? "complete" : "in-progress";
-  let nextActor = auditComplete ? null : "agent";
-  let nextAction = auditComplete
+  const measurementComplete = Boolean(report);
+  // Retained for compatibility with existing clients. New code should use the
+  // narrower measurementComplete name and assessmentComplete separately.
+  const auditComplete = measurementComplete;
+  let status = measurementComplete ? "complete" : "in-progress";
+  let nextActor = measurementComplete ? null : "agent";
+  let nextAction = measurementComplete
     ? null
     : {
         tool: "check_site_audit_progress",
@@ -551,9 +556,12 @@ export function deriveAuditMissionState({
     }
   }
 
-  const siteScopeSettled = !siteScope.requested || siteScope.terminal;
-  const assessmentComplete = auditComplete && !reviewOutstanding && !unresolved && !blocked && siteScopeSettled;
   const siteScopeSuccessful = !siteScope.requested || siteScope.status === "complete";
+  const assessmentComplete = measurementComplete
+    && !reviewOutstanding
+    && !unresolved
+    && !blocked
+    && siteScopeSuccessful;
   if (assessmentComplete && siteScopeSuccessful && mission.intent === "prepare-fix" && !mission.repairPreparation) {
     status = "awaiting-repair-preparation";
     nextActor = "person";
@@ -605,6 +613,10 @@ export function deriveAuditMissionState({
     intent: mission.intent,
     status,
     auditComplete,
+    measurementComplete,
+    assessmentStatus: assessmentComplete ? "complete" : status === "blocked" ? "blocked" : "incomplete",
+    evidenceSnapshotAvailable: measurementComplete,
+    assessmentReceiptAvailable: assessmentComplete,
     assessmentComplete,
     requestedFocusAreas: projection.requestedFocusAreas,
     priorityCount: projection.priorities.length,
@@ -613,6 +625,9 @@ export function deriveAuditMissionState({
     priorities: projection.priorities,
     browserReview: {
       required: reviewRequired,
+      policy: reviewPolicy.mode,
+      policyReason: reviewPolicy.reason,
+      policyFocusAreas: reviewPolicy.areas,
       adoptionAvailable: reviewAdoptionAvailable,
       adoptedFromHumanMission: browserReview?.adoption?.mode === "human-to-agent",
       adoption: browserReview?.adoption ? { ...browserReview.adoption } : null,

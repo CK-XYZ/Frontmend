@@ -141,6 +141,39 @@ test("holds bounded-site completion for server-issued routes and folds recurrenc
   assert.equal(complete.priorities[0].occurrenceCount, 2);
 });
 
+test("keeps a zero-route bounded-site assessment blocked and receipt-ineligible", () => {
+  const scopedReport = {
+    ...report,
+    findings: [],
+    documentProfile: { routes: [] },
+  };
+  const mission = createAuditMission({
+    scope: "bounded-site",
+    focusAreas: ["performance"],
+  }, "agent", 10);
+  const state = deriveAuditMissionState({ report: scopedReport, mission });
+
+  assert.equal(state.measurementComplete, true);
+  assert.equal(state.auditComplete, true);
+  assert.equal(state.evidenceSnapshotAvailable, true);
+  assert.equal(state.siteScope.status, "blocked");
+  assert.equal(state.assessmentStatus, "blocked");
+  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.assessmentReceiptAvailable, false);
+  assert.equal(state.nextAction, null);
+});
+
+test("requires rendered accessibility and SEO evidence for an agent-started broad mission", () => {
+  const mission = createAuditMission({}, "agent", 10);
+  const state = deriveAuditMissionState({ report: { ...report, findings: [] }, mission });
+
+  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.browserReview.required, true);
+  assert.equal(state.browserReview.policy, "required");
+  assert.deepEqual(state.browserReview.policyFocusAreas, ["accessibility", "seo"]);
+  assert.equal(state.nextAction.tool, "open_browser_review");
+});
+
 test("uses semantic mission values for stable admission signatures", () => {
   const first = createAuditMission({ focusAreas: ["accessibility", "seo"] }, "agent", 10);
   const reordered = createAuditMission({ focusAreas: ["seo", "accessibility"] }, "agent", 20);

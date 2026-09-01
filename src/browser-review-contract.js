@@ -86,9 +86,17 @@ function boundedUniqueStrings(value, field, maximumItems, maximumLength) {
 }
 
 function missionFocusAreas(mission) {
-  return Array.isArray(mission?.focusAreas)
-    ? mission.focusAreas.filter((area) => area === "accessibility" || area === "seo")
-    : [];
+  if (!Array.isArray(mission?.focusAreas)) return [];
+  const renderedAreas = mission.focusAreas.filter(
+    (area) => area === "accessibility" || area === "seo",
+  );
+  // An empty focus is the product's explicit "all supported areas" mission.
+  // An agent-started broad assessment therefore includes rendered accessibility
+  // and SEO rather than silently degrading the request to provider-only evidence.
+  if (mission.requestedBy === "agent" && mission.focusAreas.length === 0) {
+    return ["accessibility", "seo"];
+  }
+  return renderedAreas;
 }
 
 function adoptionFocusAreas(value) {
@@ -126,6 +134,26 @@ export function browserReviewRequired(mission, review = null) {
   return (
     mission?.requestedBy === "agent" && missionFocusAreas(mission).length > 0
   ) || (review?.purpose === "assessment" && review?.withdrawal?.status !== "withdrawn");
+}
+
+export function browserReviewPolicy(mission, review = null) {
+  const required = browserReviewRequired(mission, review);
+  const adoptionAvailable = browserReviewAdoptionAvailable(mission, review);
+  const requestedAreas = Array.isArray(mission?.focusAreas) ? mission.focusAreas : [];
+  const renderedAreas = missionFocusAreas(mission);
+  return {
+    mode: required ? "required" : adoptionAvailable ? "optional" : "not-required",
+    areas: [...renderedAreas],
+    reason: required
+      ? review?.purpose === "assessment" && mission?.requestedBy !== "agent"
+        ? "A person adopted rendered review on this assessment, so the same-audit evidence handoff must now settle."
+        : requestedAreas.length === 0
+          ? "The agent requested all supported areas, which includes rendered accessibility and SEO coverage."
+          : "The agent requested accessibility or SEO, which requires rendered evidence beyond provider measurement."
+      : adoptionAvailable
+        ? "A person may optionally adopt same-audit rendered accessibility or SEO evidence."
+        : "The selected focus does not require a rendered accessibility or SEO review.",
+  };
 }
 
 export function browserReviewWithdrawalAvailable(review) {

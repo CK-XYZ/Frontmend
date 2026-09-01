@@ -137,8 +137,9 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
     diagnosticMissions,
     repairs,
   });
+  const measurementComplete = state.measurementComplete ?? state.auditComplete;
   const focusLabel = missionFocusLabel(state.requestedFocusAreas);
-  const statusLabel = !state.auditComplete
+  const statusLabel = !measurementComplete
     ? "Measurement in progress"
     : state.status === "blocked"
       ? "Assessment blocked · evidence retained"
@@ -147,7 +148,7 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
         : state.browserReview?.required && state.browserReview.status !== "complete"
           ? "Measurement complete · browser review active"
           : "Measurement complete · diagnosis active";
-  const tone = state.assessmentComplete ? "complete" : state.auditComplete ? "attention" : "running";
+  const tone = state.assessmentComplete ? "complete" : measurementComplete ? "attention" : "running";
 
   return (
     <section className={`audit-mission-summary ${tone}`} aria-labelledby={titleId}>
@@ -171,7 +172,7 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
             ? <CheckCircle size={18} weight="fill" />
             : state.status === "blocked"
               ? <Warning size={18} weight="fill" />
-              : state.auditComplete
+              : measurementComplete
                 ? <MagnifyingGlass size={18} weight="bold" />
                 : <Pulse size={18} weight="bold" />}
         </span>

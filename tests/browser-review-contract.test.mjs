@@ -4,6 +4,7 @@ import {
   browserReviewAdoptionAvailable,
   browserReviewChecksForMission,
   browserReviewFindings,
+  browserReviewPolicy,
   browserReviewProvenance,
   browserReviewRequired,
   browserReviewWithdrawalAvailable,
@@ -19,10 +20,21 @@ const mission = {
   focusAreas: ["accessibility", "seo"],
 };
 
-test("requires a browser review only for agent-started accessibility or SEO missions", () => {
+test("makes rendered review explicit for focused and broad agent assessments", () => {
   assert.equal(browserReviewRequired(mission), true);
+  assert.equal(browserReviewRequired({ requestedBy: "agent", focusAreas: [] }), true);
   assert.equal(browserReviewRequired({ ...mission, requestedBy: "human" }), false);
   assert.equal(browserReviewRequired({ requestedBy: "agent", focusAreas: ["performance"] }), false);
+  assert.deepEqual(
+    browserReviewChecksForMission({ requestedBy: "agent", focusAreas: [] }).map((check) => check.id),
+    ["rendered-structure", "primary-journey", "responsive-reflow", "search-discovery"],
+  );
+  assert.deepEqual(browserReviewPolicy({ requestedBy: "agent", focusAreas: [] }), {
+    mode: "required",
+    areas: ["accessibility", "seo"],
+    reason: "The agent requested all supported areas, which includes rendered accessibility and SEO coverage.",
+  });
+  assert.equal(browserReviewPolicy({ requestedBy: "agent", focusAreas: ["performance"] }).mode, "not-required");
   assert.deepEqual(
     browserReviewChecksForMission(mission).map((check) => check.id),
     ["rendered-structure", "primary-journey", "responsive-reflow", "search-discovery"],

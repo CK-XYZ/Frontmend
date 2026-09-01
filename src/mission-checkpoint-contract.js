@@ -115,6 +115,19 @@ export function createMissionCheckpoint({
     auditId: bounded(audit.id, 160),
     workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
     missionRevision: auditMissionRevision(audit),
+    measurementComplete: missionState?.measurementComplete ?? audit.status === "complete",
+    requestedScope: audit.mission?.scope === "bounded-site" ? "bounded-site" : "page",
+    scopeStatus: missionState?.siteScope?.status ?? (audit.status === "complete" ? "complete" : "in-progress"),
+    assessmentStatus: missionState?.assessmentStatus
+      ?? (missionState
+        ? missionState.assessmentComplete
+          ? "complete"
+          : missionState.status === "blocked"
+            ? "blocked"
+            : "incomplete"
+        : audit.status === "complete" ? "complete" : "incomplete"),
+    evidenceSnapshotAvailable: missionState?.evidenceSnapshotAvailable ?? audit.status === "complete",
+    assessmentReceiptAvailable: missionState?.assessmentReceiptAvailable ?? false,
     status,
     nextActor,
     requiredCapability: nextAction?.tool ? CAPABILITY_BY_TOOL[nextAction.tool] ?? "contextual-tool" : null,

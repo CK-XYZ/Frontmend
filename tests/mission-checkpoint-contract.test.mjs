@@ -35,6 +35,9 @@ test("projects legacy records at mission revision one without rewriting them", (
   });
   assert.equal(checkpoint.schemaVersion, 1);
   assert.equal(checkpoint.missionRevision, 1);
+  assert.equal(checkpoint.measurementComplete, true);
+  assert.equal(checkpoint.assessmentStatus, "incomplete");
+  assert.equal(checkpoint.assessmentReceiptAvailable, false);
   assert.equal(checkpoint.auditId, "audit-1");
   assert.equal(checkpoint.workspacePath, "/audits/audit-1");
   assert.equal(checkpoint.requiredCapability, "browser");
