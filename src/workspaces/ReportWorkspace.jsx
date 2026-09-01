@@ -30,6 +30,7 @@ import { observedRouteRecords } from "../route-contract.js";
 import { findingRequiresDiagnosticMission } from "../diagnostic-contract.js";
 import { createFreshAgentHandoff } from "../mission-handoff-contract.js";
 import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSummary.jsx";
+import { EvidenceOverview } from "../ui/EvidenceOverview.jsx";
 import { humanMissionMutationFailure } from "../ui/human-mission-recovery.js";
 import { LazyWorkspace } from "../ui/LazyWorkspace.jsx";
 
@@ -1462,6 +1463,12 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     : selectedFinding
       ? !findingRequiresDiagnosticMission(selectedFinding) || selectedDiagnosticMission?.state?.state === "ready-for-repair"
       : false;
+  const repairReadyPriorities = missionState.priorities.filter((priority) => {
+    const finding = findings.find((item) => item.id === priority.findingId);
+    if (!finding) return false;
+    if (!findingRequiresDiagnosticMission(finding)) return true;
+    return diagnosticMissions.find((item) => item.findingId === finding.id)?.state?.state === "ready-for-repair";
+  });
   const omittedFindingCount = Math.max(
     0,
     Number.isFinite(report.findingsOmitted)
@@ -1661,16 +1668,9 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             ) : null}
           </div>
           <p className="kicker">
-            {report.verification ? "Verification measurement complete" : "Audit complete"} · {evidenceLabel}
+            {report.verification ? "Fresh verification measurement" : "Measurement retained"} · {evidenceLabel}
           </p>
           <h1 id="report-title">{report.hostname}</h1>
-        </div>
-        <div
-          className="score-card"
-          aria-label={`${isDocumentAudit ? "Document coverage" : "Measured frontend health"} score ${report.score} out of 100`}
-        >
-          <strong>{report.score}</strong>
-          <span>{isDocumentAudit ? "Coverage" : "Health"}</span>
         </div>
       </div>
 
@@ -1708,6 +1708,8 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         browserReview={browserReview}
         missionState={missionState}
       />
+
+      <EvidenceOverview report={report} missionState={missionState} />
 
       <AgentTakeover
         auditId={report.auditId}
@@ -1791,42 +1793,6 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         <p>{report.engine.notice}</p>
       </div>
 
-      {report.coverage ? (
-        <section className="evidence-coverage" aria-labelledby="evidence-coverage-title">
-          <div>
-            <span>Evidence coverage</span>
-            <strong id="evidence-coverage-title">{report.coverage.level.replaceAll("-", " ")}</strong>
-          </div>
-          <dl>
-            <div>
-              <dt>Lighthouse</dt>
-              <dd>{report.coverage.sources.lighthouse.status}</dd>
-            </div>
-            <div>
-              <dt>Live document</dt>
-              <dd>{report.coverage.sources.document.status}</dd>
-            </div>
-            <div>
-              <dt>Observed routes</dt>
-              <dd>{observedRouteRecords(report).length}</dd>
-            </div>
-          </dl>
-          {report.sourceFailures?.length ? (
-            <ul aria-label="Unavailable evidence sources">
-              {report.sourceFailures.map((failure) => (
-                <li key={`${failure.source}-${failure.code}`}>
-                  <strong>{failure.source}</strong>
-                  <code>{failure.code}</code>
-                  <span>{failure.message}</span>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p>Independent viewport and document sources completed. Rendered journeys still require the retained browser review.</p>
-          )}
-        </section>
-      ) : null}
-
       {viewportFailures.length ? (
         <section className="viewport-failures" aria-labelledby="viewport-failures-title">
           <Warning size={19} weight="fill" aria-hidden="true" />
@@ -1863,7 +1829,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         />
       ) : null}
 
-      {findings.length ? (
+      {findings.length && (repairReadyPriorities.length || preparedFindingIds.length || repairs.length) ? (
         <LazyWorkspace
           load={loadRepairPolicyWorkspace}
           label="repair policy workspace"
@@ -1997,13 +1963,15 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
               }}
             />
           ) : null}
-          <PrepareRepairIntent
-            auditId={report.auditId}
-            priority={selectedPriority}
-            priorities={missionState.priorities}
-            mission={mission}
-            preparedFindingTitle={preparedFinding?.title}
-          />
+          {selectedFinding && (selectedDiagnosticReady || selectedRepairPrepared) ? (
+            <PrepareRepairIntent
+              auditId={report.auditId}
+              priority={selectedPriority}
+              priorities={repairReadyPriorities}
+              mission={mission}
+              preparedFindingTitle={preparedFinding?.title}
+            />
+          ) : null}
           {(selectedRepairPrepared || selectedRepair) ? (
             <LazyWorkspace
               load={loadRepairWorkspace}
@@ -2076,8 +2044,12 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             <Sparkle size={18} weight="fill" aria-hidden="true" />
             <p>
               {repairPolicy.mode === "auto-low-risk"
-                ? "After you prepare one priority, an agent can inspect the repository and submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
-                : "Prepare one priority, then an agent can inspect the repository and submit a repair mission through WebMCP. You approve it in this shared workspace."}
+                ? selectedDiagnosticReady
+                  ? "After you prepare this diagnosed priority, an agent can submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
+                  : "Repository diagnosis comes first. Repair controls unlock only after the retained symptom has a supported owner and reproduction."
+                : selectedDiagnosticReady
+                  ? "This diagnosed priority is ready to prepare for a bounded repair mission. You approve any proposal in this shared workspace."
+                  : "An agent can investigate the retained browser and repository evidence. Repair controls unlock only after diagnosis is ready."}
             </p>
           </div>
         </aside>

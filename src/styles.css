@@ -2180,38 +2180,165 @@ summary:focus-visible,
   font-size: clamp(42px, 5vw, 66px);
 }
 
-.score-card {
-  width: 96px;
-  height: 96px;
+.evidence-overview {
+  margin: -8px 0 24px;
+  overflow: hidden;
+  border: 1px solid #dce1d5;
+  border-radius: 20px;
+  background: rgba(255, 255, 252, 0.78);
+  box-shadow: 0 14px 40px rgb(56 65 52 / 4%);
+}
+
+.evidence-overview-heading {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 16px 18px 13px;
+  border-bottom: 1px solid #e3e7dd;
+}
+
+.evidence-overview-heading h2 {
+  margin: 4px 0 0;
+  font-size: 15px;
+  font-weight: 620;
+  letter-spacing: -0.02em;
+}
+
+.evidence-overview-heading > span {
+  color: #6c7568;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.evidence-overview-grid {
   display: grid;
-  place-content: center;
-  flex: 0 0 auto;
-  border: 1px solid #dce9c1;
-  border-radius: 30px;
-  background: #f1f8e4;
-  text-align: center;
+  grid-template-columns: minmax(210px, 1.2fr) minmax(250px, 1.45fr) minmax(150px, 0.72fr) minmax(140px, 0.65fr);
 }
 
-.score-card strong,
-.score-card span {
+.evidence-overview article {
+  min-width: 0;
+  padding: 16px 18px;
+  border-right: 1px solid #e3e7dd;
+}
+
+.evidence-overview article:last-child {
+  border-right: 0;
+}
+
+.evidence-overview article > span {
   display: block;
+  margin-bottom: 7px;
+  color: #778074;
+  font-size: 8px;
+  font-weight: 760;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
 }
 
-.score-card strong {
-  color: #50662a;
-  font-size: 33px;
-  font-weight: 520;
+.evidence-overview article > strong {
+  display: block;
+  color: #354031;
+  font-size: 14px;
+  font-weight: 650;
+  line-height: 1.25;
+}
+
+.evidence-overview article > small {
+  display: block;
+  margin-top: 6px;
+  color: #7a8276;
+  font-size: 8px;
+  line-height: 1.45;
+}
+
+.evidence-overview-sources ul,
+.evidence-overview-failures {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.evidence-overview-sources li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.evidence-overview-sources li strong {
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.evidence-overview-sources em {
+  flex: 0 0 auto;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: #eef2e8;
+  color: #687361;
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 760;
+  text-transform: capitalize;
+}
+
+.evidence-overview-sources em.source-complete {
+  background: #e7f1d7;
+  color: #54742b;
+}
+
+.evidence-overview-sources em:is(.source-partial, .source-unavailable) {
+  background: #fff0d5;
+  color: #895f1d;
+}
+
+.evidence-overview-score strong,
+.evidence-overview-priorities strong {
+  font-size: 28px;
+  font-weight: 540;
   letter-spacing: -0.05em;
   line-height: 1;
 }
 
-.score-card span {
-  margin-top: 5px;
-  color: #7b8c5a;
+.evidence-overview-score strong small {
+  margin-left: 3px;
+  color: #899083;
   font-size: 9px;
-  font-weight: 760;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  letter-spacing: 0;
+}
+
+.evidence-overview-failures,
+.evidence-overview-boundary {
+  border-top: 1px solid #e3e7dd;
+}
+
+.evidence-overview-failures {
+  padding: 11px 18px;
+}
+
+.evidence-overview-failures li {
+  display: grid;
+  grid-template-columns: 84px max-content minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  color: #68715f;
+  font-size: 9px;
+}
+
+.evidence-overview-boundary {
+  margin: 0;
+  padding: 10px 18px;
+  color: #747c70;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .summary-row {
@@ -2258,77 +2385,6 @@ summary:focus-visible,
   font-size: 11px;
   line-height: 1.45;
   text-align: right;
-}
-
-.evidence-coverage {
-  display: grid;
-  grid-template-columns: minmax(150px, 0.65fr) minmax(260px, 1fr);
-  gap: 12px 22px;
-  margin: -8px 0 24px;
-  padding: 16px 18px;
-  border: 1px solid #d9e2ca;
-  border-radius: 18px;
-  background: #f7faef;
-}
-
-.evidence-coverage > div:first-child span,
-.evidence-coverage dt {
-  display: block;
-  color: #758069;
-  font-size: 9px;
-  font-weight: 760;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.evidence-coverage > div:first-child strong {
-  display: block;
-  margin-top: 4px;
-  color: #34422d;
-  font-size: 15px;
-  text-transform: capitalize;
-}
-
-.evidence-coverage dl {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 10px;
-  margin: 0;
-}
-
-.evidence-coverage dd {
-  margin: 4px 0 0;
-  color: #47553e;
-  font-size: 12px;
-  font-weight: 680;
-  text-transform: capitalize;
-}
-
-.evidence-coverage > p,
-.evidence-coverage ul {
-  grid-column: 1 / -1;
-  margin: 0;
-  color: #68715f;
-  font-size: 10px;
-  line-height: 1.5;
-}
-
-.evidence-coverage ul {
-  display: grid;
-  gap: 6px;
-  padding: 0;
-  list-style: none;
-}
-
-.evidence-coverage li {
-  display: grid;
-  grid-template-columns: 84px max-content minmax(0, 1fr);
-  gap: 8px;
-  align-items: baseline;
-}
-
-.evidence-coverage li code {
-  font-size: 9px;
 }
 
 .viewport-failures {
@@ -7931,6 +7987,18 @@ summary:focus-visible,
 }
 
 @media (max-width: 1080px) {
+  .evidence-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .evidence-overview article:nth-child(2) {
+    border-right: 0;
+  }
+
+  .evidence-overview article:nth-child(-n + 2) {
+    border-bottom: 1px solid #e3e7dd;
+  }
+
   .workspace-grid {
     grid-template-columns: 1fr;
   }
@@ -8421,24 +8489,31 @@ summary:focus-visible,
     grid-column: 1 / -1;
   }
 
-  .evidence-coverage {
+  .evidence-overview-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .evidence-overview-grid {
     grid-template-columns: 1fr;
   }
 
-  .evidence-coverage dl {
-    grid-template-columns: 1fr;
+  .evidence-overview article,
+  .evidence-overview article:nth-child(2) {
+    border-right: 0;
+    border-bottom: 1px solid #e3e7dd;
   }
 
-  .evidence-coverage > p,
-  .evidence-coverage ul {
-    grid-column: 1;
+  .evidence-overview article:last-child {
+    border-bottom: 0;
   }
 
-  .evidence-coverage li {
+  .evidence-overview-failures li {
     grid-template-columns: 1fr max-content;
   }
 
-  .evidence-coverage li span {
+  .evidence-overview-failures li span {
     grid-column: 1 / -1;
   }
 
@@ -8482,16 +8557,6 @@ summary:focus-visible,
 
   .observed-route-list {
     grid-template-columns: 1fr;
-  }
-
-  .score-card {
-    width: 78px;
-    height: 78px;
-    border-radius: 24px;
-  }
-
-  .score-card strong {
-    font-size: 28px;
   }
 
   .summary-row > div {
