@@ -12,6 +12,7 @@
     "dev": "vite",
     "build": "bun scripts/build.mjs",
     "eval:mission": "bun scripts/eval-mission.mjs",
+    "eval:webmcp-routing": "bun scripts/eval-webmcp-routing.mjs",
     "smoke:version": "bun scripts/smoke-version.mjs",
     "preview": "vite preview",
     "test": "node --test tests/*.test.mjs",

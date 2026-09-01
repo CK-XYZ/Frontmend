@@ -139,9 +139,12 @@ Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun 
 
 `bun run eval:mission` executes a deterministic offline mission protocol over the registered twenty-three-tool library, real shared service, local HTTP middleware, public Worker adapter, and real audit Durable Object implementation. It proves a complete bounded-site assessment-to-verification sequence, local/Worker categorical parity, stale-revision recovery, and an honest provider/browser-conflict blocker. Its fixture approval and site-owner attestation are protocol inputs: the command does not operate a browser, inspect a repository, deploy a site, call PageSpeed Insights, or prove production behaviour.
 
+`bun run eval:webmcp-routing` runs a separate synthetic natural-language routing gate over the current contextual tool library. Its bounded summary retains each synthetic prompt, discovered set, selected sequence, invalid/stale attempts, mission outcome, authority violations, optional token/latency fields, and host/model identity. The default host is an offline deterministic contract, not a live model claim. A host-produced routing summary can be imported with `--input <summary.json> --host <host> --model <version>`; URLs, email addresses, workflow IDs, local paths, and common secret assignments are redacted before evaluation output. Imported evidence remains host-reported and does not independently prove a live agent or browser run.
+
 ```powershell
 bun install
 bun run eval:mission
+bun run eval:webmcp-routing
 bun run test
 bun run build
 bunx wrangler deploy dist/server/index.js --dry-run --strict --config wrangler.jsonc
