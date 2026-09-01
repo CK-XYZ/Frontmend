@@ -49,6 +49,7 @@ Authoritative sources rechecked on 29 August 2026: [Devpost Official Rules](http
 - [x] Completed verification proof exports as bounded Markdown through both a human download and semantic WebMCP tool.
 - [x] Browser-agent calls append idempotent completed events to a durable audit-scoped last-twenty activity ledger. The visible log and assessment receipt show semantic tool, actor, status, related workflow IDs, and mission revision before/after while the contract rejects or excludes inputs, URLs, patches, prompts, source contents, credentials, and secrets; telemetry cannot advance mission authority or mask a semantic tool result.
 - [x] Provider payloads are byte-bounded, evidence images are passively allowlisted, jobs expire, and the provider has per-client plus service-wide budgets.
+- [x] Production global fetch is explicitly routed as public-Internet traffic with Cloudflare's `global_fetch_strictly_public` flag; local development resolves and rejects private, loopback, metadata, mapped, mixed, and non-routable answers before the initial request and every redirect, while documenting that local preflight is not complete DNS-pinning or rebinding proof.
 - [x] Stable `/audits/:id` routes restore completed and in-progress jobs after reload.
 - [x] WebMCP registration follows visible application state and removes inapplicable tools as the audit, review, and verification mission changes.
 - [x] The WebMCP status is inspectable: its visible panel names active tools, explains the current-state boundary, and states which authority remains human-only.

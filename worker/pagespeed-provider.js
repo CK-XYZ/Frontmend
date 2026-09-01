@@ -1,5 +1,6 @@
 import { normalizePublicUrl } from "../src/url-policy.js";
 import { mergeAuditEvidence } from "../src/audit-coverage-contract.js";
+import { assertPublicResolvedDestination } from "../src/public-destination-contract.js";
 
 const ENDPOINT = "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed";
 const STRATEGIES = ["mobile", "desktop"];
@@ -496,9 +497,11 @@ async function readProviderJson(response) {
   }
 }
 
-async function fetchPublicDocument({ url, fetchImpl, signal }) {
+async function fetchPublicDocument({ url, fetchImpl, resolveHostname, signal }) {
   let currentUrl = normalizePublicUrl(url);
   for (let redirect = 0; redirect <= 5; redirect += 1) {
+    await assertPublicResolvedDestination(currentUrl, resolveHostname);
+    throwIfCancelled(signal);
     const response = await fetchImpl(currentUrl, {
       redirect: "manual",
       headers: {
@@ -1030,6 +1033,7 @@ export async function runDocumentAudit({
   onProgress = async () => {},
   now = () => Date.now(),
   fallbackReason = null,
+  resolveHostname = null,
   signal,
 }) {
   const cancellation = cancellableSignal(signal, 25_000);
@@ -1043,6 +1047,7 @@ export async function runDocumentAudit({
     const { response, finalUrl } = await fetchPublicDocument({
       url,
       fetchImpl,
+      resolveHostname,
       signal: cancellation.signal,
     });
     throwIfCancelled(signal);
@@ -1108,6 +1113,8 @@ export async function runDocumentAudit({
 }
 
 export async function runFrontmendAudit(options) {
+  await assertPublicResolvedDestination(options.url, options.resolveHostname);
+  throwIfCancelled(options.signal);
   let lastProgress = 0;
   const emitProgress = async (state) => {
     const progress = Math.max(0, Math.min(99, Math.round(state.progress ?? 0)));

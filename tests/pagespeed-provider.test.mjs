@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { runFrontmendAudit, runPageSpeedAudit } from "../worker/pagespeed-provider.js";
+import { runDocumentAudit, runFrontmendAudit, runPageSpeedAudit } from "../worker/pagespeed-provider.js";
 
 function lighthouseFixture(strategy) {
   const mobile = strategy === "mobile";
@@ -332,7 +332,49 @@ test("propagates caller cancellation without falling back to another provider", 
     () => operation,
     (error) => error.code === "AUDIT_CANCELLED" && error.recoverable === true,
   );
-  assert.equal(calls, 3);
+  assert.equal(calls, 2);
+});
+
+test("blocks a private DNS answer before any provider or document request", async () => {
+  let fetches = 0;
+  await assert.rejects(
+    () => runFrontmendAudit({
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      url: "https://public-name.example/",
+      resolveHostname: async () => [{ address: "169.254.169.254", family: 4 }],
+      fetchImpl: async () => {
+        fetches += 1;
+        return new Response("unreachable");
+      },
+    }),
+    (error) => error?.code === "RESOLVED_DESTINATION_BLOCKED",
+  );
+  assert.equal(fetches, 0);
+});
+
+test("re-resolves and blocks every redirect destination before following it", async () => {
+  const resolutions = [];
+  const fetches = [];
+  await assert.rejects(
+    () => runDocumentAudit({
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      url: "https://public-name.example/",
+      resolveHostname: async (hostname) => {
+        resolutions.push(hostname);
+        return [{ address: hostname === "public-name.example" ? "93.184.216.34" : "127.0.0.1" }];
+      },
+      fetchImpl: async (input) => {
+        fetches.push(String(input));
+        return new Response(null, {
+          status: 302,
+          headers: { location: "https://private-hop.example/admin" },
+        });
+      },
+    }),
+    (error) => error?.code === "RESOLVED_DESTINATION_BLOCKED",
+  );
+  assert.deepEqual(resolutions, ["public-name.example", "private-hop.example"]);
+  assert.deepEqual(fetches, ["https://public-name.example/"]);
 });
 
 test("falls back to bounded live document evidence when Lighthouse is rate limited", async () => {

@@ -40,6 +40,7 @@ import {
   validateRepairId,
 } from "../src/repair-contract.js";
 import { runFrontmendAudit } from "./pagespeed-provider.js";
+import { resolveLocalHostname } from "./local-resolver.js";
 import {
   createDiagnosticMission,
   diagnosticMissionForRepair,
@@ -215,6 +216,8 @@ export function createLocalAuditRuntime(options = {}) {
   const rates = new Map();
   const apiKey = options.apiKey ?? process.env.PAGESPEED_API_KEY;
   const fetchImpl = options.fetchImpl ?? fetch;
+  const resolveHostname = options.resolveHostname
+    ?? (options.fetchImpl ? null : resolveLocalHostname);
 
   const prune = (now = Date.now()) => {
     for (const [id, job] of jobs) {
@@ -246,6 +249,7 @@ export function createLocalAuditRuntime(options = {}) {
         url: job.url,
         apiKey,
         fetchImpl,
+        resolveHostname,
         signal,
         onProgress: async (progress) => {
           if (

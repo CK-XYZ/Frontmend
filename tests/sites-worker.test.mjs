@@ -2313,6 +2313,35 @@ test("rejects cross-origin and private audit starts before allocating a job", as
   assert.equal(allocations, 0);
 });
 
+test("local development rejects a hostname whose DNS answer is private before fetch", async () => {
+  let fetches = 0;
+  const middleware = createLocalAuditRuntime({
+    resolveHostname: async () => [{ address: "127.0.0.1", family: 4 }],
+    fetchImpl: async () => {
+      fetches += 1;
+      return new Response("unreachable");
+    },
+  });
+  const start = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: "/api/audits",
+    headers: { host: "localhost:3434", origin: "http://localhost:3434" },
+    body: JSON.stringify({ url: "https://public-name.example/", source: "human" }),
+  });
+  const auditId = JSON.parse(start.body).data.id;
+  let state;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const response = await callLocalRuntime(middleware, { url: `/api/audits/${auditId}` });
+    state = JSON.parse(response.body).data;
+    if (state.status === "failed") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  assert.equal(state.status, "failed");
+  assert.equal(state.error.code, "RESOLVED_DESTINATION_BLOCKED");
+  assert.equal(fetches, 0);
+});
+
 test("gate deduplicates a URL and enforces a bounded per-client window", async () => {
   const values = new Map();
   const gate = new FrontmendAuditGate({
