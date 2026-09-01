@@ -258,3 +258,43 @@ test("exports an honest complete receipt when the retained focus has no matching
   assert.equal(zero.assessment.matchingFindingCount, 0);
   assert.match(assessmentReceiptMarkdown(zero), /Ranked priorities: 0/);
 });
+
+test("retains rendered route provenance in a completed bounded-site receipt", () => {
+  const boundedMission = createAuditMission({
+    scope: "bounded-site",
+    focusAreas: [],
+  }, "human", 100);
+  const renderedReport = {
+    ...report,
+    findings: [],
+    documentProfile: { routes: [] },
+    renderedRouteObservations: [{
+      path: "/projects",
+      observedPath: "/projects",
+      source: "agent-reported-browser-route",
+      method: "HEAD",
+      status: 200,
+      validatedAt: 500,
+    }],
+  };
+  const exploration = {
+    id: "232d593c-6c81-48c3-b137-a3df269454ff",
+    rootAuditId: report.auditId,
+    status: "complete",
+    createdAt: 600,
+    summary: { pagesRequested: 1, pagesComplete: 1, pagesFailed: 0 },
+    issues: [],
+  };
+  const receipt = createAssessmentReceipt({
+    report: renderedReport,
+    mission: boundedMission,
+    explorations: [exploration],
+  });
+
+  assert.equal(receipt.assessment.complete, true);
+  assert.equal(receipt.assessment.siteScope.routeCandidates[0].path, "/projects");
+  assert.equal(
+    receipt.assessment.siteScope.routeCandidates[0].source,
+    "agent-reported-browser-route",
+  );
+});

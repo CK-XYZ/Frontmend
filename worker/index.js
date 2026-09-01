@@ -9,7 +9,11 @@ import {
   normalizeRepairFindingIds,
   prepareRepairIntent,
 } from "../src/audit-mission-contract.js";
-import { createRelatedAuditInput } from "../src/route-contract.js";
+import {
+  createRelatedAuditInput,
+  mergeRenderedRouteObservations,
+  validateRenderedRouteObservations,
+} from "../src/route-contract.js";
 import {
   assertMissionId,
   createSiteExplorationInputs,
@@ -2060,6 +2064,15 @@ export class FrontmendAuditJob {
         }
         await assertJobRevision(this.ctx, state, expectedMissionRevision);
         const review = recordBrowserReviewCheck(stored, check, source);
+        const contribution = review.results.find((result) => result.checkId === check.checkId);
+        const renderedRoutes = contribution?.observedRoutes?.length
+          ? await validateRenderedRouteObservations({
+              report: state.report,
+              observedRoutes: contribution.observedRoutes,
+              source,
+              fetchImpl: typeof this.env?.PUBLIC_FETCH === "function" ? this.env.PUBLIC_FETCH : fetch,
+            })
+          : [];
         await this.ctx.storage.put("browserReview", review);
         if (verificationReplay) {
           const updated = await advanceJobRevision(this.ctx, state, {
@@ -2075,7 +2088,18 @@ export class FrontmendAuditJob {
           });
           return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
         }
-        const updated = await advanceJobRevision(this.ctx, state);
+        const updated = await advanceJobRevision(this.ctx, state, {
+          report: renderedRoutes.length
+            ? mergeRenderedRouteObservations(
+                state.report,
+                renderedRoutes.map((route) => ({
+                  ...route,
+                  reviewId: review.id,
+                  checkId: contribution.checkId,
+                })),
+              )
+            : state.report,
+        });
         return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, review) });
       } catch (error) {
         return errorResponse(error);

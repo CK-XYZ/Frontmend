@@ -1031,6 +1031,56 @@ test("browser review tools turn one exact browser task at a time into attributed
   assert.deepEqual(calls.map((call) => call[0]), ["open", "record", "record"]);
 });
 
+test("browser search discovery contributes bounded routes and receives the minted exploration action", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  let captured = null;
+  const checkpoint = {
+    auditId,
+    missionRevision: 8,
+    action: {
+      tool: "start_site_exploration",
+      input: { routeCandidateIds: ["route-12345678", "route-87654321"] },
+      reason: "Start the server-validated retained routes.",
+    },
+  };
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", missionRevision: 7 }),
+    getMissionCheckpoint: () => checkpoint,
+    getAuditMissionState: () => ({ assessmentComplete: false }),
+    recordBrowserReviewCheck: async (id, reviewId, input, source, revision) => {
+      captured = { id, reviewId, input, source, revision };
+      return {
+        id: reviewId,
+        auditId: id,
+        purpose: "assessment",
+        results: [{ checkId: input.checkId, observedRoutes: [...input.observedRoutes] }],
+        state: { status: "complete", complete: true, nextCheck: null },
+        authority: { provenance: "agent-reported-browser" },
+        missionCheckpoint: checkpoint,
+      };
+    },
+  };
+  const tool = findTool(createFrontmendTools(service), "record_browser_review_check");
+  const result = await tool.execute({
+    reviewId: "browser-review-1",
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "Rendered navigation exposes projects and services.",
+    observations: ["Named same-site Projects and Services links are rendered."],
+    observedRoutes: ["/projects", "/services"],
+    expectedMissionRevision: 7,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(captured.input.observedRoutes, ["/projects", "/services"]);
+  assert.equal(captured.revision, 7);
+  assert.deepEqual(result.data.nextAction, {
+    tool: "start_site_exploration",
+    input: { auditId, routeCandidateIds: ["route-12345678", "route-87654321"] },
+    reason: "Start the server-validated retained routes.",
+  });
+});
+
 test("a browser-capable agent adopts a person-started assessment under the same audit ID", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const mission = {
@@ -1747,6 +1797,9 @@ test("audit-scoped schemas make only the current audit ID optional", async () =>
     assert.equal(definition.inputSchema.required.includes("expectedMissionRevision"), true, name);
     assert.equal(definition.inputSchema.properties.expectedMissionRevision.minimum, 1, name);
   }
+  const browserContribution = findTool(tools, "record_browser_review_check");
+  assert.equal(browserContribution.inputSchema.properties.observedRoutes.maxItems, 8);
+  assert.equal(browserContribution.inputSchema.properties.observedRoutes.uniqueItems, true);
 
   const withoutContext = await findTool(tools, "get_site_audit_results").execute({});
   assert.equal(withoutContext.ok, false);

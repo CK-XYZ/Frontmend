@@ -1,5 +1,5 @@
 import { AuditError } from "./url-policy.js";
-import { createRelatedAuditInput } from "./route-contract.js";
+import { createRelatedAuditInput, observedRouteRecords } from "./route-contract.js";
 
 const MAX_ROUTES = 3;
 const MAX_ISSUES = 20;
@@ -32,13 +32,9 @@ export function createSiteRouteCandidates(report) {
   if (!report?.auditId || typeof report.auditId !== "string") {
     throw new AuditError("AUDIT_NOT_READY", "Finish the root audit before selecting retained routes.");
   }
-  const paths = Array.isArray(report.documentProfile?.routes)
-    ? report.documentProfile.routes.slice(0, MAX_ROUTES)
-    : [];
-  return paths.map((path) => ({
-    id: routeCandidateId(report.auditId, path),
-    path,
-    source: "observed-document-route",
+  return observedRouteRecords(report).slice(0, MAX_ROUTES).map((route) => ({
+    id: routeCandidateId(report.auditId, route.path),
+    ...route,
   }));
 }
 
@@ -85,7 +81,11 @@ export function createSiteExplorationInputs(report, selection, options = {}) {
     }
     unique.add(path);
     const related = createRelatedAuditInput(report, path);
-    return { path, ...related };
+    return {
+      path,
+      source: candidateById.get(routeCandidateId(report.auditId, path))?.source ?? "observed-document-route",
+      ...related,
+    };
   });
   return {
     rootAuditId: report.auditId,
@@ -125,6 +125,13 @@ export function createSiteExplorationMission({
       auditId: boundedText(child?.auditId, 80),
       path: boundedText(routes[index]?.path, 256),
       url: boundedText(routes[index]?.url, 2_048),
+      routeSource: [
+        "observed-document-route",
+        "agent-reported-browser-route",
+        "person-reported-browser-route",
+      ].includes(routes[index]?.source)
+        ? routes[index].source
+        : "observed-document-route",
       position: index + 1,
       startError: child?.startError
         ? {
@@ -134,7 +141,7 @@ export function createSiteExplorationMission({
         : null,
     })),
     caveat:
-      "This mission aggregates only the selected routes observed by the root audit. It is not an exhaustive site crawl.",
+      "This mission aggregates only selected server-validated routes observed by document or rendered-browser evidence. It is not an exhaustive site crawl.",
   };
 }
 
@@ -151,6 +158,7 @@ function pageSnapshot(child, audit) {
     auditId: child.auditId || null,
     path: child.path,
     url: child.url,
+    routeSource: child.routeSource ?? "observed-document-route",
     position: child.position,
     status,
     progress,
@@ -298,11 +306,11 @@ export function siteExplorationMarkdown(snapshot) {
     "",
     "## Pages",
     "",
-    "| Path | Audit | Status | Score | Findings |",
-    "| --- | --- | --- | ---: | ---: |",
+    "| Path | Route evidence | Audit | Status | Score | Findings |",
+    "| --- | --- | --- | --- | ---: | ---: |",
     ...pages.map(
       (page) =>
-        `| ${markdownText(page.path, 256)} | ${markdownText(page.auditId ?? "—", 80)} | ${markdownText(page.status, 24)} | ${page.score ?? "—"} | ${page.findingCount ?? "—"} |`,
+        `| ${markdownText(page.path, 256)} | ${markdownText(page.routeSource ?? "observed-document-route", 80)} | ${markdownText(page.auditId ?? "—", 80)} | ${markdownText(page.status, 24)} | ${page.score ?? "—"} | ${page.findingCount ?? "—"} |`,
     ),
     "",
     "## Cross-page issues",

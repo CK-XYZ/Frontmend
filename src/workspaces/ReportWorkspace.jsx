@@ -26,6 +26,7 @@ import { useEffect, useId, useMemo, useRef, useState } from "react";
 import { AuditError, auditService } from "../audit-service.js";
 import { assessmentFindings, deriveAuditMissionState } from "../audit-mission-contract.js";
 import { createSiteRouteCandidates } from "../site-exploration-contract.js";
+import { observedRouteRecords } from "../route-contract.js";
 import { findingRequiresDiagnosticMission } from "../diagnostic-contract.js";
 import { createFreshAgentHandoff } from "../mission-handoff-contract.js";
 import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSummary.jsx";
@@ -1285,6 +1286,7 @@ function SiteExploration({ report, mission }) {
             >
               <span aria-hidden="true">{active ? <Check size={13} weight="bold" /> : null}</span>
               <code>{candidate.path}</code>
+              <small>{candidate.source === "observed-document-route" ? "document" : "rendered + server checked"}</small>
             </button>
           );
         })}
@@ -1806,7 +1808,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             </div>
             <div>
               <dt>Observed routes</dt>
-              <dd>{report.coverage.routeCandidateCount}</dd>
+              <dd>{observedRouteRecords(report).length}</dd>
             </div>
           </dl>
           {report.sourceFailures?.length ? (

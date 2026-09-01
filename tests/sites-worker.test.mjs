@@ -1309,6 +1309,109 @@ test("Durable Object persists sequential browser review evidence before completi
   assert.match(markdown, /Coverage: 2 of 2 requested checks/);
 });
 
+test("Durable Object mints route candidates only after rendered routes are revalidated", async () => {
+  const auditId = "c7baec90-647a-4f34-9e04-f12d35444389";
+  const values = new Map([["state", {
+    id: auditId,
+    missionRevision: 1,
+    url: "https://example.com/",
+    source: "agent",
+    mission: {
+      schemaVersion: 2,
+      intent: "assess",
+      focusAreas: ["seo"],
+      maxPriorities: 3,
+      scope: "bounded-site",
+      routeLimit: 3,
+      requestedBy: "agent",
+      requestedAt: 10,
+      repairPreparation: null,
+    },
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      completedAt: 100,
+      engine: { mode: "live-document", provider: "Frontmend document audit" },
+      findings: [],
+      viewports: [],
+      documentProfile: { routes: [] },
+    },
+  }]]);
+  const fetches = [];
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {
+    PUBLIC_FETCH: async (url, init) => {
+      fetches.push([url, init.method, init.redirect]);
+      return new Response(null, { status: 200, headers: { "content-type": "text/html" } });
+    },
+  });
+  const post = (path, body = {}) => job.fetch(new Request(`https://frontmend.internal${path}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  }));
+  const opened = (await (await post("/browser-review", {
+    source: "agent",
+    expectedMissionRevision: 1,
+  })).json()).data;
+  const structure = (await (await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    expectedMissionRevision: 2,
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered page has a clear primary structure.",
+    observations: ["One primary heading and one named main landmark are rendered."],
+  })).json()).data;
+  const discoveryResponse = await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    expectedMissionRevision: structure.missionCheckpoint.missionRevision,
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "Rendered navigation exposes projects and services.",
+    observations: ["Named same-site Projects and Services links are rendered."],
+    observedRoutes: ["/projects", "/services"],
+  });
+  const completed = (await discoveryResponse.json()).data;
+
+  assert.equal(discoveryResponse.status, 200);
+  assert.deepEqual(fetches, [
+    ["https://example.com/projects", "HEAD", "manual"],
+    ["https://example.com/services", "HEAD", "manual"],
+  ]);
+  assert.deepEqual(values.get("state").report.renderedRouteObservations.map((item) => item.path), [
+    "/projects",
+    "/services",
+  ]);
+  assert.equal(completed.missionCheckpoint.scopeStatus, "not-started");
+  assert.equal(completed.missionCheckpoint.action.tool, "start_site_exploration");
+  assert.equal(completed.missionCheckpoint.assessmentReceiptAvailable, false);
+  const stale = await post(`/browser-review/${opened.id}/checks`, {
+    source: "agent",
+    expectedMissionRevision: 3,
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "A stale actor observed a different route.",
+    observations: ["A different same-site link appeared in stale browser state."],
+    observedRoutes: ["/stale-route"],
+  });
+  assert.equal(stale.status, 409);
+  assert.equal((await stale.json()).error.code, "MISSION_REVISION_STALE");
+  assert.equal(fetches.length, 2);
+  assert.deepEqual(values.get("state").report.renderedRouteObservations.map((item) => item.path), [
+    "/projects",
+    "/services",
+  ]);
+  const assessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
+  assert.equal(assessment.status, 409);
+});
+
 test("proxies a completed audit report through the stable public route", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const calls = [];

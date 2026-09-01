@@ -3,6 +3,7 @@ import {
   compileBrowserInvestigations,
   projectLegacyBrowserCheck,
 } from "./browser-investigation-compiler.js";
+import { normalizeRenderedRouteObservations } from "./route-contract.js";
 
 export const BROWSER_REVIEW_OUTCOMES = Object.freeze(["passed", "issue", "blocked"]);
 export const BROWSER_REVIEW_BLOCKER_REASONS = Object.freeze([
@@ -234,6 +235,8 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
       outcomes: ["passed", "issue", "blocked"],
       observationPrompt: boundedString(task.responseContract?.observationPrompt, "task.responseContract.observationPrompt", 600),
       findingsAllowed: task.responseContract?.findingsAllowed !== false,
+      observedRoutesAllowed: task.id === "search-discovery" && task.kind !== "verification-replay",
+      observedRoutesLimit: task.id === "search-discovery" ? 8 : 0,
       blockerReasons: [...BROWSER_REVIEW_BLOCKER_REASONS],
     },
     instruction: boundedString(task.assignment?.instructions ?? task.instruction, "task.instruction", 900),
@@ -279,6 +282,7 @@ function resultSnapshot(result) {
     outcome: result.outcome,
     summary: result.summary,
     observations: [...(result.observations ?? [])],
+    observedRoutes: [...(result.observedRoutes ?? [])],
     findings: (result.findings ?? []).map((finding) => ({
       ...finding,
       focusAreas: [...(finding.focusAreas ?? [])],
@@ -762,6 +766,7 @@ export function isIdenticalBrowserReviewContribution(reviewValue, input = {}, so
   return result.outcome === input.outcome
     && result.summary === normalizeText(input.summary)
     && JSON.stringify(result.observations) === JSON.stringify(input.observations ?? [])
+    && JSON.stringify(result.observedRoutes) === JSON.stringify(input.observedRoutes ?? [])
     && JSON.stringify(retainedFindings) === JSON.stringify(submittedFindings)
     && result.blockerReason === (input.blockerReason ?? null);
 }
@@ -781,7 +786,7 @@ export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agen
     throw new AuditError("INVALID_BROWSER_REVIEW", "The browser review check must be an object.");
   }
   const extra = Object.keys(input).find(
-    (key) => !["checkId", "outcome", "summary", "observations", "findings", "blockerReason"].includes(key),
+    (key) => !["checkId", "outcome", "summary", "observations", "observedRoutes", "findings", "blockerReason"].includes(key),
   );
   if (extra) throw new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`);
   if (!BROWSER_REVIEW_OUTCOMES.includes(input.outcome)) {
@@ -805,6 +810,19 @@ export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agen
   const observations = blocked && input.observations == null
     ? []
     : boundedUniqueStrings(input.observations, "observations", 4, 400);
+  let observedRoutes = [];
+  if (input.observedRoutes !== undefined) {
+    if (review.purpose !== "assessment" || checkId !== "search-discovery" || blocked) {
+      throw new AuditError(
+        "INVALID_BROWSER_REVIEW",
+        "observedRoutes is accepted only for a completed assessment search-discovery check.",
+      );
+    }
+    observedRoutes = normalizeRenderedRouteObservations(
+      { finalUrl: review.target },
+      input.observedRoutes,
+    ).map((route) => route.path);
+  }
   let blockerReason = null;
   if (blocked) {
     if (!BROWSER_REVIEW_BLOCKER_REASONS.includes(input.blockerReason)) {
@@ -845,6 +863,7 @@ export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agen
     outcome: input.outcome,
     summary,
     observations,
+    observedRoutes,
     findings: rawFindings.map((finding, index) =>
       browserFinding({ review, check, input, finding, index, source, now })),
     blockerReason,

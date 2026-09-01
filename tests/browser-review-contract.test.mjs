@@ -281,6 +281,42 @@ test("keeps a browser blocker honest and lets the same check recover later", () 
   assert.equal(review.results[0].revision, 2);
 });
 
+test("accepts bounded route observations only on assessment search discovery", () => {
+  const seoMission = { requestedBy: "agent", focusAreas: ["seo"] };
+  let review = createBrowserReviewMission({
+    auditId: AUDIT_ID,
+    mission: seoMission,
+    target: "https://example.com/",
+    now: 10,
+  });
+  assert.throws(
+    () => recordBrowserReviewCheck(review, {
+      checkId: "rendered-structure",
+      outcome: "passed",
+      summary: "The rendered structure is present.",
+      observations: ["One primary heading is rendered."],
+      observedRoutes: ["/projects"],
+    }, "agent", 20),
+    (error) => error.code === "INVALID_BROWSER_REVIEW",
+  );
+  review = recordBrowserReviewCheck(review, {
+    checkId: "rendered-structure",
+    outcome: "passed",
+    summary: "The rendered structure is present.",
+    observations: ["One primary heading is rendered."],
+  }, "agent", 20);
+  review = recordBrowserReviewCheck(review, {
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "The rendered navigation exposes important destinations.",
+    observations: ["Projects and services are named in the primary navigation."],
+    observedRoutes: ["/projects", "/services"],
+  }, "agent", 30);
+  assert.deepEqual(review.results[1].observedRoutes, ["/projects", "/services"]);
+  assert.equal(review.requestedChecks[1].responseContract.observedRoutesAllowed, true);
+  assert.equal(review.requestedChecks[1].responseContract.observedRoutesLimit, 8);
+});
+
 test("replays the exact retained browser issue after deployment without creating a new finding", () => {
   const verification = {
     browserReplay: {

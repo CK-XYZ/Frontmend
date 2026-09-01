@@ -94,6 +94,32 @@ test("accepts only deterministic server-issued route candidates for bounded-site
   );
 });
 
+test("mints bounded exploration candidates from server-validated rendered routes", () => {
+  const report = {
+    ...rootReport(),
+    documentProfile: { routes: [] },
+    renderedRouteObservations: [
+      { path: "/projects", source: "agent-reported-browser-route", method: "HEAD", validatedAt: 500 },
+      { path: "/services", source: "person-reported-browser-route", method: "HEAD", validatedAt: 501 },
+      { path: "/contact", source: "agent-reported-browser-route", method: "GET", validatedAt: 502 },
+      { path: "/omitted", source: "agent-reported-browser-route", method: "HEAD", validatedAt: 503 },
+    ],
+  };
+  const candidates = createSiteRouteCandidates(report);
+  assert.equal(candidates.length, 3);
+  assert.deepEqual(candidates.map((item) => [item.path, item.source]), [
+    ["/projects", "agent-reported-browser-route"],
+    ["/services", "person-reported-browser-route"],
+    ["/contact", "agent-reported-browser-route"],
+  ]);
+  const input = createSiteExplorationInputs(
+    report,
+    { routeCandidateIds: [candidates[0].id] },
+    { requireCandidateIds: true },
+  );
+  assert.equal(input.routes[0].source, "agent-reported-browser-route");
+});
+
 test("aggregates recurring rule evidence across completed page audits", () => {
   const snapshot = siteExplorationSnapshot(mission(), [
     completeAudit(CHILD_A, "/privacy", 89),

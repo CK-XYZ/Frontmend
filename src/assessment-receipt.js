@@ -186,6 +186,7 @@ export function createAssessmentReceipt({
             provenance: result.source === "person" ? "person-reported-browser" : "agent-reported-browser",
             summary: text(result.summary, 300),
             observations: result.observations.slice(0, 4).map((item) => text(item, 400)),
+            observedRoutes: (result.observedRoutes ?? []).slice(0, 8).map((item) => text(item, 256)),
             reportedAt: Number.isFinite(result.reportedAt) ? result.reportedAt : null,
           })),
         }
@@ -271,6 +272,7 @@ export function assessmentReceiptMarkdown(receipt) {
         `- Summary: ${markdownText(check.summary, 300)}`,
         `- Reported: ${timestamp(check.reportedAt)}`,
         ...check.observations.map((observation) => `- Observed: ${markdownText(observation, 400)}`),
+        ...(check.observedRoutes ?? []).map((path) => `- Server-validated rendered route: ${markdownText(path, 256)}`),
       );
     }
   }

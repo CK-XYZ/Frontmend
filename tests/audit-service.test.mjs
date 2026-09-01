@@ -1731,6 +1731,89 @@ test("synchronizes a browser review and records only bounded agent evidence", as
   assert.equal(service.getMissionCheckpoint(AUDIT_ID).missionRevision, 7);
 });
 
+test("refreshes authoritative results after a rendered route contribution", async () => {
+  const url = "https://example.com/";
+  const mission = {
+    schemaVersion: 2,
+    intent: "assess",
+    focusAreas: ["seo"],
+    maxPriorities: 3,
+    scope: "bounded-site",
+    routeLimit: 3,
+    requestedBy: "agent",
+    requestedAt: 10,
+    repairPreparation: null,
+  };
+  let resultReads = 0;
+  const service = createAuditService({
+    transport: {
+      start: async () => ({
+        id: AUDIT_ID,
+        url,
+        source: "agent",
+        mission,
+        missionRevision: 5,
+        status: "complete",
+        progress: 100,
+        report: {
+          auditId: AUDIT_ID,
+          url,
+          finalUrl: url,
+          engine: { mode: "live-document", provider: "Frontmend document audit" },
+          findings: [],
+          viewports: [],
+          documentProfile: { routes: [] },
+        },
+      }),
+      recordBrowserReviewCheck: async () => ({
+        id: "browser-review-1",
+        auditId: AUDIT_ID,
+        purpose: "assessment",
+        requestedChecks: [{ id: "search-discovery" }],
+        results: [{ checkId: "search-discovery", outcome: "passed", observedRoutes: ["/projects"] }],
+        state: { status: "complete", nextCheck: null },
+        missionCheckpoint: missionCheckpoint(6),
+      }),
+      results: async () => {
+        resultReads += 1;
+        return {
+          auditId: AUDIT_ID,
+          url,
+          finalUrl: url,
+          engine: { mode: "live-document", provider: "Frontmend document audit" },
+          findings: [],
+          viewports: [],
+          documentProfile: { routes: [] },
+          renderedRouteObservations: [{
+            path: "/projects",
+            source: "agent-reported-browser-route",
+            method: "HEAD",
+            validatedAt: 500,
+          }],
+          missionCheckpoint: missionCheckpoint(6),
+        };
+      },
+    },
+  });
+  await service.startAudit({
+    url,
+    source: "agent",
+    mission: { intent: "assess", focusAreas: ["seo"], scope: "bounded-site", routeLimit: 3 },
+  });
+  await service.recordBrowserReviewCheck(AUDIT_ID, "browser-review-1", {
+    checkId: "search-discovery",
+    outcome: "passed",
+    summary: "Rendered navigation exposes the projects route.",
+    observations: ["A named same-site Projects link is rendered."],
+    observedRoutes: ["/projects"],
+  }, "agent", 5);
+
+  assert.equal(resultReads, 1);
+  assert.equal(service.getActiveAudit().report.renderedRouteObservations[0].path, "/projects");
+  assert.equal(service.getActiveAuditMissionState().siteScope.status, "not-started");
+  assert.equal(service.getActiveAuditMissionState().nextAction.tool, "start_site_exploration");
+});
+
 test("clears a cached browser review when the authoritative direct read returns none", async () => {
   let retained = true;
   const review = {
@@ -1901,10 +1984,11 @@ test("HTTP transport uses the browser-review singleton and sequenced check route
     focusAreas: ["accessibility", "seo"],
   }, 7);
   await transport.recordBrowserReviewCheck(AUDIT_ID, "browser-review-1", {
-    checkId: "rendered-structure",
+    checkId: "search-discovery",
     outcome: "passed",
-    summary: "Rendered structure checked.",
-    observations: ["One primary heading is rendered."],
+    summary: "Rendered routes checked.",
+    observations: ["Named Projects and Services links are rendered."],
+    observedRoutes: ["/projects", "/services"],
   }, "agent");
   await transport.withdrawBrowserReview(AUDIT_ID, "browser-review-1", 8);
   assert.equal(calls[0].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review`);
@@ -1916,6 +2000,7 @@ test("HTTP transport uses the browser-review singleton and sequenced check route
   });
   assert.equal(calls[2].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review/browser-review-1/checks`);
   assert.equal(JSON.parse(calls[2].init.body).source, "agent");
+  assert.deepEqual(JSON.parse(calls[2].init.body).observedRoutes, ["/projects", "/services"]);
   assert.equal(calls[3].url, `https://frontmend.test/api/audits/${AUDIT_ID}/browser-review/browser-review-1/withdrawal`);
   assert.deepEqual(JSON.parse(calls[3].init.body), {
     source: "person",

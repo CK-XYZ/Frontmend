@@ -396,7 +396,7 @@ function boundedSiteState(report, mission, explorations) {
       pagesComplete: 0,
       pagesFailed: 0,
       terminal: true,
-      blockedReason: "The root document produced no eligible retained same-site route candidates.",
+      blockedReason: "The retained document and rendered-browser evidence produced no server-validated same-site route candidates.",
     };
   }
   if (!exploration) {

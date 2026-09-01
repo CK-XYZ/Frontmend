@@ -1343,7 +1343,11 @@ export function createAuditService(options = {}) {
           "The audit service returned state for a different workspace or mission continuation. Retry the original audit address.",
         );
       }
-      if (responseReview?.purpose === "verification" && expectedGeneration === generation) {
+      const routeContribution = responseReview?.purpose === "assessment"
+        && (responseReview.results ?? []).some(
+          (result) => result?.checkId === input.checkId && (result.observedRoutes?.length ?? 0) > 0,
+        );
+      if ((responseReview?.purpose === "verification" || routeContribution) && expectedGeneration === generation) {
         const result = assertMissionCheckpointIdentity(
           assertResponseIdentity(await transport.results(auditId), "auditId", auditId),
           auditId,
@@ -1352,7 +1356,7 @@ export function createAuditService(options = {}) {
         if (missionRevisionFrom(result) !== missionRevisionFrom(responseReview)) {
           throw new AuditError(
             "MISSION_REFRESH_UNSTABLE",
-            "The verification evidence changed while Frontmend refreshed its result. Retry this read before acting.",
+            "The browser evidence changed while Frontmend refreshed its result. Retry this read before acting.",
             true,
             { missionCheckpoint: result.missionCheckpoint },
           );

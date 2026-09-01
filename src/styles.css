@@ -2764,6 +2764,15 @@ summary:focus-visible,
   white-space: nowrap;
 }
 
+.site-route-picker button > small {
+  grid-column: 2;
+  color: color-mix(in srgb, currentColor 68%, transparent);
+  font-family: var(--fm-mono);
+  font-size: 8px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
 .site-exploration-actions {
   display: flex;
   align-items: center;

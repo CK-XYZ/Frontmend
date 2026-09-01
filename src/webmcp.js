@@ -24,6 +24,7 @@ import {
   browserReviewAdoptionAvailable,
 } from "./browser-review-contract.js";
 import { repairVerificationReceiptMarkdown } from "./verification-impact-contract.js";
+import { observedRouteRecords } from "./route-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 const expectedMissionRevisionProperty = {
@@ -181,7 +182,6 @@ export function contextualFrontmendToolNames(service) {
   const available = new Set(["get_site_audit_results"]);
   const browserReview = service?.getBrowserReview?.(audit.id) ?? null;
   const findings = assessmentFindings(audit.report, browserReview);
-  const routes = audit.report?.documentProfile?.routes ?? [];
   const repairs = service?.getRepairs?.(audit.id) ?? [];
   const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
   const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
@@ -195,6 +195,7 @@ export function contextualFrontmendToolNames(service) {
         explorations,
       })
     : null;
+  const routes = missionState?.siteScope?.routeCandidates ?? observedRouteRecords(audit.report);
   const verificationReplay = audit.report?.verification?.browserReplay ?? null;
   const verificationReplays = audit.report?.verification?.browserReplays?.length
     ? audit.report.verification.browserReplays
@@ -586,7 +587,7 @@ export function createFrontmendTools(service) {
       name: "record_browser_review_check",
       title: "Record browser review check",
       description:
-        "Record the current exact browser-review check after using real browser controls on the retained target. Supply bounded observed facts; assessment issues require structured findings, while verification replay compares the retained finding and must not create a new one. Use blocked with an exact reason when the browser, safe interaction, authentication, capability, or retained target prevents honest inspection. Frontmend keeps provider and browser provenance separate and never treats this contribution as repository or deployment proof.",
+        "Record the current exact browser-review check after using real browser controls on the retained target. Supply bounded observed facts; the assessment search-discovery task may also contribute up to eight relative same-origin paths, which Frontmend revalidates server-side before minting route candidates. Assessment issues require structured findings, while verification replay compares the retained finding and must not create a new one. Use blocked with an exact reason when the browser, safe interaction, authentication, capability, or retained target prevents honest inspection. Frontmend keeps provider and browser provenance separate and never treats this contribution as repository or deployment proof.",
       inputSchema: {
         type: "object",
         properties: {
@@ -602,6 +603,14 @@ export function createFrontmendTools(service) {
             uniqueItems: true,
             items: { type: "string", minLength: 1, maxLength: 400 },
             description: "One to four concrete rendered-browser facts. May be omitted only for a blocked check.",
+          },
+          observedRoutes: {
+            type: "array",
+            minItems: 1,
+            maxItems: 8,
+            uniqueItems: true,
+            items: { type: "string", pattern: "^/(?!/)[^?#]{0,255}$" },
+            description: "Optional relative same-origin paths directly observed during the assessment search-discovery task. The server revalidates them before they can become route candidates.",
           },
           findings: {
             type: "array",
@@ -634,7 +643,7 @@ export function createFrontmendTools(service) {
       annotations: { readOnlyHint: false, untrustedContentHint: true },
       async run(input) {
         const value = objectInput(input);
-        noExtra(value, ["auditId", "reviewId", "checkId", "outcome", "summary", "observations", "findings", "blockerReason", "expectedMissionRevision"]);
+        noExtra(value, ["auditId", "reviewId", "checkId", "outcome", "summary", "observations", "observedRoutes", "findings", "blockerReason", "expectedMissionRevision"]);
         const auditId = auditIdForTool(service, value.auditId);
         const review = await service.recordBrowserReviewCheck(
           auditId,
@@ -644,6 +653,7 @@ export function createFrontmendTools(service) {
             outcome: value.outcome,
             summary: requiredString(value.summary, "summary", 300),
             observations: value.observations,
+            observedRoutes: value.observedRoutes,
             findings: value.findings,
             blockerReason: value.blockerReason,
           },
@@ -651,12 +661,14 @@ export function createFrontmendTools(service) {
           expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
         );
         const nextCheck = review.state.nextCheck;
+        const missionCheckpoint = review.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId);
+        const assessmentComplete = Boolean(service?.getAuditMissionState?.(auditId)?.assessmentComplete);
         return {
           auditId,
           browserReview: review,
-          missionCheckpoint: review.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
+          missionCheckpoint,
           acceptedCheck: review.results.find((result) => result.checkId === value.checkId) ?? null,
-          assessmentComplete: Boolean(service?.getAuditMissionState?.(auditId)?.assessmentComplete),
+          assessmentComplete,
           verificationComplete: review.purpose === "verification" && review.state.complete,
           nextAction: review.state.complete
             ? review.purpose === "verification"
@@ -665,11 +677,16 @@ export function createFrontmendTools(service) {
                   input: { auditId },
                   reason: "Every required exact replay and browser guardrail is complete, so Frontmend can now return the bounded verification receipt.",
                 }
-              : {
-                  tool: "get_site_audit_results",
-                  input: { auditId },
-                  reason: "Re-read the combined provider and browser evidence to continue the persisted mission.",
-                }
+              : !assessmentComplete && missionCheckpoint?.action?.tool
+                ? {
+                    ...missionCheckpoint.action,
+                    input: { auditId, ...(missionCheckpoint.action.input ?? {}) },
+                  }
+                : {
+                    tool: "get_site_audit_results",
+                    input: { auditId },
+                    reason: "Re-read the combined provider and browser evidence to continue the persisted mission.",
+                  }
             : {
                 tool: "record_browser_review_check",
                 input: { reviewId: review.id, checkId: nextCheck?.id },
