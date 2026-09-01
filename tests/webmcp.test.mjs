@@ -428,6 +428,30 @@ test("site-exploration tools start and read one durable cross-page mission", asy
   assert.equal(activities[3][2].explorationId, exploration.id);
 });
 
+test("selected child findings expose bounded rendered-review actions", () => {
+  const service = {
+    getActiveAudit: () => ({ id: "root-audit", status: "complete", report: { findings: [] } }),
+    getRepairs: () => [],
+    getDiagnosticMissions: () => [],
+    getSiteExplorations: () => [{
+      currentSnapshot: {
+        pages: [{
+          auditId: "child-audit",
+          renderedReview: {
+            status: "available",
+            action: {
+              tool: "open_browser_review",
+              input: { auditId: "child-audit", expectedMissionRevision: 4 },
+            },
+          },
+        }],
+      },
+    }],
+  };
+
+  assert.ok(contextualFrontmendToolNames(service).includes("open_browser_review"));
+});
+
 test("agent tools use the same audit service as the human interface", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const checkpoint = { auditId, missionRevision: 1 };
@@ -847,7 +871,10 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
     state: { state: "ready-for-repair" },
   }];
   const contributed = await tool.execute({});
-  assert.equal(contributed.data.priorities[0].evidenceState, "diagnosis-contributed");
+  const contributedContrast = contributed.data.priorities.find(
+    (priority) => priority.source.auditId === "color-contrast",
+  );
+  assert.equal(contributedContrast.evidenceState, "diagnosis-contributed");
   assert.equal(contributed.data.missionState.assessmentComplete, true);
   assert.equal(contributed.data.missionState.nextAction, null);
   assert.ok(contextualFrontmendToolNames(service).includes("prepare_site_repair"));

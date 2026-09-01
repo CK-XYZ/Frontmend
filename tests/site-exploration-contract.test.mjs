@@ -39,6 +39,7 @@ function completeAudit(id, path, score, extraFinding = null) {
     id,
     status: "complete",
     progress: 100,
+    missionRevision: 4,
     report: {
       score,
       checks: { passed: 8, warnings: 0, failed: 1 },
@@ -147,6 +148,10 @@ test("aggregates recurring rule evidence across completed page audits", () => {
   assert.equal(snapshot.issues[0].occurrenceCount, 2);
   assert.equal(snapshot.issues[0].distinctPageCount, 2);
   assert.deepEqual(snapshot.issues[0].occurrences.map((item) => item.path), ["/privacy", "/terms"]);
+  assert.deepEqual(snapshot.pages[0].renderedReview.action, {
+    tool: "open_browser_review",
+    input: { auditId: CHILD_A, expectedMissionRevision: 4 },
+  });
 });
 
 test("separates viewport occurrences from distinct affected pages", () => {

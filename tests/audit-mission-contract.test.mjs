@@ -193,6 +193,79 @@ test("deduplicates measured rules, retains strategies, and orders by severity", 
   assert.equal(projection.categoryScores.performance, 92);
 });
 
+test("ranks rendered-confirmed issues ahead of repeated diagnosed document conflicts", () => {
+  const mission = createAuditMission({ focusAreas: ["accessibility"], maxPriorities: 3 }, "human", 10);
+  const rankedReport = {
+    auditId: report.auditId,
+    findings: [{
+      id: "document-heading",
+      title: "The fetched document is missing a primary heading",
+      severity: "medium",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      evidence: "The fetched shell contains no h1.",
+      repair: "Reconcile the static shell with the rendered application.",
+      source: { provider: "Frontmend document audit", auditId: "document-heading", strategy: "document" },
+    }],
+  };
+  const explorations = [{
+    id: "exploration-1",
+    status: "complete",
+    issues: [{
+      provider: "Frontmend document audit",
+      ruleId: "document-heading",
+      title: "The fetched document is missing a primary heading",
+      severity: "medium",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      suggestedRepair: "Reconcile the static shell with the rendered application.",
+      occurrences: [
+        { auditId: "child-a", path: "/projects", findingId: "child-a-heading", strategy: "mobile", evidence: "No h1 in fetched shell." },
+        { auditId: "child-b", path: "/services", findingId: "child-b-heading", strategy: "desktop", evidence: "No h1 in fetched shell." },
+      ],
+    }],
+  }];
+  const browserReview = {
+    tasks: [{ id: "rendered-issue", kind: "coverage-gap" }],
+    results: [{
+      checkId: "rendered-issue",
+      outcome: "issue",
+      summary: "The rendered services route skips a heading level.",
+      observations: ["The rendered outline moves from h1 to h3."],
+      source: "agent",
+      findings: [{
+        id: "browser-services-heading",
+        title: "Rendered service headings skip a level",
+        severity: "medium",
+        category: "Accessibility",
+        focusAreas: ["accessibility"],
+        evidence: "The rendered outline moves from h1 to h3.",
+        repair: "Use an h2 for each service heading.",
+        source: { provider: "Frontmend browser review", auditId: "rendered-heading-order", strategy: "browser" },
+      }],
+    }],
+  };
+  const diagnosticMissions = [{
+    id: "diagnostic-heading",
+    findingId: "document-heading",
+    state: { state: "ready-for-repair" },
+  }];
+  const projection = focusedAuditPriorities(
+    rankedReport,
+    mission,
+    diagnosticMissions,
+    browserReview,
+    [],
+    explorations,
+  );
+
+  assert.equal(projection.priorities[0].relationship, "browser-only");
+  assert.equal(projection.priorities[0].title, "Rendered service headings skip a level");
+  assert.equal(projection.priorities[1].relationship, "diagnosis-contributed");
+  assert.equal(projection.priorities[1].occurrenceCount, 3);
+  assert.equal(projection.priorities[1].distinctPageCount, 3);
+});
+
 test("keeps assessment incomplete until supported diagnosis is contributed", () => {
   const mission = createAuditMission({ focusAreas: ["reliability"] }, "agent", 10);
   const pending = deriveAuditMissionState({ report, mission });

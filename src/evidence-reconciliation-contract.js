@@ -24,6 +24,13 @@ function providerFindingRecord(finding) {
       auditId: bounded(finding?.source?.auditId ?? finding?.id, 160),
       strategy: bounded(finding?.source?.strategy ?? "document", 40),
     },
+    ...(finding?.route ? {
+      route: {
+        auditId: bounded(finding.route.auditId, 160),
+        path: bounded(finding.route.path, 256),
+        explorationId: bounded(finding.route.explorationId, 160),
+      },
+    } : {}),
     diagnosticKind: finding?.diagnosticEvidence?.kind ?? null,
   };
 }

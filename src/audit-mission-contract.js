@@ -34,6 +34,15 @@ const MISSION_FIELDS = Object.freeze([
 ]);
 const CREATE_FIELDS = Object.freeze(["intent", "focusAreas", "maxPriorities", "scope", "routeLimit"]);
 const SEVERITY_ORDER = Object.freeze({ high: 0, medium: 1, low: 2 });
+const EVIDENCE_ORDER = Object.freeze({
+  "verified-still-present": 0,
+  "browser-confirmed": 0,
+  "browser-only": 0,
+  "provider-only": 1,
+  "diagnosis-required": 1,
+  "provider-browser-conflict": 2,
+  "diagnosis-contributed": 3,
+});
 
 function inputObject(value, allowed, label) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
@@ -284,6 +293,14 @@ export function focusedAuditPriorities(
     const finding = providerFindings[0] ?? browserFindings[0];
     const occurrenceFindings = providerFindings.length ? providerFindings : browserFindings;
     const affectedStrategies = [...new Set(occurrenceFindings.map((entry) => entry.strategy).filter(Boolean))];
+    const distinctPageKeys = new Set(
+      occurrenceFindings
+        .map((entry) => entry.route?.auditId || entry.route?.path)
+        .filter(Boolean),
+    );
+    if (occurrenceFindings.some((entry) => !entry.route?.auditId && !entry.route?.path)) {
+      distinctPageKeys.add("root-audit");
+    }
     const repository = item.evidenceRecords.repository;
     const evidenceState = repository?.state === "blocked"
       ? "diagnosis-blocked"
@@ -304,6 +321,7 @@ export function focusedAuditPriorities(
       evidence: finding?.evidence ?? item.evidenceRecords.browser?.summary ?? "Retained evidence",
       suggestedRepair: finding?.suggestedRepair ?? "Diagnose the retained evidence before repair.",
       occurrenceCount: Math.max(1, occurrenceFindings.length),
+      distinctPageCount: Math.max(1, distinctPageKeys.size),
       affectedStrategies,
       evidenceProvenance: providerFindings.length
         ? "measured-provider"
@@ -332,6 +350,8 @@ export function focusedAuditPriorities(
   const priorities = grouped
     .sort((left, right) =>
       (SEVERITY_ORDER[left.severity] ?? 3) - (SEVERITY_ORDER[right.severity] ?? 3) ||
+      (EVIDENCE_ORDER[left.relationship] ?? 2) - (EVIDENCE_ORDER[right.relationship] ?? 2) ||
+      right.distinctPageCount - left.distinctPageCount ||
       right.occurrenceCount - left.occurrenceCount ||
       left.sourceIndex - right.sourceIndex,
     )
@@ -339,7 +359,7 @@ export function focusedAuditPriorities(
     .map(({ sourceIndex: _sourceIndex, ...priority }, index) => ({
       rank: index + 1,
       ...priority,
-      whyPrioritized: `${priority.severity} severity${priority.occurrenceCount > 1 ? ` across ${priority.occurrenceCount} retained occurrences` : ""}`,
+      whyPrioritized: `${priority.severity} severity · ${priority.relationship}${priority.distinctPageCount > 1 ? ` · ${priority.distinctPageCount} affected pages` : ""}${priority.occurrenceCount > 1 ? ` · ${priority.occurrenceCount} retained occurrences` : ""}`,
     }));
 
   const categoryScores = {};

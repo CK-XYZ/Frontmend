@@ -340,6 +340,10 @@ export function contextualFrontmendToolNames(service) {
   const repairs = service?.getRepairs?.(audit.id) ?? [];
   const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
   const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
+  const childRenderedReviewAvailable = explorations.some((exploration) =>
+    (exploration?.currentSnapshot ?? exploration)?.pages?.some(
+      (page) => page?.renderedReview?.action?.tool === "open_browser_review",
+    ));
   const missionState = [1, 2].includes(audit.mission?.schemaVersion)
     ? deriveAuditMissionState({
         report: audit.report,
@@ -396,6 +400,7 @@ export function contextualFrontmendToolNames(service) {
   ) {
     available.add("open_browser_review");
   }
+  if (childRenderedReviewAvailable) available.add("open_browser_review");
   if (verificationReplayRequired && !browserReview) {
     available.add("open_browser_review");
   }
@@ -1443,7 +1448,7 @@ export function createFrontmendTools(service) {
       name: "get_site_exploration",
       title: "Read site exploration",
       description:
-        "Read progress or aggregated cross-page evidence for a durable site exploration. Omit missionId to use the most recent exploration attached to the visible root audit.",
+        "Read progress or aggregated cross-page evidence for a durable site exploration. Completed child pages with retained findings expose an exact renderedReview action so an agent can reconcile that selected route without implying it was already rendered. Omit missionId to use the most recent exploration attached to the visible root audit.",
       inputSchema: {
         type: "object",
         properties: {

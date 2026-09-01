@@ -154,6 +154,11 @@ function pageSnapshot(child, audit) {
     : Number.isFinite(audit?.progress)
       ? Math.max(0, Math.min(100, Math.round(audit.progress)))
       : 0;
+  const missionRevision = Number.isInteger(audit?.missionRevision) ? audit.missionRevision : null;
+  const renderedReviewSuggested = status === "complete"
+    && Number.isFinite(report?.findingCount)
+    && report.findingCount > 0
+    && missionRevision !== null;
   return {
     auditId: child.auditId || null,
     path: child.path,
@@ -165,6 +170,22 @@ function pageSnapshot(child, audit) {
     score: Number.isFinite(report?.score) ? report.score : null,
     checks: report?.checks ?? null,
     findingCount: Number.isFinite(report?.findingCount) ? report.findingCount : null,
+    renderedReview: renderedReviewSuggested
+      ? {
+          status: "available",
+          action: {
+            tool: "open_browser_review",
+            input: { auditId: child.auditId, expectedMissionRevision: missionRevision },
+          },
+          reason: "This selected route has retained findings. A bounded rendered review can distinguish document evidence from the client-rendered page before prioritisation.",
+        }
+      : {
+          status: status === "complete" ? "not-suggested" : "unavailable",
+          action: null,
+          reason: status === "complete"
+            ? "No retained route finding currently needs rendered reconciliation."
+            : "Rendered review becomes available after this selected route audit completes.",
+        },
     completedAt: Number.isFinite(report?.completedAt)
       ? report.completedAt
       : Number.isFinite(audit?.completedAt)
