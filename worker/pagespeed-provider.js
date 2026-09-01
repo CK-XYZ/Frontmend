@@ -1016,8 +1016,11 @@ export async function runPageSpeedAudit({
       engine: {
         mode: partial ? "live-lighthouse-partial" : "live-lighthouse",
         provider: "PageSpeed Insights",
+        adapterId: "google-pagespeed-lighthouse",
+        adapterContractVersion: 1,
         ruleSetVersion: 1,
         lighthouseVersion: bounded(results[0].lighthouseResult.lighthouseVersion, 40),
+        evidenceVersion: bounded(results[0].lighthouseResult.lighthouseVersion, 40),
         notice: partial
           ? `Lighthouse evidence retained for ${successful.length} of ${STRATEGIES.length} strategies; ${viewportFailures.map((failure) => failure.label.toLowerCase()).join(" and ")} unavailable.`
           : "Live evidence measured by Lighthouse in mobile and desktop emulation.",
@@ -1090,8 +1093,11 @@ export async function runDocumentAudit({
         engine: {
           mode: "live-document",
           provider: "Frontmend document audit",
+          adapterId: "frontmend-live-document",
+          adapterContractVersion: 1,
           ruleSetVersion: 1,
           lighthouseVersion: null,
+          evidenceVersion: "frontmend-document-rules-1",
           notice: fallbackReason
             ? "Live HTML and response-header evidence. Lighthouse was unavailable for this run."
             : "Live HTML and response-header evidence from the public page.",
@@ -1127,9 +1133,13 @@ export async function runFrontmendAudit(options) {
     phaseLabel: "Running Lighthouse and live document evidence",
     progress: 18,
   });
+  const viewportProvider = options.providers?.viewport ?? runPageSpeedAudit;
+  const documentProvider = options.providers?.document ?? runDocumentAudit;
+  const providerOptions = { ...options };
+  delete providerOptions.providers;
   const [lighthouseOutcome, documentOutcome] = await Promise.allSettled([
-    runPageSpeedAudit({
-      ...options,
+    viewportProvider({
+      ...providerOptions,
       onProgress: async (state) => emitProgress({
         ...state,
         phaseLabel: state.phase === "capture"
@@ -1138,8 +1148,8 @@ export async function runFrontmendAudit(options) {
         progress: state.phase === "capture" ? 22 : 76,
       }),
     }),
-    runDocumentAudit({
-      ...options,
+    documentProvider({
+      ...providerOptions,
       onProgress: async (state) => emitProgress({
         ...state,
         phaseLabel: "Inspecting live HTML, response headers, metadata, and routes",

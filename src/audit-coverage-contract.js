@@ -1,3 +1,5 @@
+import { createEvidenceAdapterReceipts } from "./evidence-adapter-contract.js";
+
 const STRATEGIES = Object.freeze(["mobile", "desktop"]);
 const SEVERITY_ORDER = Object.freeze({ high: 0, medium: 1, low: 2 });
 const DOCUMENT_RULE_ALIASES = Object.freeze({
@@ -39,7 +41,7 @@ function mergeChecks(left = {}, right = {}) {
 function supplementalDocumentEvidence(lighthouseReport, documentReport) {
   const measuredLighthouseRules = new Set(
     (lighthouseReport?.ruleOutcomes ?? [])
-      .filter((outcome) => outcome?.source?.provider === "Lighthouse")
+      .filter((outcome) => outcome?.source?.strategy !== "document")
       .map((outcome) => outcome.source.auditId),
   );
   const isSupplementalRule = (ruleId) =>
@@ -121,9 +123,16 @@ export function createAuditCoverage({
         : documentStatus === "complete"
           ? "document-only"
           : "unavailable";
+  const adapters = createEvidenceAdapterReceipts({
+    lighthouseReport,
+    documentReport,
+    lighthouseError,
+    documentError,
+  });
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     level,
+    adapters,
     sources: {
       lighthouse: {
         status: lighthouseStatus,
@@ -241,9 +250,11 @@ export function mergeAuditEvidence({
       },
       engine: {
         mode,
-        provider: "PageSpeed Insights + Frontmend document audit",
+        provider: `${boundedText(lighthouse.report.engine?.provider, 120) || "Viewport evidence provider"} + ${boundedText(document.report.engine?.provider, 120) || "Frontmend document audit"}`,
         ruleSetVersion: 1,
         lighthouseVersion: lighthouse.report.engine?.lighthouseVersion ?? null,
+        adapterContractVersion: 1,
+        evidenceAdapters: coverage.adapters.map((adapter) => adapter.adapterId),
         notice,
         fallbackReason: partial ? "PARTIAL_LIGHTHOUSE" : null,
       },

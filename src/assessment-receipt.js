@@ -4,6 +4,7 @@ import { diagnosticEvidenceChain, diagnosticMissionSnapshot } from "./diagnostic
 import { AuditError } from "./url-policy.js";
 import { createBuildDescriptor } from "./protocol-contract.js";
 import { activityLedgerBoundary, activityLedgerSnapshot } from "./activity-ledger-contract.js";
+import { evidenceAdapterReceiptSnapshot } from "./evidence-adapter-contract.js";
 
 const MAX_PRIORITIES = 5;
 
@@ -153,6 +154,10 @@ export function createAssessmentReceipt({
       lighthouseVersion: report.engine.lighthouseVersion
         ? text(report.engine.lighthouseVersion, 80)
         : null,
+      adapters: (report.coverage?.adapters ?? [])
+        .map(evidenceAdapterReceiptSnapshot)
+        .filter(Boolean)
+        .slice(0, 4),
     },
     mission: {
       intent: mission.intent,
@@ -232,7 +237,26 @@ export function assessmentReceiptMarkdown(receipt) {
     `- Protocol: v${Number.isInteger(receipt.build?.protocolVersion) ? receipt.build.protocolVersion : 1}; tool library v${Number.isInteger(receipt.build?.toolLibraryVersion) ? receipt.build.toolLibraryVersion : 1}; ${Number.isInteger(receipt.build?.toolCount) ? receipt.build.toolCount : "unknown"} contracts`,
     `- Evidence mode: ${markdownText(receipt.engine?.mode, 80)}`,
     `- Provider: ${markdownText(receipt.engine?.provider, 120)}`,
+    `- Lighthouse version: ${receipt.engine?.lighthouseVersion ? markdownText(receipt.engine.lighthouseVersion, 80) : "not used"}`,
     "",
+  ];
+  if (receipt.engine?.adapters?.length) {
+    lines.push(
+      "## Evidence adapters",
+      "",
+      "| Adapter | Provider | Kind | Status | Evidence version | Measured conditions |",
+      "| --- | --- | --- | --- | --- | --- |",
+      ...receipt.engine.adapters.map((adapter) =>
+        `| ${markdownText(adapter.adapterId, 80)} | ${markdownText(adapter.provider, 120)} | ${markdownText(adapter.kind, 60)} | ${markdownText(adapter.status, 40)} | ${markdownText(adapter.evidenceVersion ?? adapter.lighthouseVersion ?? (adapter.ruleSetVersion ? `rules-${adapter.ruleSetVersion}` : "not reported"), 80)} | ${(adapter.measuredConditions ?? []).map((item) => markdownText(item, 40)).join(", ") || "none"} |`,
+      ),
+      "",
+      ...receipt.engine.adapters.map((adapter) =>
+        `- ${markdownText(adapter.adapterId, 80)} boundary: ${markdownText(adapter.claimBoundary, 360)}`,
+      ),
+      "",
+    );
+  }
+  lines.push(
     "## Assessment mission",
     "",
     `- Intent: ${markdownText(receipt.mission?.intent, 40)}`,
@@ -242,7 +266,7 @@ export function assessmentReceiptMarkdown(receipt) {
     `- Assessment complete: yes`,
     `- Matching findings: ${Number.isFinite(receipt.assessment?.matchingFindingCount) ? receipt.assessment.matchingFindingCount : "—"}`,
     `- Ranked priorities: ${receipt.priorities?.length ?? 0}`,
-  ];
+  );
   if (receipt.assessment?.siteScope?.requested) {
     lines.push(
       "",

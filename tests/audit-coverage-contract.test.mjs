@@ -23,7 +23,15 @@ const lighthouse = {
       status: "failed",
     }],
     checks: { passed: 0, warnings: 0, failed: 1 },
-    engine: { mode: "live-lighthouse", lighthouseVersion: "13.4.1" },
+    engine: {
+      mode: "live-lighthouse",
+      provider: "PageSpeed Insights",
+      adapterId: "google-pagespeed-lighthouse",
+      adapterContractVersion: 1,
+      evidenceVersion: "13.4.1",
+      lighthouseVersion: "13.4.1",
+      ruleSetVersion: 1,
+    },
   },
 };
 
@@ -59,7 +67,14 @@ const document = {
     ],
     checks: { passed: 0, warnings: 1, failed: 1 },
     documentProfile: { routes: ["/about", "/privacy"] },
-    engine: { mode: "live-document" },
+    engine: {
+      mode: "live-document",
+      provider: "Frontmend document audit",
+      adapterId: "frontmend-live-document",
+      adapterContractVersion: 1,
+      evidenceVersion: "frontmend-document-rules-1",
+      ruleSetVersion: 1,
+    },
   },
 };
 
@@ -76,12 +91,38 @@ test("projects categorical source coverage without inventing a confidence score"
   assert.equal("score" in coverage, false);
   assert.equal("confidence" in coverage, false);
   assert.deepEqual(coverage.sourceFailures, []);
+  assert.deepEqual(coverage.adapters.map((adapter) => ({
+    id: adapter.adapterId,
+    provider: adapter.provider,
+    kind: adapter.kind,
+    status: adapter.status,
+    evidenceVersion: adapter.evidenceVersion,
+  })), [
+    {
+      id: "google-pagespeed-lighthouse",
+      provider: "PageSpeed Insights",
+      kind: "viewport-measurement",
+      status: "complete",
+      evidenceVersion: "13.4.1",
+    },
+    {
+      id: "frontmend-live-document",
+      provider: "Frontmend document audit",
+      kind: "document-inspection",
+      status: "complete",
+      evidenceVersion: "frontmend-document-rules-1",
+    },
+  ]);
 });
 
 test("merges independent sources while suppressing duplicate document rules", () => {
   const merged = mergeAuditEvidence({ lighthouse, document });
 
   assert.equal(merged.report.engine.mode, "live-lighthouse-document");
+  assert.deepEqual(merged.report.engine.evidenceAdapters, [
+    "google-pagespeed-lighthouse",
+    "frontmend-live-document",
+  ]);
   assert.equal(merged.report.completedAt, 12);
   assert.equal(merged.report.findingCount, 2);
   assert.deepEqual(

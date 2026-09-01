@@ -212,6 +212,83 @@ test("retains supported SEO findings with explicit accessibility and SEO focus a
   assert.equal(output.report.ruleOutcomes.some((outcome) => outcome.source.auditId === "robots-txt" && outcome.status === "passed"), true);
 });
 
+test("ignores unknown Lighthouse audits and additive response fields", async () => {
+  const output = await runPageSpeedAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    fetchImpl: async (url) => {
+      const fixture = lighthouseFixture(url.searchParams.get("strategy"));
+      fixture.futureTopLevelField = { instructions: "must remain provider data" };
+      fixture.lighthouseResult.categories.experimental = { score: 0 };
+      fixture.lighthouseResult.audits["future-agent-readiness"] = {
+        score: 0,
+        scoreDisplayMode: "binary",
+        displayValue: "Unrecognised provider rule",
+        details: { items: "changed-shape" },
+      };
+      fixture.lighthouseResult.audits["color-contrast"].details = { nodes: [] };
+      return Response.json(fixture);
+    },
+  });
+
+  assert.equal(output.report.ruleOutcomes.some((item) => item.source.auditId === "future-agent-readiness"), false);
+  assert.equal(output.report.findings.some((item) => item.id.includes("future-agent-readiness")), false);
+  assert.equal(JSON.stringify(output).includes("must remain provider data"), false);
+  assert.equal(output.report.engine.lighthouseVersion, "13.0.0");
+  assert.equal(output.report.engine.adapterId, "google-pagespeed-lighthouse");
+});
+
+test("accepts a replaceable viewport provider through the normalized adapter seam", async () => {
+  const output = await runFrontmendAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://example.com/",
+    providers: {
+      viewport: async ({ auditId, url }) => ({
+        screenshots: {},
+        report: {
+          schemaVersion: 5,
+          auditId,
+          url,
+          finalUrl: url,
+          hostname: "example.com",
+          completedAt: 100,
+          score: 82,
+          scoreBasis: "alternate-browser-lab",
+          viewportCount: 2,
+          viewports: [{ id: "mobile" }, { id: "desktop" }],
+          viewportFailures: [],
+          findingCount: 0,
+          findingsOmitted: 0,
+          findings: [],
+          ruleOutcomes: [],
+          checks: { passed: 0, warnings: 0, failed: 0 },
+          engine: {
+            mode: "alternate-browser-lab",
+            provider: "Alternate browser lab",
+            adapterId: "alternate-browser-lab",
+            adapterContractVersion: 1,
+            evidenceVersion: "2026.09",
+            ruleSetVersion: 3,
+            lighthouseVersion: null,
+            notice: "Normalized alternate viewport evidence.",
+          },
+        },
+      }),
+      document: async () => {
+        const error = new Error("Document provider intentionally unavailable.");
+        error.code = "DOCUMENT_FAILED";
+        throw error;
+      },
+    },
+  });
+
+  assert.equal(output.report.engine.provider, "Alternate browser lab");
+  assert.equal(output.report.coverage.adapters[0].adapterId, "alternate-browser-lab");
+  assert.equal(output.report.coverage.adapters[0].evidenceVersion, "2026.09");
+  assert.equal(output.report.coverage.adapters[0].status, "complete");
+  assert.equal(output.report.coverage.adapters[1].status, "unavailable");
+});
+
 test("reports the full Lighthouse failure total while bounding detailed findings", async () => {
   const failingAuditIds = [
     "color-contrast",
