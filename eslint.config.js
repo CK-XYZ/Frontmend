@@ -1,0 +1,76 @@
+const sourceFiles = [
+  "src/**/*.{js,jsx}",
+  "worker/**/*.js",
+  "scripts/**/*.mjs",
+  "vite.config.mjs",
+];
+
+export default [
+  {
+    ignores: ["dist/**", "node_modules/**", ".wrangler/**"],
+  },
+  {
+    files: sourceFiles,
+    linterOptions: {
+      reportUnusedDisableDirectives: "error",
+    },
+    languageOptions: {
+      ecmaVersion: "latest",
+      sourceType: "module",
+      parserOptions: {
+        ecmaFeatures: { jsx: true },
+      },
+    },
+    rules: {
+      "constructor-super": "error",
+      "for-direction": "error",
+      "getter-return": "error",
+      "no-async-promise-executor": "error",
+      "no-class-assign": "error",
+      "no-compare-neg-zero": "error",
+      "no-constant-binary-expression": "error",
+      "no-const-assign": "error",
+      "no-dupe-args": "error",
+      "no-dupe-class-members": "error",
+      "no-dupe-else-if": "error",
+      "no-dupe-keys": "error",
+      "no-duplicate-case": "error",
+      "no-fallthrough": "error",
+      "no-func-assign": "error",
+      "no-import-assign": "error",
+      "no-loss-of-precision": "error",
+      "no-new-native-nonconstructor": "error",
+      "no-obj-calls": "error",
+      "no-promise-executor-return": "error",
+      "no-self-assign": "error",
+      "no-setter-return": "error",
+      "no-sparse-arrays": "error",
+      "no-this-before-super": "error",
+      "no-undef-init": "error",
+      "no-unexpected-multiline": "error",
+      "no-unmodified-loop-condition": "error",
+      "no-unreachable": "error",
+      "no-unreachable-loop": "error",
+      "no-unsafe-finally": "error",
+      "no-unsafe-negation": "error",
+      "no-useless-backreference": "error",
+      "no-useless-catch": "error",
+      "no-useless-escape": "error",
+      "require-yield": "error",
+      "use-isnan": "error",
+      "valid-typeof": "error",
+    },
+  },
+  {
+    files: [
+      "src/evidence-adapter-contract.js",
+      "src/operational-event-contract.js",
+      "src/protocol-contract.js",
+      "src/public-destination-contract.js",
+      "src/url-policy.js",
+    ],
+    rules: {
+      "no-unused-vars": ["error", { args: "after-used", argsIgnorePattern: "^_" }],
+    },
+  },
+];

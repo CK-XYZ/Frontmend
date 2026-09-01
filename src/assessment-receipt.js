@@ -17,7 +17,7 @@ function markdownText(value, maximum = 400) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
-    .replace(/[\\`*_{}\[\]]/g, "\\$&")
+    .replace(/[\\`*_{}[\]]/g, "\\$&")
     .replace(/\|/g, "\\|")
     .replace(/\s+/g, " ") || "—";
 }

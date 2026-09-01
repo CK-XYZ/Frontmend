@@ -144,6 +144,7 @@ Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun 
 ```powershell
 bun install
 bun run check
+bun run lint
 bun run eval:mission
 bun run eval:webmcp-routing
 bun run test

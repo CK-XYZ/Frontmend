@@ -282,7 +282,7 @@ export function siteExplorationSnapshot(mission, audits = []) {
 
 function markdownText(value, limit = 500) {
   return boundedText(value, limit)
-    .replace(/[\\`*_{}\[\]<>|]/g, "\\$&")
+    .replace(/[\\`*_{}[\]<>|]/g, "\\$&")
     .replace(/[\r\n]+/g, " ");
 }
 

@@ -250,7 +250,7 @@ async function waitForAudit(service, adapter, auditId, sequence) {
     const audit = await callContextualTool(service, "check_site_audit_progress", { auditId }, sequence);
     if (audit.status === "complete") return audit;
     assert.notEqual(audit.status, "failed", `Audit ${auditId} failed during deterministic evaluation.`);
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
   }
   throw new Error(`Audit ${auditId} did not complete within ${MAX_POLLS} reads.`);
 }
@@ -269,7 +269,7 @@ async function waitForExploration(service, adapter, auditId, missionId, sequence
     sequence.push("get_site_exploration");
     const mission = result.data;
     if (["complete", "partial", "failed"].includes(mission.status)) return mission;
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => { setTimeout(resolve, 0); });
   }
   throw new Error(`Exploration ${missionId} did not complete within ${MAX_POLLS} reads.`);
 }
@@ -514,7 +514,7 @@ async function runMainScenario(adapter, controller) {
         break;
       }
       assert.notEqual(current.status, "failed");
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => { setTimeout(resolve, 0); });
     }
     assert.equal(terminalAudit?.status, "complete");
   }
