@@ -11,6 +11,7 @@
   "scripts": {
     "dev": "vite",
     "build": "bun scripts/build.mjs",
+    "check": "tsc -p tsconfig.contracts.json",
     "eval:mission": "bun scripts/eval-mission.mjs",
     "eval:webmcp-routing": "bun scripts/eval-webmcp-routing.mjs",
     "smoke:version": "bun scripts/smoke-version.mjs",
@@ -28,6 +29,7 @@
   "devDependencies": {
     "@socketsecurity/bun-security-scanner": "^1.1.2",
     "@vitejs/plugin-react": "5.0.4",
+    "typescript": "^7.0.2",
     "vite": "6.4.2",
     "wrangler": "^4.33.2"
   }

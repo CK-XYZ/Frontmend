@@ -1,19 +1,29 @@
 const STRATEGIES = Object.freeze(["mobile", "desktop"]);
 
+/** @typedef {{ adapterId?: unknown, provider?: unknown, adapterContractVersion?: unknown, evidenceVersion?: unknown, lighthouseVersion?: unknown, ruleSetVersion?: unknown }} EvidenceEngine */
+/** @typedef {{ id?: unknown }} EvidenceViewport */
+/** @typedef {{ code?: unknown }} EvidenceFailure */
+/** @typedef {{ engine?: EvidenceEngine, viewports?: EvidenceViewport[], viewportFailures?: EvidenceFailure[] }} EvidenceReport */
+/** @typedef {{ code?: unknown }} EvidenceError */
+
+/** @param {unknown} value @param {number} [maximum] */
 function boundedText(value, maximum = 160) {
   return typeof value === "string"
     ? value.replace(/\s+/g, " ").trim().slice(0, maximum)
     : "";
 }
 
+/** @param {unknown} value */
 function boundedVersion(value) {
   return boundedText(value, 80) || null;
 }
 
+/** @param {unknown[]} values */
 function boundedCodes(values) {
   return [...new Set(values.map((value) => boundedText(value, 80)).filter(Boolean))].slice(0, 4);
 }
 
+/** @param {EvidenceReport | null | undefined} report @param {{ adapterId: string, provider: string }} fallback */
 function adapterIdentity(report, fallback) {
   const engine = report?.engine ?? {};
   return {
@@ -32,6 +42,7 @@ function adapterIdentity(report, fallback) {
  * Projects provider-specific reports into a small, stable evidence-adapter receipt.
  * These records describe source availability and boundaries; they deliberately
  * avoid collapsing independent evidence into a confidence score.
+ * @param {{ lighthouseReport?: EvidenceReport | null, documentReport?: EvidenceReport | null, lighthouseError?: EvidenceError | null, documentError?: EvidenceError | null }} [options]
  */
 export function createEvidenceAdapterReceipts({
   lighthouseReport = null,
@@ -86,25 +97,27 @@ export function createEvidenceAdapterReceipts({
   ];
 }
 
+/** @param {unknown} value */
 export function evidenceAdapterReceiptSnapshot(value) {
   if (!value || typeof value !== "object") return null;
+  const record = /** @type {Record<string, unknown>} */ (value);
   return {
-    adapterId: boundedText(value.adapterId, 80) || "unknown-adapter",
-    provider: boundedText(value.provider, 120) || "Unknown provider",
-    kind: boundedText(value.kind, 60) || "unknown",
-    status: ["complete", "partial", "unavailable"].includes(value.status)
-      ? value.status
+    adapterId: boundedText(record.adapterId, 80) || "unknown-adapter",
+    provider: boundedText(record.provider, 120) || "Unknown provider",
+    kind: boundedText(record.kind, 60) || "unknown",
+    status: typeof record.status === "string" && ["complete", "partial", "unavailable"].includes(record.status)
+      ? record.status
       : "unavailable",
-    adapterContractVersion: Number.isInteger(value.adapterContractVersion)
-      ? value.adapterContractVersion
+    adapterContractVersion: Number.isInteger(record.adapterContractVersion)
+      ? /** @type {number} */ (record.adapterContractVersion)
       : 1,
-    evidenceVersion: boundedVersion(value.evidenceVersion),
-    lighthouseVersion: boundedVersion(value.lighthouseVersion),
-    ruleSetVersion: Number.isInteger(value.ruleSetVersion) ? value.ruleSetVersion : null,
-    measuredConditions: Array.isArray(value.measuredConditions)
-      ? value.measuredConditions.slice(0, 4).map((item) => boundedText(item, 40)).filter(Boolean)
+    evidenceVersion: boundedVersion(record.evidenceVersion),
+    lighthouseVersion: boundedVersion(record.lighthouseVersion),
+    ruleSetVersion: Number.isInteger(record.ruleSetVersion) ? /** @type {number} */ (record.ruleSetVersion) : null,
+    measuredConditions: Array.isArray(record.measuredConditions)
+      ? record.measuredConditions.slice(0, 4).map((item) => boundedText(item, 40)).filter(Boolean)
       : [],
-    failureCodes: Array.isArray(value.failureCodes) ? boundedCodes(value.failureCodes) : [],
-    claimBoundary: boundedText(value.claimBoundary, 360),
+    failureCodes: Array.isArray(record.failureCodes) ? boundedCodes(record.failureCodes) : [],
+    claimBoundary: boundedText(record.claimBoundary, 360),
   };
 }

@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "allowJs": true,
+    "checkJs": true,
+    "noEmit": true,
+    "strict": true,
+    "exactOptionalPropertyTypes": true,
+    "target": "ES2023",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2023", "DOM"],
+    "skipLibCheck": true
+  },
+  "include": [
+    "src/evidence-adapter-contract.js",
+    "src/operational-event-contract.js",
+    "src/public-destination-contract.js"
+  ]
+}

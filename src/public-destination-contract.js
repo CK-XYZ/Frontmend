@@ -1,13 +1,15 @@
 import { AuditError, normalizePublicUrl } from "./url-policy.js";
 
+/** @param {unknown} value @returns {[number, number, number, number] | null} */
 function ipv4Parts(value) {
   if (typeof value !== "string" || !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(value)) return null;
   const parts = value.split(".").map(Number);
   return parts.every((part) => Number.isInteger(part) && part >= 0 && part <= 255)
-    ? parts
+    ? /** @type {[number, number, number, number]} */ (parts)
     : null;
 }
 
+/** @param {[number, number, number, number]} parts */
 function blockedIpv4(parts) {
   const [a, b, c] = parts;
   return a === 0
@@ -26,6 +28,7 @@ function blockedIpv4(parts) {
     || a >= 224;
 }
 
+/** @param {unknown} value @returns {[number, number, number, number, number, number, number, number] | null} */
 function expandedIpv6(value) {
   if (typeof value !== "string") return null;
   let address = value.trim().toLowerCase().replace(/^\[|\]$/g, "");
@@ -45,13 +48,18 @@ function expandedIpv6(value) {
   if ((address.includes("::") && missing < 1) || (!address.includes("::") && missing !== 0)) return null;
   const parts = [...left, ...Array(Math.max(0, missing)).fill("0"), ...right];
   if (parts.length !== 8 || parts.some((part) => !/^[0-9a-f]{1,4}$/.test(part))) return null;
-  return parts.map((part) => Number.parseInt(part, 16));
+  return /** @type {[number, number, number, number, number, number, number, number]} */ (
+    parts.map((part) => Number.parseInt(part, 16))
+  );
 }
 
+/** @param {[number, number, number, number, number, number, number, number]} parts */
 function blockedIpv6(parts) {
   const allZeroPrefix = parts.slice(0, 6).every((part) => part === 0);
   if (allZeroPrefix) {
-    const embedded = [(parts[6] >> 8) & 255, parts[6] & 255, (parts[7] >> 8) & 255, parts[7] & 255];
+    const embedded = /** @type {[number, number, number, number]} */ (
+      [(parts[6] >> 8) & 255, parts[6] & 255, (parts[7] >> 8) & 255, parts[7] & 255]
+    );
     if (parts[6] === 0 && (parts[7] === 0 || parts[7] === 1)) return true;
     return blockedIpv4(embedded);
   }
@@ -66,14 +74,23 @@ function blockedIpv6(parts) {
     || (parts[0] === 0x2001 && parts[1] === 0x0db8);
 }
 
+/** @param {unknown} value */
 export function isPublicResolvedAddress(value) {
-  const address = typeof value === "string" ? value : value?.address;
+  const address = typeof value === "string"
+    ? value
+    : value && typeof value === "object" && "address" in value
+      ? /** @type {{ address?: unknown }} */ (value).address
+      : null;
   const ipv4 = ipv4Parts(address);
   if (ipv4) return !blockedIpv4(ipv4);
   const ipv6 = expandedIpv6(address);
-  return Boolean(ipv6) && !blockedIpv6(ipv6);
+  return ipv6 !== null && !blockedIpv6(ipv6);
 }
 
+/**
+ * @param {unknown} url
+ * @param {((hostname: string) => unknown | Promise<unknown>) | null | undefined} resolveHostname
+ */
 export async function assertPublicResolvedDestination(url, resolveHostname) {
   const normalizedUrl = normalizePublicUrl(url);
   if (typeof resolveHostname !== "function") {

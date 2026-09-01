@@ -1,4 +1,5 @@
 export class AuditError extends Error {
+  /** @param {string} code @param {string} message @param {boolean} [recoverable] @param {unknown} [details] */
   constructor(code, message, recoverable = true, details = null) {
     super(message);
     this.name = "AuditError";
@@ -8,6 +9,7 @@ export class AuditError extends Error {
   }
 }
 
+/** @param {string} hostname */
 function isPrivateIpv4(hostname) {
   const parts = hostname.split(".");
   if (parts.length !== 4 || parts.some((part) => !/^\d{1,3}$/.test(part))) return false;
@@ -27,6 +29,7 @@ function isPrivateIpv4(hostname) {
   );
 }
 
+/** @param {unknown} value */
 export function normalizePublicUrl(value) {
   if (typeof value !== "string") {
     throw new AuditError("INVALID_URL", "Enter a public website URL.");
