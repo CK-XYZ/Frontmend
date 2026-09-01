@@ -1154,6 +1154,11 @@ function RouteJourney({ exploration, currentPath }) {
   );
 }
 
+function distinctIssuePageCount(issue) {
+  if (Number.isInteger(issue?.distinctPageCount)) return issue.distinctPageCount;
+  return new Set((issue?.occurrences ?? []).map((occurrence) => occurrence.auditId || occurrence.path)).size;
+}
+
 function SiteExploration({ report, mission }) {
   const candidates = createSiteRouteCandidates(report).slice(0, mission.routeLimit);
   const [selected, setSelected] = useState([]);
@@ -1357,7 +1362,11 @@ function SiteExploration({ report, mission }) {
               <p className="kicker">Cross-page patterns</p>
               {current.issues.slice(0, 5).map((issue) => (
                 <div key={`${issue.provider}-${issue.ruleId}-${issue.title}`}>
-                  <span>{issue.occurrenceCount} page{issue.occurrenceCount === 1 ? "" : "s"}</span>
+                  <span>
+                    {issue.occurrenceCount} occurrence{issue.occurrenceCount === 1 ? "" : "s"}
+                    {" · "}
+                    {distinctIssuePageCount(issue)} page{distinctIssuePageCount(issue) === 1 ? "" : "s"}
+                  </span>
                   <strong>{issue.title}</strong>
                   <small>{issue.provider} · {issue.ruleId}</small>
                 </div>

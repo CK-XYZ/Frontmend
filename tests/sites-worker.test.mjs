@@ -1991,7 +1991,7 @@ test("local development runs and exports a recurring cross-page exploration", as
   });
   assert.equal(report.status, 200);
   assert.match(report.body, /# Frontmend site exploration/);
-  assert.match(report.body, /Observed on: 2 selected pages/);
+  assert.match(report.body, /Observed: 2 occurrences across 2 selected pages/);
 
   const assessment = await callLocalRuntime(middleware, {
     url: `/api/audits/${rootId}/assessment`,

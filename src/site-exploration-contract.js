@@ -196,6 +196,7 @@ function aggregateIssues(mission, auditsById) {
         focusAreas: [],
         suggestedRepair: "Diagnose the retained cross-page evidence before repair.",
         occurrenceCount: 0,
+        pageKeys: new Set(),
         occurrences: [],
       };
       if (SEVERITY_RANK[severity] > SEVERITY_RANK[current.severity]) current.severity = severity;
@@ -207,6 +208,7 @@ function aggregateIssues(mission, auditsById) {
         current.suggestedRepair = boundedText(finding.suggestedRepair, 500);
       }
       current.occurrenceCount += 1;
+      current.pageKeys.add(child.auditId || child.path);
       if (current.occurrences.length < MAX_OCCURRENCES) {
         current.occurrences.push({
           auditId: child.auditId,
@@ -220,6 +222,10 @@ function aggregateIssues(mission, auditsById) {
     }
   }
   return [...issues.values()]
+    .map(({ pageKeys, ...issue }) => ({
+      ...issue,
+      distinctPageCount: pageKeys.size,
+    }))
     .sort(
       (a, b) =>
         b.occurrenceCount - a.occurrenceCount ||
@@ -272,7 +278,7 @@ export function siteExplorationSnapshot(mission, audits = []) {
       pagesFailed: failedPages,
       totalFindings,
       uniqueIssues: issues.length,
-      recurringIssues: issues.filter((issue) => issue.occurrenceCount > 1).length,
+      recurringIssues: issues.filter((issue) => issue.distinctPageCount > 1).length,
     },
     pages,
     issues,
@@ -320,13 +326,17 @@ export function siteExplorationMarkdown(snapshot) {
     lines.push("No retained findings were available across the completed selected pages.");
   } else {
     for (const issue of issues) {
+      const occurrenceCount = Number.isInteger(issue.occurrenceCount) ? issue.occurrenceCount : 0;
+      const distinctPageCount = Number.isInteger(issue.distinctPageCount)
+        ? issue.distinctPageCount
+        : new Set((issue.occurrences ?? []).map((occurrence) => occurrence.auditId || occurrence.path)).size;
       lines.push(
         `### ${markdownText(issue.title, 180)}`,
         "",
         `- Rule: ${markdownText(issue.ruleId, 120)}`,
         `- Provider: ${markdownText(issue.provider, 80)}`,
         `- Severity: ${markdownText(issue.severity, 24)}`,
-        `- Observed on: ${issue.occurrenceCount} selected page${issue.occurrenceCount === 1 ? "" : "s"}`,
+        `- Observed: ${occurrenceCount} occurrence${occurrenceCount === 1 ? "" : "s"} across ${distinctPageCount} selected page${distinctPageCount === 1 ? "" : "s"}`,
         "",
         ...issue.occurrences.map(
           (occurrence) =>

@@ -145,7 +145,38 @@ test("aggregates recurring rule evidence across completed page audits", () => {
   });
   assert.equal(snapshot.issues[0].ruleId, "document-content-security-policy");
   assert.equal(snapshot.issues[0].occurrenceCount, 2);
+  assert.equal(snapshot.issues[0].distinctPageCount, 2);
   assert.deepEqual(snapshot.issues[0].occurrences.map((item) => item.path), ["/privacy", "/terms"]);
+});
+
+test("separates viewport occurrences from distinct affected pages", () => {
+  const singleRoute = createSiteExplorationMission({
+    missionId: MISSION_ID,
+    rootAuditId: ROOT_ID,
+    source: "agent",
+    routes: createSiteExplorationInputs(rootReport(), ["/privacy"]).routes,
+    children: [{ auditId: CHILD_A }],
+    createdAt: 100,
+  });
+  const audit = completeAudit(CHILD_A, "/privacy", 89, {
+    id: "desktop-content-security-policy",
+    title: "No Content Security Policy header was observed",
+    category: "security",
+    severity: "low",
+    evidence: "CSP was also absent in the desktop strategy.",
+    source: {
+      provider: "frontmend-document",
+      auditId: "document-content-security-policy",
+      strategy: "desktop",
+    },
+  });
+  audit.report.findings[0].source.strategy = "mobile";
+  const snapshot = siteExplorationSnapshot(singleRoute, [audit]);
+
+  assert.equal(snapshot.issues[0].occurrenceCount, 2);
+  assert.equal(snapshot.issues[0].distinctPageCount, 1);
+  assert.equal(snapshot.summary.recurringIssues, 0);
+  assert.match(siteExplorationMarkdown(snapshot), /Observed: 2 occurrences across 1 selected page/);
 });
 
 test("keeps partial missions truthful when one child fails", () => {
@@ -171,7 +202,7 @@ test("exports bounded cross-page evidence without a complete-crawl claim", () =>
   ]);
   const markdown = siteExplorationMarkdown(snapshot);
   assert.match(markdown, /# Frontmend site exploration/);
-  assert.match(markdown, /Observed on: 2 selected pages/);
+  assert.match(markdown, /Observed: 2 occurrences across 2 selected pages/);
   assert.match(markdown, /\/privacy/);
   assert.match(markdown, /not claim a complete crawl/);
 });

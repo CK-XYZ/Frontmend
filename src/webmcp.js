@@ -381,7 +381,9 @@ export function contextualFrontmendToolNames(service) {
   if (explorations.length) available.add("get_site_exploration");
   if (findings.length && browserReviewComplete) {
     available.add("get_repository_fix_brief");
-    available.add("prepare_site_repair");
+    if (missionState?.assessmentComplete !== false) {
+      available.add("prepare_site_repair");
+    }
   }
   if (findings.length) available.add("get_evidence_chain");
   if (repairs.length) available.add("get_repair_workspace");
@@ -441,6 +443,7 @@ export function contextualFrontmendToolNames(service) {
     (mission) => mission.findingId === preparedFindingId,
   );
   if (
+    missionState?.assessmentComplete !== false &&
     preparedFinding &&
     (
       (!findingRequiresDiagnosticMission(preparedFinding) && !diagnosticPriorityIds.has(preparedFindingId)) ||

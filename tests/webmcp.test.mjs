@@ -822,6 +822,7 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
     findingId: "mobile-color-contrast",
     reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
   });
+  assert.equal(contextualFrontmendToolNames(service).includes("prepare_site_repair"), false);
 
   diagnosticMissions = [{
     id: "diagnostic-1",
@@ -849,6 +850,7 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.equal(contributed.data.priorities[0].evidenceState, "diagnosis-contributed");
   assert.equal(contributed.data.missionState.assessmentComplete, true);
   assert.equal(contributed.data.missionState.nextAction, null);
+  assert.ok(contextualFrontmendToolNames(service).includes("prepare_site_repair"));
 
   const override = await tool.execute({ focusAreas: ["seo"], maxPriorities: 1 });
   assert.equal(override.data.resultProjection.mode, "read-only-override");
