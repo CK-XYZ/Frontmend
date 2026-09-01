@@ -2924,19 +2924,11 @@
   outline-offset: 3px;
 }
 
-.loop-dialog-controls {
+.loop-dialog-close {
   position: absolute;
   top: 16px;
   right: 16px;
   z-index: 2;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.loop-dialog-close,
-.loop-dialog-play {
-  position: relative;
   width: 38px;
   height: 38px;
   display: grid;
@@ -2948,61 +2940,9 @@
   cursor: pointer;
 }
 
-.loop-dialog-close:hover,
-.loop-dialog-play:hover {
+.loop-dialog-close:hover {
   border-color: var(--fm-cobalt-line);
   color: var(--fm-bone);
-}
-
-/*
- * The walkthrough control.
- *
- * WCAG 2.2.2 wants a way to stop a continuous auto-update; this is it, and it
- * is also the only progress read-out, so the visitor can see how long the
- * handoff has left and take it back at any point. Circular because the loop is.
- *
- * Pausing drops the fill rather than freezing it mid-arc. Resuming re-arms a
- * whole dwell, so a frozen arc would promise a handoff sooner than one is
- * coming; an empty ring next to a play glyph says the true thing, which is that
- * no time is passing.
- */
-.loop-dialog-play[data-playing="true"] {
-  color: var(--fm-bone);
-}
-
-.loop-dialog-play-ring {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  pointer-events: none;
-}
-
-.loop-dialog-play-ring svg {
-  width: 34px;
-  height: 34px;
-  /* 12 o'clock, clockwise. */
-  transform: rotate(-90deg);
-  fill: none;
-  overflow: visible;
-}
-
-.loop-dialog-play-track {
-  stroke: var(--fm-cobalt-line);
-  stroke-width: 1.5;
-}
-
-/*
- * The fill is drawn empty and stays empty without the animation below, so a
- * paused or reduced-motion control shows a plain ring rather than a lie about
- * elapsed time. Circumference of r=16 is 100.53.
- */
-.loop-dialog-play-fill {
-  stroke: var(--fm-lime);
-  stroke-width: 1.5;
-  stroke-linecap: round;
-  stroke-dasharray: 100.53;
-  stroke-dashoffset: 100.53;
 }
 
 /* ------------------------------------------------------------------ head */
@@ -3013,7 +2953,7 @@
   grid-template-columns: minmax(0, 1.05fr) minmax(0, 0.95fr);
   align-items: end;
   padding: clamp(28px, 3.4vw, 44px) var(--loop-pad) clamp(24px, 2.8vw, 34px);
-  padding-right: max(var(--loop-pad), 116px);
+  padding-right: max(var(--loop-pad), 70px);
   border-bottom: 1px solid var(--fm-cobalt-line);
 }
 
@@ -3795,13 +3735,8 @@
    *
    * The walkthrough loops, which the no-infinite-animation rule otherwise
    * forbids. Every animation below is finite and settles; what repeats is the
-   * dialog's own state, and WCAG 2.2.2's mechanism for stopping it is the
-   * visible control in the corner. See §8.
+   * dialog's own state, and the mechanism for stopping it is the rail. See §8.
    */
-  .loop-dialog-play[data-playing="true"] .loop-dialog-play-fill {
-    animation: loop-dialog-dwell 4000ms linear both;
-  }
-
   .loop-demo-corners > span {
     animation: loop-demo-corner-in 400ms cubic-bezier(0.2, 0.8, 0.3, 1) both;
   }
@@ -3887,16 +3822,6 @@
 
   .loop-dialog-exhibit-frame[data-stage="03"] .loop-demo-readout {
     animation-delay: 1260ms;
-  }
-
-  @keyframes loop-dialog-dwell {
-    from {
-      stroke-dashoffset: 100.53;
-    }
-
-    to {
-      stroke-dashoffset: 0;
-    }
   }
 
   @keyframes loop-demo-corner-in {

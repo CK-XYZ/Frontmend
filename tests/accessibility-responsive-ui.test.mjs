@@ -69,23 +69,27 @@ test("implements a complete keyboard-operated viewport tab pattern", () => {
 
 /*
  * The loop dialog advances itself and wraps, which is a continuous auto-update.
- * WCAG 2.2.2 requires a mechanism to stop it, and the walkthrough is one of the
- * first things a visitor sees - so the control, the pauses that hand it back,
- * and the reduced-motion opt-out are locked here rather than left to review.
+ * It carries no transport controls, so the mechanism WCAG 2.2.2 asks for is the
+ * rail: touching it stops the advance for good. That, the reduced-motion
+ * opt-out, and the still visitor's DOM are locked here rather than left to
+ * review - each is invisible until it is missing.
  */
 test("keeps the self-advancing walkthrough stoppable", () => {
   assert.match(app, /const HOW_IT_WORKS_DWELL = \d+;/);
-  assert.match(app, /aria-label=\{playing \? "Pause the walkthrough" : "Play the walkthrough"\}/);
-  assert.match(app, /onClick=\{\(\) => setPlaying\(\(running\) => !running\)\}/);
-  // Reaching the rail, by pointer or by Tab, is taking over.
+  // Taking over the rail - by click, by arrow key, or by Tabbing into it.
   assert.match(app, /onFocus=\{\(\) => setPlaying\(false\)\}/);
+  assert.match(app, /const moveTo = \(index, \{ focus = true \} = \{\}\) => \{\s*[\s\S]{0,120}?setPlaying\(false\);/);
   assert.match(app, /if \(query\.matches\) setPlaying\(false\);/);
+  // An unwatched tab advances nothing.
+  assert.match(app, /document\.addEventListener\("visibilitychange", sync\)/);
+  assert.match(app, /if \(!playing \|\| tabHidden\) return undefined;/);
   // The exhibit's transients are never in the DOM for a still visitor.
   assert.match(
     app,
     /\{!still && \(stage === "01" \|\| stage === "03"\) \? <span className="loop-demo-scan" \/> : null\}/,
   );
-  assert.match(landingStyles, /\.loop-dialog-play\[data-playing="true"\] \.loop-dialog-play-fill\s*\{[^}]*animation: loop-dialog-dwell/s);
+  // No transport controls crept back in.
+  assert.doesNotMatch(app, /loop-dialog-play/);
 });
 
 test("retains visible focus and 390 px touch and reflow safeguards", () => {

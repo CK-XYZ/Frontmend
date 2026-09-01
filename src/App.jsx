@@ -9,8 +9,6 @@ import {
   Gauge,
   Info,
   MagnifyingGlass,
-  Pause,
-  Play,
   Pulse,
   Robot,
   SealCheck,
@@ -414,17 +412,36 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
         aria-describedby="agent-activity-boundary"
         onMouseDown={(event) => event.stopPropagation()}
       >
+        {/*
+         * The panel is titled with the name of the control that opens it. It
+         * used to read "WebMCP activity" under a "Browser agent" kicker, while
+         * the header button said "Agent log" and the close button said "agent
+         * activity" - four names for one feature, and the visitor arrived at a
+         * panel that did not admit to being the thing they clicked.
+         *
+         * No kicker. A small uppercase label pairing a protocol name with a
+         * scope is decoration, and everything it would have said - where the
+         * entries come from, how far back they go - the boundary note below
+         * says in a sentence.
+         */}
         <div className="agent-activity-heading">
-          <div>
-            <p className="kicker">Browser agent</p>
-            <h2 id="agent-activity-title">WebMCP activity</h2>
-          </div>
-          <button type="button" aria-label="Close agent activity" onClick={onClose}>
+          <h2 id="agent-activity-title">Agent log</h2>
+          <button type="button" aria-label="Close agent log" onClick={onClose}>
             <X size={18} weight="bold" />
           </button>
         </div>
         <p className="agent-activity-boundary" id="agent-activity-boundary">
-          Semantic actions only. Tool inputs, URLs, patches, prompts, and secrets are not logged here.
+          <ShieldCheck size={15} weight="duotone" aria-hidden="true" />
+          {/*
+           * "here" is load-bearing and stays: this panel does not log them. It
+           * is not a claim about what the server does. The retention bound is
+           * the honest answer to the question the first sentence provokes -
+           * `agentActivities` is in-memory and sliced to 20.
+           */}
+          <span>
+            Semantic actions only. Tool inputs, URLs, patches, prompts, and secrets are not logged
+            here. The last 20 stay in memory for this session.
+          </span>
         </p>
         {activities.length ? (
           <ol className="agent-activity-list">
@@ -468,7 +485,7 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
         )}
         {activities.length ? (
           <button className="clear-agent-activity" type="button" onClick={onClear}>
-            Clear session activity
+            Clear log
           </button>
         ) : null}
       </aside>
@@ -485,13 +502,16 @@ function AgentActivityDrawer({ activities, onClose, onClear }) {
  * demonstrates the loop rather than describing it - a real tablist over the
  * three handoffs, driving the same illustrative specimens the landing uses.
  *
- * It advances itself, 4s a handoff, and wraps. That is a continuous auto-update
- * and WCAG 2.2.2 governs it, so the mechanism it demands is real and visible:
- * the play control in the dialog corner pauses it, its ring shows how much of
- * the current dwell is left, and touching the rail at all - click, arrow key,
- * or Tab into it - pauses too, because the visitor has taken over. It never
- * starts under prefers-reduced-motion; pressing play there is a request, and
- * requests are honoured. The mission inspector is still the reference for
+ * It advances itself, 4s a handoff, and wraps, with no transport controls: the
+ * walkthrough is the point of the dialog, and a play button next to it was
+ * chrome around a thing that should just run.
+ *
+ * That is a continuous auto-update, so the mechanism WCAG 2.2.2 asks for still
+ * has to exist - it is the rail itself. Touching it at all, by click, arrow key
+ * or Tab, stops the advance for good, because the visitor has taken over and
+ * the panel must not move under them again. It never starts under
+ * prefers-reduced-motion, read as live state so a preference changed
+ * mid-session is obeyed. The mission inspector is still the reference for
  * workspace dialogs.
  */
 const HOW_IT_WORKS_DWELL = 4000;
@@ -562,6 +582,7 @@ function HowItWorks({ onClose }) {
   const [activeLabel, setActiveLabel] = useState(HOW_IT_WORKS_STEPS[0].label);
   const [playing, setPlaying] = useState(true);
   const [stillPreferred, setStillPreferred] = useState(false);
+  const [tabHidden, setTabHidden] = useState(false);
   const activeIndex = Math.max(
     0,
     HOW_IT_WORKS_STEPS.findIndex((step) => step.label === activeLabel),
@@ -585,15 +606,28 @@ function HowItWorks({ onClose }) {
     return () => query.removeEventListener?.("change", sync);
   }, []);
 
+  /*
+   * A backgrounded tab advances nothing. Browsers already throttle the timer and
+   * stop compositing the animations, but the walkthrough is the one thing here
+   * that runs forever, so it should cost nothing at all while unwatched rather
+   * than nearly nothing. Coming back re-arms a whole dwell.
+   */
+  useEffect(() => {
+    const sync = () => setTabHidden(document.hidden);
+    sync();
+    document.addEventListener("visibilitychange", sync);
+    return () => document.removeEventListener("visibilitychange", sync);
+  }, []);
+
   // One timer, re-armed by the handoff it lands on, so the loop wraps.
   useEffect(() => {
-    if (!playing) return undefined;
+    if (!playing || tabHidden) return undefined;
     const timer = window.setTimeout(() => {
       const next = HOW_IT_WORKS_STEPS[(activeIndex + 1) % HOW_IT_WORKS_STEPS.length];
       setActiveLabel(next.label);
     }, HOW_IT_WORKS_DWELL);
     return () => window.clearTimeout(timer);
-  }, [playing, activeIndex]);
+  }, [playing, tabHidden, activeIndex]);
 
   const moveTo = (index, { focus = true } = {}) => {
     const total = HOW_IT_WORKS_STEPS.length;
@@ -632,38 +666,14 @@ function HowItWorks({ onClose }) {
         aria-describedby="how-description"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <div className="loop-dialog-controls">
-          {/*
-           * WCAG 2.2.2's mechanism and the progress read-out in one control:
-           * the ring fills over the dwell, and empties when the walkthrough is
-           * paused, because resuming re-arms a whole one. The circle is keyed on
-           * the handoff so it restarts with each, while the button itself - and
-           * any focus on it - survives the change.
-           */}
-          <button
-            className="loop-dialog-play"
-            type="button"
-            data-playing={playing ? "true" : "false"}
-            onClick={() => setPlaying((running) => !running)}
-            aria-label={playing ? "Pause the walkthrough" : "Play the walkthrough"}
-          >
-            <span className="loop-dialog-play-ring" aria-hidden="true">
-              <svg viewBox="0 0 36 36" focusable="false">
-                <circle className="loop-dialog-play-track" cx="18" cy="18" r="16" />
-                <circle key={activeLabel} className="loop-dialog-play-fill" cx="18" cy="18" r="16" />
-              </svg>
-            </span>
-            {playing ? <Pause size={13} weight="fill" /> : <Play size={13} weight="fill" />}
-          </button>
-          <button
-            className="loop-dialog-close"
-            type="button"
-            onClick={onClose}
-            aria-label="Close how it works"
-          >
-            <X size={18} weight="bold" />
-          </button>
-        </div>
+        <button
+          className="loop-dialog-close"
+          type="button"
+          onClick={onClose}
+          aria-label="Close how it works"
+        >
+          <X size={18} weight="bold" />
+        </button>
 
         <header className="loop-dialog-head">
           <div>

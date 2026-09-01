@@ -7129,13 +7129,14 @@ summary:focus-visible,
 
 .agent-activity-heading {
   display: flex;
-  align-items: flex-start;
+  /* One line of title against a 44px control: centre them, do not top-align. */
+  align-items: center;
   justify-content: space-between;
   gap: 15px;
 }
 
 .agent-activity-heading h2 {
-  margin: 4px 0 0;
+  margin: 0;
   font-size: 25px;
   font-weight: 500;
   letter-spacing: -0.04em;
@@ -7153,7 +7154,15 @@ summary:focus-visible,
   cursor: pointer;
 }
 
+/*
+ * The privacy boundary, marked as one. It carries the same ShieldCheck the loop
+ * dialog's authority line uses, so a guarantee looks like a guarantee wherever
+ * it appears rather than like a stray paragraph in a tinted box.
+ */
 .agent-activity-boundary {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
   margin: 18px 0;
   padding: 12px 13px;
   border: 1px solid #e0e4d8;
@@ -7162,6 +7171,13 @@ summary:focus-visible,
   color: var(--muted);
   font-size: 9px;
   line-height: 1.5;
+}
+
+.agent-activity-boundary svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+  /* Lime on paper has to be the deep value — see the palette note in DESIGN.md. */
+  color: var(--lime-dark);
 }
 
 .agent-activity-list {
