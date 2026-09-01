@@ -927,6 +927,52 @@ function viewportFailure(outcome) {
   };
 }
 
+function measurementClock(options) {
+  const clock = typeof options.measureNow === "function" ? options.measureNow : Date.now;
+  return () => {
+    const value = Number(clock());
+    return Number.isFinite(value) ? value : Date.now();
+  };
+}
+
+function providerRunTelemetry(kind, outcome, startedAt, finishedAt) {
+  const report = outcome.status === "fulfilled" ? outcome.value?.report : null;
+  const error = outcome.status === "rejected" ? outcome.reason : null;
+  const partial = kind === "viewport" && (report?.viewportFailures?.length ?? 0) > 0;
+  return {
+    kind,
+    adapterId: bounded(
+      report?.engine?.adapterId,
+      80,
+    ) || (kind === "viewport" ? "google-pagespeed-lighthouse" : "frontmend-live-document"),
+    outcome: report ? (partial ? "partial" : "complete") : "failed",
+    latencyMs: Math.max(0, Math.min(300_000, Math.round(finishedAt - startedAt))),
+    measuredConditionCount: kind === "viewport"
+      ? report?.viewportCount ?? report?.viewports?.filter((item) => item?.id !== "document").length ?? 0
+      : report ? 1 : 0,
+    failureCode: bounded(error?.code, 80) || null,
+    quotaLimited: error?.code === "PROVIDER_RATE_LIMITED",
+  };
+}
+
+async function runEvidenceProvider(kind, provider, options, clock) {
+  const startedAt = clock();
+  try {
+    const value = await provider(options);
+    const outcome = { status: "fulfilled", value };
+    return {
+      ...outcome,
+      telemetry: providerRunTelemetry(kind, outcome, startedAt, clock()),
+    };
+  } catch (reason) {
+    const outcome = { status: "rejected", reason };
+    return {
+      ...outcome,
+      telemetry: providerRunTelemetry(kind, outcome, startedAt, clock()),
+    };
+  }
+}
+
 export async function runPageSpeedAudit({
   auditId,
   url,
@@ -1137,8 +1183,10 @@ export async function runFrontmendAudit(options) {
   const documentProvider = options.providers?.document ?? runDocumentAudit;
   const providerOptions = { ...options };
   delete providerOptions.providers;
-  const [lighthouseOutcome, documentOutcome] = await Promise.allSettled([
-    viewportProvider({
+  delete providerOptions.measureNow;
+  const clock = measurementClock(options);
+  const [lighthouseOutcome, documentOutcome] = await Promise.all([
+    runEvidenceProvider("viewport", viewportProvider, {
       ...providerOptions,
       onProgress: async (state) => emitProgress({
         ...state,
@@ -1147,15 +1195,15 @@ export async function runFrontmendAudit(options) {
           : "Structuring Lighthouse and live document evidence",
         progress: state.phase === "capture" ? 22 : 76,
       }),
-    }),
-    documentProvider({
+    }, clock),
+    runEvidenceProvider("document", documentProvider, {
       ...providerOptions,
       onProgress: async (state) => emitProgress({
         ...state,
         phaseLabel: "Inspecting live HTML, response headers, metadata, and routes",
         progress: 42,
       }),
-    }),
+    }, clock),
   ]);
   const lighthouseError = lighthouseOutcome.status === "rejected" ? lighthouseOutcome.reason : null;
   const documentError = documentOutcome.status === "rejected" ? documentOutcome.reason : null;
@@ -1168,11 +1216,28 @@ export async function runFrontmendAudit(options) {
   }
   const lighthouse = lighthouseOutcome.status === "fulfilled" ? lighthouseOutcome.value : null;
   const document = documentOutcome.status === "fulfilled" ? documentOutcome.value : null;
-  if (!lighthouse && !document) throw lighthouseError ?? documentError;
+  const operational = {
+    schemaVersion: 1,
+    providerRuns: [lighthouseOutcome.telemetry, documentOutcome.telemetry],
+    fallbackUsed: !lighthouse && Boolean(document),
+    availableSourceCount: Number(Boolean(lighthouse)) + Number(Boolean(document)),
+  };
+  if (!lighthouse && !document) {
+    const terminalError = lighthouseError ?? documentError;
+    try {
+      terminalError.operational = operational;
+    } catch {
+      // A frozen provider error still fails safely; aggregate telemetry is best effort.
+    }
+    throw terminalError;
+  }
   await emitProgress({
     phase: "inspect",
     phaseLabel: "Reconciling independent audit evidence",
     progress: 88,
   });
-  return mergeAuditEvidence({ lighthouse, document, lighthouseError, documentError });
+  return {
+    ...mergeAuditEvidence({ lighthouse, document, lighthouseError, documentError }),
+    operational,
+  };
 }

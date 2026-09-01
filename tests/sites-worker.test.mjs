@@ -2344,12 +2344,13 @@ test("local development rejects a hostname whose DNS answer is private before fe
 
 test("gate deduplicates a URL and enforces a bounded per-client window", async () => {
   const values = new Map();
+  const operationalEvents = [];
   const gate = new FrontmendAuditGate({
     storage: {
       get: async (key) => values.get(key),
       put: async (key, value) => values.set(key, structuredClone(value)),
     },
-  });
+  }, { OPERATIONAL_LOGGER: (event) => operationalEvents.push(event) });
   const admit = (now, urlHash = "url-a") =>
     gate.fetch(
       new Request("https://frontmend.internal/admit", {
@@ -2368,6 +2369,85 @@ test("gate deduplicates a URL and enforces a bounded per-client window", async (
   const limited = await (await admit(6_000, "url-e")).json();
   assert.equal(limited.allowed, false);
   assert.ok(limited.retryAfterMs > 0);
+  assert.equal(operationalEvents[0].event, "frontmend.admission");
+  assert.equal(operationalEvents[0].newStarts, 1);
+  assert.equal(operationalEvents[1].reusedStarts, 1);
+  assert.equal(operationalEvents.at(-1).outcome, "rejected");
+  assert.equal(operationalEvents.at(-1).reason, "client-capacity");
+  assert.equal(operationalEvents.every((event) => event.queueDepth === 0), true);
+  assert.equal(JSON.stringify(operationalEvents).includes("client-a"), false);
+  assert.equal(JSON.stringify(operationalEvents).includes("url-a"), false);
+});
+
+test("audit jobs emit aggregate provider and child outcome events without IDs or URLs", async () => {
+  const values = new Map();
+  const operationalEvents = [];
+  let completion;
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const ctx = {
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+      delete: async (key) => values.delete(key),
+      setAlarm: async () => {},
+    },
+    waitUntil(promise) {
+      completion = promise;
+    },
+  };
+  const job = new FrontmendAuditJob(ctx, {
+    OPERATIONAL_LOGGER: (event) => operationalEvents.push(event),
+    AUDIT_RUNNER: async ({ auditId: id, url }) => ({
+      screenshots: {},
+      operational: {
+        schemaVersion: 1,
+        fallbackUsed: true,
+        availableSourceCount: 1,
+        providerRuns: [{
+          adapterId: "frontmend-live-document",
+          kind: "document",
+          outcome: "complete",
+          latencyMs: 42,
+          measuredConditionCount: 1,
+          failureCode: null,
+          quotaLimited: false,
+        }],
+      },
+      report: {
+        auditId: id,
+        url,
+        finalUrl: url,
+        hostname: "example.com",
+        completedAt: 100,
+        findings: [],
+        viewports: [{ id: "document" }],
+        engine: { mode: "live-document", provider: "Frontmend document audit" },
+      },
+    }),
+  });
+  const response = await job.fetch(new Request("https://frontmend.internal/start", {
+    method: "POST",
+    body: JSON.stringify({
+      id: auditId,
+      url: "https://example.com/private-path",
+      source: "agent",
+      exploration: { parentAuditId: crypto.randomUUID(), path: "/private-path", depth: 1 },
+    }),
+  }));
+  assert.equal(response.status, 202);
+  await completion;
+
+  assert.deepEqual(operationalEvents.map((event) => event.event), [
+    "frontmend.provider",
+    "frontmend.audit",
+  ]);
+  assert.equal(operationalEvents[0].latencyMs, 42);
+  assert.equal(operationalEvents[1].workload, "exploration-child");
+  assert.equal(operationalEvents[1].fallbackUsed, true);
+  const serialized = JSON.stringify(operationalEvents);
+  assert.equal(serialized.includes(auditId), false);
+  assert.equal(serialized.includes("example.com"), false);
+  assert.equal(serialized.includes("private-path"), false);
 });
 
 test("gate admits a bounded exploration batch atomically", async () => {

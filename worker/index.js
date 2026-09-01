@@ -46,6 +46,12 @@ import {
 } from "../src/repair-contract.js";
 import { runFrontmendAudit } from "./pagespeed-provider.js";
 import {
+  createAdmissionOperationalEvent,
+  createAuditOperationalEvent,
+  createProviderOperationalEvents,
+  emitOperationalEvents,
+} from "../src/operational-event-contract.js";
+import {
   createDiagnosticMission,
   diagnosticMissionForRepair,
   diagnosticMissionSnapshot,
@@ -1014,8 +1020,9 @@ export default {
 };
 
 export class FrontmendAuditGate {
-  constructor(ctx) {
+  constructor(ctx, env = {}) {
     this.ctx = ctx;
+    this.env = env;
   }
 
   async fetch(request) {
@@ -1039,7 +1046,27 @@ export class FrontmendAuditGate {
     const state = (await this.ctx.storage.get("gate")) ?? { rates: {}, jobs: {}, starts: [] };
     const cutoff = now - RATE_WINDOW_MS;
     state.starts = (state.starts ?? []).filter((timestamp) => timestamp > cutoff);
+    for (const [key, record] of Object.entries(state.jobs)) {
+      if (!record || record.createdAt <= now - REUSE_WINDOW_MS) delete state.jobs[key];
+    }
+    const reusedStarts = batchItems.filter((item) => Boolean(state.jobs[item.urlHash])).length;
+    const newStarts = batchItems.length - reusedStarts;
+    const emitAdmission = (outcome, reason, clientStarts, globalStarts) => emitOperationalEvents(
+      this.env,
+      [createAdmissionOperationalEvent({
+        outcome,
+        reason,
+        batchSize: batchItems.length,
+        newStarts,
+        reusedStarts,
+        clientWindowStarts: clientStarts,
+        globalWindowStarts: globalStarts,
+        clientCapacityRemaining: Math.max(0, RATE_LIMIT - clientStarts),
+        globalCapacityRemaining: Math.max(0, GLOBAL_RATE_LIMIT - globalStarts),
+      })],
+    );
     if (state.starts.length + batchItems.length > GLOBAL_RATE_LIMIT) {
+      emitAdmission("rejected", "global-capacity", (state.rates[fingerprint] ?? []).length, state.starts.length);
       return json({
         allowed: false,
         retryAfterMs: Math.max(1_000, state.starts[0] + RATE_WINDOW_MS - now),
@@ -1047,6 +1074,7 @@ export class FrontmendAuditGate {
     }
     const attempts = (state.rates[fingerprint] ?? []).filter((timestamp) => timestamp > cutoff);
     if (attempts.length + batchItems.length > RATE_LIMIT) {
+      emitAdmission("rejected", "client-capacity", attempts.length, state.starts.length);
       return json({
         allowed: false,
         retryAfterMs: Math.max(1_000, attempts[0] + RATE_WINDOW_MS - now),
@@ -1056,9 +1084,6 @@ export class FrontmendAuditGate {
     state.rates[fingerprint] = attempts;
     state.starts.push(...batchItems.map(() => now));
 
-    for (const [key, record] of Object.entries(state.jobs)) {
-      if (!record || record.createdAt <= now - REUSE_WINDOW_MS) delete state.jobs[key];
-    }
     const admissions = batchItems.map((item) => {
       const existing = state.jobs[item.urlHash];
       const jobId = existing?.jobId ?? crypto.randomUUID();
@@ -1073,6 +1098,7 @@ export class FrontmendAuditGate {
     state.rates = Object.fromEntries(rateEntries);
     state.jobs = Object.fromEntries(Object.entries(state.jobs).slice(-500));
     await this.ctx.storage.put("gate", state);
+    emitAdmission("allowed", "none", attempts.length, state.starts.length);
 
     return isBatch
       ? json({ allowed: true, admissions })
@@ -2205,8 +2231,18 @@ export class FrontmendAuditJob {
   }
 
   async run(initialState) {
+    const operationalStartedAt = Date.now();
+    const operationalWorkload = initialState.verification
+      ? "verification-child"
+      : initialState.exploration || initialState.siteExploration
+        ? "exploration-child"
+        : "root";
+    let operational = null;
     try {
-      const output = await runFrontmendAudit({
+      const auditRunner = typeof this.env.AUDIT_RUNNER === "function"
+        ? this.env.AUDIT_RUNNER
+        : runFrontmendAudit;
+      const output = await auditRunner({
         auditId: initialState.id,
         url: initialState.url,
         apiKey: this.env.PAGESPEED_API_KEY,
@@ -2225,6 +2261,7 @@ export class FrontmendAuditJob {
           });
         },
       });
+      operational = output.operational ?? null;
       if (initialState.verification) {
         output.report.verification = compareVerification(output.report, initialState.verification);
       }
@@ -2256,8 +2293,19 @@ export class FrontmendAuditJob {
         report: output.report,
         error: null,
       });
+      emitOperationalEvents(this.env, [
+        ...createProviderOperationalEvents(operational, operationalWorkload),
+        createAuditOperationalEvent({
+          outcome: "complete",
+          workload: operationalWorkload,
+          latencyMs: Date.now() - operationalStartedAt,
+          fallbackUsed: operational?.fallbackUsed,
+          availableSourceCount: operational?.availableSourceCount,
+        }),
+      ]);
       await this.scheduleRetention();
     } catch (error) {
+      operational = operational ?? error?.operational ?? null;
       const current = (await this.ctx.storage.get("state")) ?? initialState;
       if (
         current.attempt !== initialState.attempt ||
@@ -2272,6 +2320,17 @@ export class FrontmendAuditJob {
           error: null,
           completedAt: Date.now(),
         });
+        emitOperationalEvents(this.env, [
+          ...createProviderOperationalEvents(operational, operationalWorkload),
+          createAuditOperationalEvent({
+            outcome: "cancelled",
+            workload: operationalWorkload,
+            latencyMs: Date.now() - operationalStartedAt,
+            fallbackUsed: operational?.fallbackUsed,
+            availableSourceCount: operational?.availableSourceCount,
+            failureCode: "AUDIT_CANCELLED",
+          }),
+        ]);
         await this.scheduleRetention();
         return;
       }
@@ -2290,6 +2349,17 @@ export class FrontmendAuditJob {
           recoverable: error?.recoverable !== false,
         },
       });
+      emitOperationalEvents(this.env, [
+        ...createProviderOperationalEvents(operational, operationalWorkload),
+        createAuditOperationalEvent({
+          outcome: "failed",
+          workload: operationalWorkload,
+          latencyMs: Date.now() - operationalStartedAt,
+          fallbackUsed: operational?.fallbackUsed,
+          availableSourceCount: operational?.availableSourceCount,
+          failureCode: typeof error?.code === "string" ? error.code : "AUDIT_FAILED",
+        }),
+      ]);
       await this.scheduleRetention();
     }
   }

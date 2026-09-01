@@ -456,10 +456,15 @@ test("re-resolves and blocks every redirect destination before following it", as
 
 test("falls back to bounded live document evidence when Lighthouse is rate limited", async () => {
   let calls = 0;
+  let measuredAt = 100;
   const output = await runFrontmendAudit({
     auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
     url: "https://removemyexif.com/",
     now: () => 1_787_766_000_000,
+    measureNow: () => {
+      measuredAt += 25;
+      return measuredAt;
+    },
     fetchImpl: async () => {
       calls += 1;
       if (calls === 1) return new Response("quota", { status: 429 });
@@ -493,6 +498,18 @@ test("falls back to bounded live document evidence when Lighthouse is rate limit
     "passed",
   );
   assert.deepEqual(output.screenshots, {});
+  assert.equal(output.operational.fallbackUsed, true);
+  assert.equal(output.operational.availableSourceCount, 1);
+  assert.deepEqual(output.operational.providerRuns.map((provider) => ({
+    kind: provider.kind,
+    outcome: provider.outcome,
+    quotaLimited: provider.quotaLimited,
+  })), [
+    { kind: "viewport", outcome: "failed", quotaLimited: true },
+    { kind: "document", outcome: "complete", quotaLimited: false },
+  ]);
+  assert.equal(output.operational.providerRuns.every((provider) => provider.latencyMs >= 0), true);
+  assert.equal(JSON.stringify(output.operational).includes("removemyexif.com"), false);
 });
 
 test("retains one successful Lighthouse viewport and supplements it with document evidence", async () => {
