@@ -7,11 +7,15 @@ import { promisify } from "node:util";
 import { fileURLToPath } from "node:url";
 import worker, { FrontmendAuditGate, FrontmendAuditJob } from "../worker/index.js";
 import { createLocalAuditRuntime } from "../worker/local-runtime.js";
+import { hashAuditSessionToken } from "../src/audit-session-contract.js";
 import { compareVerification } from "../src/repair-contract.js";
 import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
 
 const execFileAsync = promisify(execFile);
 const projectRoot = fileURLToPath(new URL("..", import.meta.url));
+const localRuntimeCookies = new WeakMap();
+const TEST_AUDIT_COOKIE = "__Host-frontmend_session=11111111-1111-4111-8111-111111111111";
+const TEST_OTHER_AUDIT_COOKIE = "__Host-frontmend_session=22222222-2222-4222-8222-222222222222";
 
 function preparedAuditMission(findingId, focusAreas = []) {
   return {
@@ -35,11 +39,15 @@ async function ensureSitesBuild() {
 
 function callLocalRuntime(middleware, { method = "GET", url, body = "", headers = {} }) {
   return new Promise((resolve, reject) => {
+    const requestHeaders = { ...headers };
+    if (!("cookie" in requestHeaders) && localRuntimeCookies.has(middleware)) {
+      requestHeaders.cookie = localRuntimeCookies.get(middleware);
+    }
     const request = Readable.from(body ? [Buffer.from(body)] : []);
     Object.assign(request, {
       method,
       url,
-      headers,
+      headers: requestHeaders,
       socket: { remoteAddress: "127.0.0.1" },
     });
     const responseHeaders = new Map();
@@ -49,6 +57,8 @@ function callLocalRuntime(middleware, { method = "GET", url, body = "", headers 
         responseHeaders.set(name.toLowerCase(), String(value));
       },
       end(value = "") {
+        const setCookie = responseHeaders.get("set-cookie");
+        if (setCookie) localRuntimeCookies.set(middleware, setCookie.split(";", 1)[0]);
         resolve({
           status: this.statusCode,
           headers: responseHeaders,
@@ -59,6 +69,15 @@ function callLocalRuntime(middleware, { method = "GET", url, body = "", headers 
     Promise.resolve(middleware(request, response, () => reject(new Error("Unexpected next()."))))
       .catch(reject);
   });
+}
+
+function withAuditAuthorization(fetchImpl) {
+  return async (url, init = {}) => {
+    if (new URL(url).pathname === "/authorize") {
+      return Response.json({ ok: true, data: { writeAccess: "read-write" } });
+    }
+    return fetchImpl(url, init);
+  };
 }
 
 test("serves existing static assets without a fallback", async () => {
@@ -210,6 +229,7 @@ test("starts a same-origin public audit through the job boundary", async () => {
   );
 
   assert.equal(response.status, 202);
+  assert.match(response.headers.get("set-cookie"), /^__Host-frontmend_session=.*; Path=\/; HttpOnly; SameSite=Strict; Max-Age=86400; Secure$/);
   assert.equal(response.headers.get("location"), `/api/audits/${jobId}`);
   assert.equal(calls[0].input.url, "https://removemyexif.com/");
   assert.equal(calls[0].input.source, "agent");
@@ -218,6 +238,7 @@ test("starts a same-origin public audit through the job boundary", async () => {
   assert.equal(calls[0].input.mission.maxPriorities, 2);
   assert.equal(calls[0].input.mission.requestedBy, "agent");
   assert.equal(calls[0].input.mission.repairPreparation, null);
+  assert.match(calls[0].input.ownerSessionHash, /^[a-f0-9]{64}$/);
 });
 
 test("uses semantic audit missions in production admission identity", async () => {
@@ -248,18 +269,106 @@ test("uses semantic audit missions in production admission identity", async () =
       }),
     },
   };
-  const start = (focusAreas) => worker.fetch(new Request("https://frontmend.test/api/audits", {
+  const start = (focusAreas, cookie = TEST_AUDIT_COOKIE) => worker.fetch(new Request("https://frontmend.test/api/audits", {
     method: "POST",
-    headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+    headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie },
     body: JSON.stringify({ url: "example.com", source: "agent", mission: { focusAreas } }),
   }), env);
 
   assert.equal((await start(["accessibility", "seo"])).status, 202);
   assert.equal((await start(["seo", "accessibility"])).status, 202);
   assert.equal((await start(["seo"])).status, 202);
+  assert.equal((await start(["accessibility", "seo"], TEST_OTHER_AUDIT_COOKIE)).status, 202);
   assert.equal(admissions[0].urlHash, admissions[1].urlHash);
   assert.notEqual(admissions[1].urlHash, admissions[2].urlHash);
+  assert.notEqual(admissions[0].urlHash, admissions[3].urlHash);
   assert.equal(JSON.stringify(admissions).includes("accessibility"), false);
+});
+
+test("keeps shared audit reads public while owner-gating every mutation", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const expectedOwnerHash = await hashAuditSessionToken(TEST_AUDIT_COOKIE.split("=", 2)[1]);
+  let mutations = 0;
+  const env = {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: async (url, init = {}) => {
+          const pathname = new URL(url).pathname;
+          if (pathname === "/authorize") {
+            const authorized = init.headers["x-frontmend-owner-session-hash"] === expectedOwnerHash;
+            return authorized
+              ? Response.json({ ok: true, data: { writeAccess: "read-write" } })
+              : Response.json({ ok: false, error: { code: "AUDIT_WRITE_AUTHORITY_REQUIRED" } }, { status: 403 });
+          }
+          if (pathname === "/checkpoint" && (init.method ?? "GET") === "GET") {
+            return Response.json({ ok: true, data: { auditId, missionRevision: 1 } });
+          }
+          mutations += 1;
+          return Response.json({ ok: true, data: { id: auditId, status: "cancelled" } });
+        },
+      }),
+    },
+  };
+
+  const sharedRead = await worker.fetch(
+    new Request(`https://frontmend.test/api/audits/${auditId}/checkpoint`),
+    env,
+  );
+  assert.equal(sharedRead.status, 200);
+
+  for (const cookie of [null, TEST_OTHER_AUDIT_COOKIE]) {
+    const headers = { origin: "https://frontmend.test" };
+    if (cookie) headers.cookie = cookie;
+    const denied = await worker.fetch(new Request(`https://frontmend.test/api/audits/${auditId}`, {
+      method: "DELETE",
+      headers,
+    }), env);
+    assert.equal(denied.status, 403);
+    assert.equal((await denied.json()).error.code, "AUDIT_WRITE_AUTHORITY_REQUIRED");
+  }
+
+  const allowed = await worker.fetch(new Request(`https://frontmend.test/api/audits/${auditId}`, {
+    method: "DELETE",
+    headers: { origin: "https://frontmend.test", cookie: TEST_AUDIT_COOKIE },
+  }), env);
+  assert.equal(allowed.status, 200);
+  assert.equal(mutations, 1);
+});
+
+test("keeps the anonymous owner hash private in Durable Object snapshots", async () => {
+  const ownerSessionHash = await hashAuditSessionToken(TEST_AUDIT_COOKIE.split("=", 2)[1]);
+  const state = {
+    id: "private-owner-snapshot",
+    url: "https://example.com/",
+    source: "human",
+    ownerSessionHash,
+    missionRevision: 1,
+    status: "queued",
+    phase: "queued",
+    phaseLabel: "Queued",
+    progress: 4,
+    report: null,
+    error: null,
+  };
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => key === "state" ? state : undefined,
+    },
+  }, {});
+
+  const snapshot = await job.fetch(new Request("https://frontmend.internal/"));
+  const authorized = await job.fetch(new Request("https://frontmend.internal/authorize", {
+    headers: { "x-frontmend-owner-session-hash": ownerSessionHash },
+  }));
+  const denied = await job.fetch(new Request("https://frontmend.internal/authorize", {
+    headers: { "x-frontmend-owner-session-hash": "f".repeat(64) },
+  }));
+
+  assert.equal(snapshot.status, 200);
+  assert.equal((await snapshot.text()).includes(ownerSessionHash), false);
+  assert.equal(authorized.status, 200);
+  assert.equal(denied.status, 403);
 });
 
 test("proxies the bounded repair-intent transition to the authoritative audit job", async () => {
@@ -269,17 +378,17 @@ test("proxies the bounded repair-intent transition to the authoritative audit jo
     `https://frontmend.test/api/audits/${auditId}/mission/prepare-repair`,
     {
       method: "POST",
-      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify({ findingId: "document-description", source: "human" }),
     },
   ), {
     AUDIT_JOBS: {
       idFromName: (name) => name,
       get: () => ({
-        fetch: async (url, init) => {
+        fetch: withAuditAuthorization(async (url, init) => {
           calls.push({ url: new URL(url), input: JSON.parse(init.body) });
           return Response.json({ ok: true, data: { mission: { intent: "prepare-fix" } } });
-        },
+        }),
       }),
     },
   });
@@ -300,7 +409,7 @@ test("proxies a bounded diagnostic blocker to the authoritative audit job", asyn
     `https://frontmend.test/api/audits/${auditId}/diagnostics/${missionId}/blocker`,
     {
       method: "POST",
-      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify({
         reason: "repository-unavailable",
         summary: "The deployment repository is unavailable in this session.",
@@ -311,10 +420,10 @@ test("proxies a bounded diagnostic blocker to the authoritative audit job", asyn
     AUDIT_JOBS: {
       idFromName: (name) => name,
       get: () => ({
-        fetch: async (url, init) => {
+        fetch: withAuditAuthorization(async (url, init) => {
           calls.push({ url: new URL(url), input: JSON.parse(init.body) });
           return Response.json({ ok: true, data: { id: missionId, state: { state: "blocked" } } });
-        },
+        }),
       }),
     },
   });
@@ -343,17 +452,17 @@ test("proxies a sequenced browser-review contribution to the authoritative audit
     `https://frontmend.test/api/audits/${auditId}/browser-review/${reviewId}/checks`,
     {
       method: "POST",
-      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify(body),
     },
   ), {
     AUDIT_JOBS: {
       idFromName: (name) => name,
       get: () => ({
-        fetch: async (url, init) => {
+        fetch: withAuditAuthorization(async (url, init) => {
           calls.push({ url: new URL(url), input: JSON.parse(init.body) });
           return Response.json({ ok: true, data: { id: reviewId, state: { status: "in-progress" } } });
-        },
+        }),
       }),
     },
   });
@@ -372,17 +481,17 @@ test("proxies a same-origin human browser-review withdrawal to the authoritative
     `https://frontmend.test/api/audits/${auditId}/browser-review/${reviewId}/withdrawal`,
     {
       method: "POST",
-      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify(body),
     },
   ), {
     AUDIT_JOBS: {
       idFromName: (name) => name,
       get: () => ({
-        fetch: async (url, init) => {
+        fetch: withAuditAuthorization(async (url, init) => {
           calls.push({ url: new URL(url), input: JSON.parse(init.body) });
           return Response.json({ ok: true, data: { id: reviewId, state: { status: "withdrawn" } } });
-        },
+        }),
       }),
     },
   });
@@ -416,10 +525,10 @@ test("proxies audit-scoped activity reads and privacy-safe appends", async () =>
     AUDIT_JOBS: {
       idFromName: (name) => name,
       get: () => ({
-        fetch: async (url, init = {}) => {
+        fetch: withAuditAuthorization(async (url, init = {}) => {
           calls.push({ pathname: new URL(url).pathname, method: init.method, body: init.body });
           return Response.json({ ok: true, data: { auditId, activities: [activity] } });
-        },
+        }),
       }),
     },
   };
@@ -432,7 +541,7 @@ test("proxies audit-scoped activity reads and privacy-safe appends", async () =>
     `https://frontmend.test/api/audits/${auditId}/activities`,
     {
       method: "POST",
-      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify(activity),
     },
   ), env);
@@ -520,7 +629,7 @@ test("starts one existing audit job per reviewed verification target", async () 
   });
   const started = [];
   const baselineJob = {
-    fetch: async (url, init = {}) => {
+    fetch: withAuditAuthorization(async (url, init = {}) => {
       const path = new URL(url).pathname;
       if (path.endsWith("verification-start-input")) {
         return Response.json({ ok: true, data: {
@@ -564,7 +673,7 @@ test("starts one existing audit job per reviewed verification target", async () 
         return Response.json({ ok: true, data: { repairId, status: "waiting", rows: [] } });
       }
       throw new Error(`Unexpected baseline path ${path}`);
-    },
+    }),
   };
   const env = {
     AUDIT_GATE: {
@@ -589,7 +698,7 @@ test("starts one existing audit job per reviewed verification target", async () 
     `https://frontmend.test/api/audits/${auditId}/repairs/${repairId}/verify`,
     {
       method: "POST",
-      headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+      headers: { origin: "https://frontmend.test", "content-type": "application/json", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify({ expectedMissionRevision: 7 }),
     },
   ), env);
@@ -619,6 +728,7 @@ test("starts a related audit only from the parent job's authoritative route inpu
       headers: {
         "content-type": "application/json",
         origin: "https://frontmend.test",
+        cookie: TEST_AUDIT_COOKIE,
       },
       body: JSON.stringify({ path: "/privacy", source: "agent" }),
     }),
@@ -635,7 +745,7 @@ test("starts a related audit only from the parent job's authoritative route inpu
       AUDIT_JOBS: {
         idFromName: (name) => name,
         get: (id) => ({
-          fetch: async (url, init = {}) => {
+          fetch: withAuditAuthorization(async (url, init = {}) => {
             const pathname = new URL(url).pathname;
             calls.push({ boundary: id, pathname, input: init.body ? JSON.parse(init.body) : null });
             if (id === parentId) {
@@ -665,7 +775,7 @@ test("starts a related audit only from the parent job's authoritative route inpu
                 missionCheckpoint: { auditId: childId, missionRevision: 1 },
               },
             }, { status: 202 });
-          },
+          }),
         }),
       },
     },
@@ -834,7 +944,7 @@ test("starts one durable site exploration through atomic batch admission", async
   const response = await worker.fetch(
     new Request(`https://frontmend.test/api/audits/${rootId}/explorations`, {
       method: "POST",
-      headers: { "content-type": "application/json", origin: "https://frontmend.test" },
+      headers: { "content-type": "application/json", origin: "https://frontmend.test", cookie: TEST_AUDIT_COOKIE },
       body: JSON.stringify({
         routeCandidateIds: ["route-11111111", "route-22222222"],
         source: "agent",
@@ -858,7 +968,7 @@ test("starts one durable site exploration through atomic batch admission", async
       AUDIT_JOBS: {
         idFromName: (name) => name,
         get: (id) => ({
-          fetch: async (url, init = {}) => {
+          fetch: withAuditAuthorization(async (url, init = {}) => {
             const pathname = new URL(url).pathname;
             const input = init.body ? JSON.parse(init.body) : null;
             calls.push({ boundary: id, pathname, input });
@@ -897,7 +1007,7 @@ test("starts one durable site exploration through atomic batch admission", async
                 siteExploration: input.siteExploration,
               },
             }, { status: 202 });
-          },
+          }),
         }),
       },
     },
@@ -917,6 +1027,56 @@ test("starts one durable site exploration through atomic batch admission", async
   const childStart = calls.find((call) => call.boundary === childIds[0]);
   assert.equal(childStart.input.siteExploration.rootAuditId, rootId);
   assert.equal(childStart.input.siteExploration.total, 2);
+});
+
+test("derived exploration refreshes do not advance mutation authority", async () => {
+  const auditId = "19474d5a-a536-4cb3-84bf-99f00ba585c0";
+  const missionId = "8cb30d34-76ce-4c47-a67e-d568b1db4d0a";
+  const mission = {
+    id: missionId,
+    rootAuditId: auditId,
+    currentSnapshot: { id: missionId, rootAuditId: auditId, status: "running" },
+  };
+  const values = new Map([
+    ["state", {
+      id: auditId,
+      url: "https://example.com/",
+      source: "human",
+      mission: null,
+      missionRevision: 7,
+      status: "complete",
+      phase: "complete",
+      phaseLabel: "Audit complete",
+      progress: 100,
+      report: { auditId, findings: [], viewports: [] },
+    }],
+    ["explorations", [mission]],
+  ]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+  const refreshed = {
+    ...mission,
+    currentSnapshot: { id: missionId, rootAuditId: auditId, status: "complete" },
+  };
+
+  const response = await job.fetch(new Request(
+    `https://frontmend.internal/explorations/${missionId}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(refreshed),
+    },
+  ));
+  const payload = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(payload.data.currentSnapshot.status, "complete");
+  assert.equal(payload.data.missionCheckpoint.missionRevision, 7);
+  assert.equal(values.get("state").missionRevision, 7);
 });
 
 test("returns accepted when a deduplicated failed job begins a fresh attempt", async () => {
@@ -1626,19 +1786,19 @@ test("proxies same-origin audit cancellation through the stable public route", a
   const response = await worker.fetch(
     new Request(`https://frontmend.test/api/audits/${auditId}`, {
       method: "DELETE",
-      headers: { origin: "https://frontmend.test" },
+      headers: { origin: "https://frontmend.test", cookie: TEST_AUDIT_COOKIE },
     }),
     {
       AUDIT_JOBS: {
         idFromName: (name) => name,
         get: (id) => ({
-          fetch: async (url, init) => {
+          fetch: withAuditAuthorization(async (url, init) => {
             calls.push({ id, pathname: new URL(url).pathname, method: init.method });
             return Response.json({
               ok: true,
               data: { id, status: "cancelled", phase: "cancelled" },
             });
-          },
+          }),
         }),
       },
     },
@@ -1985,6 +2145,10 @@ test("local development runs and exports a recurring cross-page exploration", as
   assert.equal(aggregate.summary.pagesComplete, 2);
   assert.ok(aggregate.summary.recurringIssues >= 1);
   assert.equal(aggregate.issues.find((issue) => issue.occurrenceCount === 2).occurrenceCount, 2);
+  assert.equal(
+    aggregate.missionCheckpoint.missionRevision,
+    mission.missionCheckpoint.missionRevision,
+  );
 
   const report = await callLocalRuntime(middleware, {
     url: `/api/audits/${rootId}/explorations/${mission.id}/report`,

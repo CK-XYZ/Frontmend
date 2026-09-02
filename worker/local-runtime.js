@@ -1,4 +1,10 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import {
+  auditSessionTokenFromCookie,
+  createAuditSessionCookie,
+  createAuditSessionToken,
+  hashAuditSessionToken,
+} from "../src/audit-session-contract.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import { createRuntimeBuildDescriptor } from "../src/protocol-contract.js";
 import {
@@ -316,6 +322,7 @@ export function createLocalAuditRuntime(options = {}) {
     url,
     source,
     client,
+    ownerSessionHash,
     operationKey = "",
     mission = null,
     verification = null,
@@ -333,7 +340,7 @@ export function createLocalAuditRuntime(options = {}) {
       recent.push(now);
       rates.set(client, recent);
     }
-    const reuseKey = operationKey ? `${url}\n${operationKey}` : url;
+    const reuseKey = `${ownerSessionHash}\n${operationKey ? `${url}\n${operationKey}` : url}`;
     const previous = recentUrls.get(reuseKey);
     if (previous && previous.createdAt > now - RATE_WINDOW_MS && jobs.has(previous.id)) {
       const previousJob = jobs.get(previous.id);
@@ -344,6 +351,7 @@ export function createLocalAuditRuntime(options = {}) {
         attempt: (Number.isFinite(previousJob.attempt) ? previousJob.attempt : 1) + 1,
         url,
         source,
+        ownerSessionHash: previousJob.ownerSessionHash ?? ownerSessionHash,
         mission: previousJob.mission ?? mission,
         verification,
         exploration,
@@ -373,6 +381,7 @@ export function createLocalAuditRuntime(options = {}) {
       attempt: 1,
       url,
       source,
+      ownerSessionHash,
       mission,
       missionRevision: 1,
       verification,
@@ -401,7 +410,7 @@ export function createLocalAuditRuntime(options = {}) {
     return { job, reused: false };
   };
 
-  const startJobBatch = ({ routes, source, client, missionId, rootAuditId }) => {
+  const startJobBatch = ({ routes, source, client, ownerSessionHash, missionId, rootAuditId }) => {
     const now = Date.now();
     prune(now);
     const recent = (rates.get(client) ?? []).filter((timestamp) => timestamp > now - RATE_WINDOW_MS);
@@ -418,6 +427,7 @@ export function createLocalAuditRuntime(options = {}) {
         url: route.url,
         source,
         client,
+        ownerSessionHash,
         operationKey: `exploration:${missionId}:${route.path}`,
         exploration: route.exploration,
         siteExploration: {
@@ -437,10 +447,7 @@ export function createLocalAuditRuntime(options = {}) {
       mission.children.map((child) => jobs.get(child.auditId)).filter(Boolean).map(snapshot),
     );
     const changed = JSON.stringify(mission.currentSnapshot ?? null) !== JSON.stringify(aggregate);
-    const hadSnapshot = Boolean(mission.currentSnapshot);
-    mission.currentSnapshot = aggregate;
-    const root = jobs.get(mission.rootAuditId);
-    if (changed && hadSnapshot && root) advanceLocalRevision(root);
+    if (changed) mission.currentSnapshot = aggregate;
     return aggregate;
   };
 
@@ -545,16 +552,46 @@ export function createLocalAuditRuntime(options = {}) {
         const source = input?.source === "agent" ? "agent" : "human";
         const mission = createAuditMission(input?.mission ?? {}, source);
         const client = request.socket.remoteAddress ?? "local-preview";
+        const retainedSession = auditSessionTokenFromCookie(request.headers.cookie, { secure: false });
+        const sessionToken = retainedSession ?? createAuditSessionToken();
+        const ownerSessionHash = await hashAuditSessionToken(sessionToken);
         const { job, reused } = startJob({
           url,
           source,
           mission,
           client,
+          ownerSessionHash,
           operationKey: `mission:${auditMissionSignature(mission)}`,
         });
         return sendJson(response, reused ? 200 : 202, { ok: true, data: snapshot(job) }, {
           location: `/api/audits/${job.id}`,
+          ...(retainedSession
+            ? {}
+            : { "set-cookie": createAuditSessionCookie(sessionToken, { secure: false }) }),
         });
+      }
+
+      const scopedMutation = ["POST", "DELETE"].includes(request.method)
+        ? requestUrl.pathname.match(/^\/api\/audits\/([^/]+)(?:\/|$)/)
+        : null;
+      if (scopedMutation) {
+        const ownedJob = jobs.get(scopedMutation[1]);
+        if (ownedJob) {
+          const sessionToken = auditSessionTokenFromCookie(request.headers.cookie, { secure: false });
+          const ownerSessionHash = sessionToken
+            ? await hashAuditSessionToken(sessionToken)
+            : null;
+          if (!ownedJob.ownerSessionHash || ownerSessionHash !== ownedJob.ownerSessionHash) {
+            return sendError(
+              response,
+              new AuditError(
+                "AUDIT_WRITE_AUTHORITY_REQUIRED",
+                "This shared audit is read-only in this browser. Start a new audit to make changes.",
+              ),
+              403,
+            );
+          }
+        }
       }
 
       const routeMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/routes$/);
@@ -598,6 +635,7 @@ export function createLocalAuditRuntime(options = {}) {
           url: related.url,
           source,
           client,
+          ownerSessionHash: baseline.ownerSessionHash,
           operationKey: `route:${routeMatch[1]}:${related.exploration.observedPath}`,
           exploration: related.exploration,
         });
@@ -650,6 +688,7 @@ export function createLocalAuditRuntime(options = {}) {
             routes: prepared.routes,
             source,
             client,
+            ownerSessionHash: root.ownerSessionHash,
             missionId,
             rootAuditId,
           });
@@ -1446,6 +1485,7 @@ export function createLocalAuditRuntime(options = {}) {
             url: target.url,
             source: "verification",
             client,
+            ownerSessionHash: baseline.ownerSessionHash,
             operationKey: `verification:${run.id}:${target.id}`,
             verification: {
               ...createVerificationContext(target.baselineReport, {

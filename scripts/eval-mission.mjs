@@ -129,11 +129,23 @@ function invokeLocalMiddleware(middleware, request) {
   });
 }
 
+function retainAuditSession(fetchImpl) {
+  let cookie = null;
+  return async (url, init = {}) => {
+    const headers = new Headers(init.headers);
+    if (cookie) headers.set("cookie", cookie);
+    const response = await fetchImpl(url, { ...init, headers });
+    const setCookie = response.headers.get("set-cookie");
+    if (setCookie) cookie = setCookie.split(";", 1)[0];
+    return response;
+  };
+}
+
 function createLocalAdapter(controller) {
   const middleware = createLocalAuditRuntime({ fetchImpl: controller.fetchImpl });
   return {
     name: "local",
-    fetch: (url, init = {}) => invokeLocalMiddleware(middleware, new Request(url, init)),
+    fetch: retainAuditSession((url, init = {}) => invokeLocalMiddleware(middleware, new Request(url, init))),
     flush: async () => Promise.resolve(),
   };
 }
@@ -224,7 +236,7 @@ function createWorkerAdapter() {
   jobs.env = env;
   return {
     name: "worker",
-    fetch: (url, init = {}) => worker.fetch(new Request(url, init), env),
+    fetch: retainAuditSession((url, init = {}) => worker.fetch(new Request(url, init), env)),
     flush: () => jobs.flush(),
   };
 }

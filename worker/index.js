@@ -1,4 +1,10 @@
 import { AuditError, normalizePublicUrl } from "../src/url-policy.js";
+import {
+  auditSessionTokenFromCookie,
+  createAuditSessionCookie,
+  createAuditSessionToken,
+  hashAuditSessionToken,
+} from "../src/audit-session-contract.js";
 import { assessmentReceiptMarkdown, createAssessmentReceipt } from "../src/assessment-receipt.js";
 import { createRuntimeBuildDescriptor } from "../src/protocol-contract.js";
 import {
@@ -94,6 +100,8 @@ const GLOBAL_RATE_LIMIT = 60;
 const REUSE_WINDOW_MS = 10 * 60 * 1000;
 const JOB_RETENTION_MS = 24 * 60 * 60 * 1000;
 const JOB_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const OWNER_SESSION_HASH_PATTERN = /^[0-9a-f]{64}$/;
+const OWNER_SESSION_HASH_HEADER = "x-frontmend-owner-session-hash";
 
 function json(data, init = {}) {
   const headers = new Headers(init.headers);
@@ -116,6 +124,8 @@ function publicError(error) {
       "VERIFICATION_RUN_NOT_FOUND",
     ].includes(error.code)
       ? 404
+      : error.code === "AUDIT_WRITE_AUTHORITY_REQUIRED"
+        ? 403
       : error.code === "METHOD_NOT_ALLOWED"
         ? 405
         : [
@@ -211,6 +221,56 @@ async function sha256(value) {
   return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+async function auditSessionForStart(request) {
+  const secure = new URL(request.url).protocol === "https:";
+  const retained = auditSessionTokenFromCookie(request.headers.get("cookie"), { secure });
+  const token = retained ?? createAuditSessionToken();
+  return {
+    ownerSessionHash: await hashAuditSessionToken(token),
+    setCookie: retained ? null : createAuditSessionCookie(token, { secure }),
+  };
+}
+
+async function ownerSessionHashFromRequest(request) {
+  const secure = new URL(request.url).protocol === "https:";
+  const token = auditSessionTokenFromCookie(request.headers.get("cookie"), { secure });
+  return token ? hashAuditSessionToken(token) : null;
+}
+
+async function authorizeAuditMutation(request, env, auditId) {
+  assertSameOrigin(request);
+  const ownerSessionHash = await ownerSessionHashFromRequest(request);
+  if (!ownerSessionHash) {
+    throw new AuditError(
+      "AUDIT_WRITE_AUTHORITY_REQUIRED",
+      "This shared audit is read-only in this browser. Start a new audit to make changes.",
+    );
+  }
+  const response = await jobFromId(env, auditId).fetch("https://frontmend.internal/authorize", {
+    headers: { [OWNER_SESSION_HASH_HEADER]: ownerSessionHash },
+  });
+  if (!response.ok) {
+    throw new AuditError(
+      "AUDIT_WRITE_AUTHORITY_REQUIRED",
+      "This shared audit is read-only in this browser. Start a new audit to make changes.",
+    );
+  }
+  const headers = new Headers(request.headers);
+  headers.set(OWNER_SESSION_HASH_HEADER, ownerSessionHash);
+  return new Request(request, { headers });
+}
+
+function authorizedOwnerSessionHash(request) {
+  const value = request.headers.get(OWNER_SESSION_HASH_HEADER);
+  if (!value) {
+    throw new AuditError(
+      "AUDIT_WRITE_AUTHORITY_REQUIRED",
+      "This shared audit is read-only in this browser. Start a new audit to make changes.",
+    );
+  }
+  return value;
+}
+
 function assertSameOrigin(request) {
   const origin = request.headers.get("origin");
   if (origin && origin !== new URL(request.url).origin) {
@@ -286,10 +346,13 @@ async function checkpointedJobData(ctx, state, data) {
 
 async function gateAdmissions(request, env, routes, missionId, operation = "exploration") {
   const ip = request.headers.get("cf-connecting-ip") ?? "local-preview";
+  const ownerSessionHash = authorizedOwnerSessionHash(request);
   const fingerprint = await sha256(ip);
   const items = await Promise.all(
     routes.map(async (route) => ({
-      urlHash: await sha256(`${route.url}\n${operation}:${missionId}:${route.path}`),
+      urlHash: await sha256(
+        `${ownerSessionHash}\n${route.url}\n${operation}:${missionId}:${route.path}`,
+      ),
     })),
   );
   const gate = env.AUDIT_GATE.get(env.AUDIT_GATE.idFromName("frontmend-gate-v1"));
@@ -397,6 +460,7 @@ async function startSiteExploration(request, env, rootAuditId) {
 
   const missionId = crypto.randomUUID();
   const source = input.source === "agent" ? "agent" : "human";
+  const ownerSessionHash = authorizedOwnerSessionHash(request);
   const routes = inputPayload.data.routes;
   const admissions = await gateAdmissions(request, env, routes, missionId);
   const children = await Promise.all(
@@ -411,6 +475,7 @@ async function startSiteExploration(request, env, rootAuditId) {
             id: admission.jobId,
             url: route.url,
             source,
+            ownerSessionHash,
             exploration: route.exploration,
             siteExploration: {
               missionId,
@@ -537,11 +602,13 @@ async function startRelatedAudit(request, env, baselineAuditId) {
 
   const related = inputPayload.data;
   const source = input.source === "agent" ? "agent" : "human";
+  const ownerSessionHash = authorizedOwnerSessionHash(request);
   const admission = await gateAdmission(
     request,
     env,
     related.url,
     `route:${baselineAuditId}:${related.exploration.observedPath}`,
+    ownerSessionHash,
   );
   const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
   const response = await job.fetch("https://frontmend.internal/start", {
@@ -551,6 +618,7 @@ async function startRelatedAudit(request, env, baselineAuditId) {
       id: admission.jobId,
       url: related.url,
       source,
+      ownerSessionHash,
       exploration: related.exploration,
     }),
   });
@@ -570,11 +638,11 @@ async function startRelatedAudit(request, env, baselineAuditId) {
   });
 }
 
-async function gateAdmission(request, env, url, operationKey = "") {
+async function gateAdmission(request, env, url, operationKey = "", ownerSessionHash) {
   const ip = request.headers.get("cf-connecting-ip") ?? "local-preview";
   const [fingerprint, urlHash] = await Promise.all([
     sha256(ip),
-    sha256(operationKey ? `${url}\n${operationKey}` : url),
+    sha256(`${ownerSessionHash}\n${operationKey ? `${url}\n${operationKey}` : url}`),
   ]);
   const gate = env.AUDIT_GATE.get(env.AUDIT_GATE.idFromName("frontmend-gate-v1"));
   const response = await gate.fetch("https://frontmend.internal/admit", {
@@ -603,22 +671,33 @@ async function startAudit(request, env) {
   const url = normalizePublicUrl(input.url);
   const source = input.source === "agent" ? "agent" : "human";
   const mission = createAuditMission(input.mission ?? {}, source);
+  const session = await auditSessionForStart(request);
   const admission = await gateAdmission(
     request,
     env,
     url,
     `mission:${auditMissionSignature(mission)}`,
+    session.ownerSessionHash,
   );
   const job = env.AUDIT_JOBS.get(env.AUDIT_JOBS.idFromName(admission.jobId));
   const response = await job.fetch("https://frontmend.internal/start", {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ id: admission.jobId, url, source, mission }),
+    body: JSON.stringify({
+      id: admission.jobId,
+      url,
+      source,
+      mission,
+      ownerSessionHash: session.ownerSessionHash,
+    }),
   });
   const payload = await response.json();
   return json(payload, {
     status: response.status === 202 ? 202 : admission.reused ? 200 : 202,
-    headers: { location: `/api/audits/${encodeURIComponent(admission.jobId)}` },
+    headers: {
+      location: `/api/audits/${encodeURIComponent(admission.jobId)}`,
+      ...(session.setCookie ? { "set-cookie": session.setCookie } : {}),
+    },
   });
 }
 
@@ -657,6 +736,7 @@ async function startRepairVerification(request, env, baselineAuditId, repairId) 
     return json(inputPayload, { status: inputResponse.status });
   }
   const { repair, run, targets, missionCheckpoint } = inputPayload.data;
+  const ownerSessionHash = authorizedOwnerSessionHash(request);
   const routes = targets.map((target) => ({ path: target.path, url: target.url }));
   const admissions = await gateAdmissions(request, env, routes, run.id, "verification");
   const started = await Promise.all(targets.map(async (target, index) => {
@@ -693,6 +773,7 @@ async function startRepairVerification(request, env, baselineAuditId, repairId) 
         id: admission.jobId,
         url: target.url,
         source: "verification",
+        ownerSessionHash,
         verification,
       }),
     });
@@ -744,6 +825,13 @@ async function routeApi(request, env, url) {
   }
   if (request.method === "POST" && url.pathname === "/api/audits") {
     return startAudit(request, env);
+  }
+
+  const scopedMutation = ["POST", "DELETE"].includes(request.method)
+    ? url.pathname.match(/^\/api\/audits\/([^/]+)(?:\/|$)/)
+    : null;
+  if (scopedMutation) {
+    request = await authorizeAuditMutation(request, env, decodeURIComponent(scopedMutation[1]));
   }
 
   const routeMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/routes$/);
@@ -1127,6 +1215,15 @@ export class FrontmendAuditJob {
     if (request.method === "POST" && url.pathname === "/start") {
       const input = await readJsonBody(request);
       const existing = await this.ctx.storage.get("state");
+      if (
+        existing?.ownerSessionHash &&
+        input.ownerSessionHash !== existing.ownerSessionHash
+      ) {
+        return errorResponse(new AuditError(
+          "AUDIT_WRITE_AUTHORITY_REQUIRED",
+          "This audit belongs to a different anonymous browser session.",
+        ));
+      }
       if (existing && !["failed", "cancelled"].includes(existing.status)) {
         return json({
           ok: true,
@@ -1140,6 +1237,10 @@ export class FrontmendAuditJob {
           : 1,
         url: input.url,
         source: input.source,
+        ownerSessionHash: existing?.ownerSessionHash
+          ?? (OWNER_SESSION_HASH_PATTERN.test(input.ownerSessionHash ?? "")
+            ? input.ownerSessionHash
+            : null),
         mission: existing?.mission ?? input.mission ?? null,
         missionRevision: existing ? auditMissionRevision(existing) + 1 : 1,
         verification: input.verification ?? null,
@@ -1168,6 +1269,15 @@ export class FrontmendAuditJob {
     const state = await this.ctx.storage.get("state");
     if (!state) {
       return errorResponse(new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."));
+    }
+    if (url.pathname === "/authorize" && request.method === "GET") {
+      const presented = request.headers.get(OWNER_SESSION_HASH_HEADER);
+      return state.ownerSessionHash && presented === state.ownerSessionHash
+        ? json({ ok: true, data: { writeAccess: "read-write" } })
+        : errorResponse(new AuditError(
+            "AUDIT_WRITE_AUTHORITY_REQUIRED",
+            "This shared audit is read-only in this browser. Start a new audit to make changes.",
+          ));
     }
     if (url.pathname === "/activities") {
       if (!["GET", "POST"].includes(request.method)) {
@@ -1421,12 +1531,9 @@ export class FrontmendAuditJob {
           mission,
         ].slice(-10);
         await this.ctx.storage.put("explorations", retained);
-        const snapshotChanged = previous
-          && JSON.stringify(previous.currentSnapshot ?? null) !== JSON.stringify(mission.currentSnapshot ?? null);
-        const retainedState = snapshotChanged ? await advanceJobRevision(this.ctx, state) : state;
         return json({
           ok: true,
-          data: await checkpointedJobData(this.ctx, retainedState, mission),
+          data: await checkpointedJobData(this.ctx, state, mission),
         }, { status: previous ? 200 : 201 });
       }
       return errorResponse(
