@@ -23,6 +23,29 @@ const CAPABILITY_BY_TOOL = Object.freeze({
   get_verification_receipt: "read-verification",
 });
 
+export const REVISION_BOUND_MISSION_TOOLS = Object.freeze([
+  "cancel_site_audit",
+  "open_browser_review",
+  "record_browser_review_check",
+  "start_related_page_audit",
+  "open_diagnostic_mission",
+  "submit_runtime_diagnosis",
+  "record_diagnostic_blocker",
+  "start_site_exploration",
+  "prepare_site_repair",
+  "stage_site_repair",
+  "revise_site_repair",
+  "record_repository_implementation",
+  "start_repair_verification",
+]);
+
+const REVISION_BOUND_MISSION_TOOL_SET = new Set(REVISION_BOUND_MISSION_TOOLS);
+const ASYNC_READ_TOOLS = new Set([
+  "check_site_audit_progress",
+  "get_site_exploration",
+  "get_verification_receipt",
+]);
+
 function bounded(value, maximum = 400) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim().slice(0, maximum);
 }
@@ -31,6 +54,50 @@ export function auditMissionRevision(audit) {
   return Number.isInteger(audit?.missionRevision) && audit.missionRevision > 0
     ? audit.missionRevision
     : 1;
+}
+
+export function createExecutableMissionAction(nextAction, audit) {
+  if (!nextAction?.tool || !audit?.id) return null;
+  const tool = bounded(nextAction.tool, 80);
+  const input = nextAction.input && typeof nextAction.input === "object" && !Array.isArray(nextAction.input)
+    ? JSON.parse(JSON.stringify(nextAction.input))
+    : {};
+  input.auditId = bounded(audit.id, 160);
+  if (REVISION_BOUND_MISSION_TOOL_SET.has(tool)) {
+    input.expectedMissionRevision = auditMissionRevision(audit);
+  }
+  return {
+    tool,
+    input,
+    reason: bounded(nextAction.reason, 500),
+  };
+}
+
+function agentRunContract({ action, status, nextActor, missionIntent, assessmentComplete }) {
+  const mode = status === "blocked"
+    ? "blocked"
+    : nextActor === "person"
+      ? "human-required"
+      : action
+        ? ASYNC_READ_TOOLS.has(action.tool) ? "wait" : "continue"
+        : "complete";
+  return {
+    schemaVersion: 1,
+    mode,
+    objective: missionIntent === "prepare-fix"
+      ? "Advance the retained frontend mission through assessment and every authorised repair step."
+      : "Complete the retained frontend assessment with provider, rendered-browser, route, and repository evidence where required.",
+    assessmentComplete: assessmentComplete === true,
+    continueAutomatically: mode === "continue" || mode === "wait",
+    continuationRule: "After each successful action, follow the newest returned checkpoint and continue across consecutive agent-owned actions.",
+    refreshRule: "A returned checkpoint supersedes every copied action. On a stale revision or missing action, call get_mission_summary and continue from its checkpoint.",
+    stopWhen: [
+      "The checkpoint names the person as nextActor.",
+      "The checkpoint is blocked and no supported evidence path remains.",
+      "The checkpoint is complete and exposes no next action.",
+    ],
+    retryAfterMs: mode === "wait" ? 1500 : null,
+  };
 }
 
 function completionCriteria(nextAction, browserReview) {
@@ -50,8 +117,9 @@ function completionCriteria(nextAction, browserReview) {
     stage_site_repair: ["Return a bounded repair draft without implementation or deployment claims."],
     revise_site_repair: ["Return a new revision that answers the recorded change request."],
     get_repair_workspace: ["Return the authoritative repair state and next allowed action."],
+    record_repository_implementation: ["Implement the approved repository plan, run the named checks, and return a bounded repository receipt."],
     start_repair_verification: ["Return a stable verification audit assignment for the reviewed scope."],
-    get_verification_receipt: ["Return completed fresh proof with its source boundaries."],
+    get_verification_receipt: ["Return current reviewed-matrix progress or completed fresh proof with its source boundaries."],
     start_site_exploration: ["Return one durable exploration assignment for the server-issued retained routes."],
     get_site_exploration: ["Return terminal bounded-site coverage or its explicit partial-source blocker."],
   };
@@ -103,13 +171,17 @@ export function createMissionCheckpoint({
         explorations,
       })
     : null);
-  const nextAction = missionState?.nextAction ?? (audit.status === "complete"
-    ? { tool: "get_site_audit_results", input: {}, reason: "Read the completed retained evidence." }
-    : ["failed", "cancelled"].includes(audit.status)
-      ? null
-      : { tool: "check_site_audit_progress", input: {}, reason: "Measurement is still running." });
+  const nextAction = missionState
+    ? missionState.nextAction ?? null
+    : audit.status === "complete"
+      ? { tool: "get_site_audit_results", input: {}, reason: "Read the completed retained evidence." }
+      : ["failed", "cancelled"].includes(audit.status)
+        ? null
+        : { tool: "check_site_audit_progress", input: {}, reason: "Measurement is still running." };
   const status = missionState?.status ?? (audit.status === "complete" ? "complete" : audit.status === "failed" || audit.status === "cancelled" ? "blocked" : "in-progress");
   const nextActor = missionState?.nextActor ?? (nextAction ? "agent" : null);
+  const action = createExecutableMissionAction(nextAction, audit);
+  const assessmentComplete = missionState?.assessmentComplete ?? audit.status === "complete";
   return {
     schemaVersion: 1,
     auditId: bounded(audit.id, 160),
@@ -131,15 +203,7 @@ export function createMissionCheckpoint({
     status,
     nextActor,
     requiredCapability: nextAction?.tool ? CAPABILITY_BY_TOOL[nextAction.tool] ?? "contextual-tool" : null,
-    action: nextAction
-      ? {
-          tool: bounded(nextAction.tool, 80),
-          input: nextAction.input && typeof nextAction.input === "object"
-            ? JSON.parse(JSON.stringify(nextAction.input))
-            : {},
-          reason: bounded(nextAction.reason, 500),
-        }
-      : null,
+    action,
     completionCriteria: completionCriteria(nextAction, browserReview),
     retainedEvidenceSummary: retainedEvidenceSummary({
       audit,
@@ -151,13 +215,20 @@ export function createMissionCheckpoint({
     }),
     authorityBoundary: {
       humanOnly: [
-        "Approve or reject a repair and define any delegated policy.",
-        "Deploy the reviewed change and attest that deployment.",
+        "Approve or reject a repair, define delegated policy, and authorise deployment.",
+        "Attest that the reviewed version was deployed to the retained public target.",
         "Accept unresolved business risk or change the public target.",
       ],
-      agentMay: "Perform only the exact contextual action and return bounded evidence.",
+      agentMay: "Continue across consecutive agent-owned checkpoint actions, including diagnosis and authorised repository work, until a named human boundary, supported blocker, or completion.",
       claim: "A checkpoint resumes authority and evidence state; it does not prove implementation, deployment, or resolution.",
     },
+    agentRun: agentRunContract({
+      action,
+      status,
+      nextActor,
+      missionIntent: audit.mission?.intent,
+      assessmentComplete,
+    }),
   };
 }
 

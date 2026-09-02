@@ -291,7 +291,7 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.match(markdown, /\\`window\.vendor\\`/);
   assert.match(markdown, /does not prove a repair, deployment, or resolution/);
   assert.match(markdown, /Frontmend build: unidentified/);
-  assert.match(markdown, /Protocol: v1; tool library v3; 23 contracts/);
+  assert.match(markdown, /Protocol: v1; tool library v4; 23 contracts/);
   assert.match(markdown, /## Evidence adapters/);
   assert.match(markdown, /google-pagespeed-lighthouse/);
   assert.match(markdown, /Lighthouse version: 13\.0\.1/);

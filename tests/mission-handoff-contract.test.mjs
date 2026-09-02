@@ -37,9 +37,12 @@ test("creates a fresh-agent handoff that requires a live checkpoint read", () =>
   assert.equal(handoff.requiredCapabilityAtCopy, "browser");
   assert.match(handoff.prompt, /read the latest mission checkpoint/i);
   assert.match(handoff.prompt, /Do not reuse or replay/i);
+  assert.match(handoff.prompt, /continue automatically through consecutive agent-owned actions/i);
+  assert.match(handoff.prompt, /Do not stop merely because Lighthouse/i);
   assert.match(handoff.prompt, /grants no additional authority/i);
   assert.doesNotMatch(handoff.prompt, /review-secret-to-live-state|task-secret-to-live-state/);
   assert.match(handoff.authorityBoundary.humanOnly.join(" "), /deployment/i);
+  assert.match(handoff.continuationRule, /human boundary/i);
 });
 
 test("rejects an unsafe or incomplete fresh-agent handoff", () => {

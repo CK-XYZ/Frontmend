@@ -11,7 +11,7 @@
   },
   "routes": [
     {
-      "pattern": "frontmend.test.knightware.xyz",
+      "pattern": "frontmend.dev",
       "custom_domain": true
     }
   ],

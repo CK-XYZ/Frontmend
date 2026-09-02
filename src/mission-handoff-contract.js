@@ -40,11 +40,11 @@ export function createFreshAgentHandoff(checkpoint, origin) {
   const copiedMissionRevision = checkpoint.missionRevision;
   const defaultAuthorityBoundary = {
     humanOnly: [
-      "Approve or reject a repair and define any delegated policy.",
-      "Deploy the reviewed change and attest that deployment.",
+      "Approve or reject a repair, define delegated policy, and authorise deployment.",
+      "Attest that the reviewed version was deployed to the retained public target.",
       "Accept unresolved business risk or change the public target.",
     ],
-    agentMay: "Perform only the exact contextual action and return bounded evidence.",
+    agentMay: "Continue across consecutive agent-owned checkpoint actions until a named human boundary, supported blocker, or completion.",
     claim: "This handoff grants no authority and proves no outcome.",
   };
   const suppliedAuthorityBoundary = checkpoint.authorityBoundary;
@@ -78,8 +78,9 @@ export function createFreshAgentHandoff(checkpoint, origin) {
     `Open the Frontmend workspace ${workspaceUrl} and continue its existing mission from the current authoritative state.`,
     `This handoff was copied at mission revision ${copiedMissionRevision}, when the status was ${status} and the required capability was ${requiredCapability}. Treat those values as orientation only.`,
     "After opening the workspace, read the latest mission checkpoint and the currently registered contextual tools. Do not reuse or replay an action, input, or revision from an earlier chat.",
-    "Perform only the exact action exposed by the current checkpoint. Return bounded direct evidence or an honest supported blocker, and keep provider, browser, repository, implementation, deployment, and verification evidence separately attributed.",
-    "Stop at person-owned repair intent, approval or policy, deployment, deployment attestation, and risk acceptance. The handoff grants no additional authority and is not proof of implementation, deployment, or resolution.",
+    "Execute the checkpoint action with its exact audit ID and mission revision. After each successful action, follow the newest returned checkpoint and continue automatically through consecutive agent-owned actions. Do not stop merely because Lighthouse or another measurement provider finished.",
+    "Return bounded direct evidence or an honest supported blocker, and keep provider, browser, repository, implementation, deployment, and verification evidence separately attributed.",
+    "Stop only when the live checkpoint names a person as the next actor, reaches a supported blocker with no available evidence path, or completes with no next action. Repair approval, delegated policy, deployment authorisation, deployment attestation, risk acceptance, and target changes remain person-owned. The handoff grants no additional authority and is not proof of implementation, deployment, or resolution.",
   ].join("\n\n");
 
   return {
@@ -92,6 +93,7 @@ export function createFreshAgentHandoff(checkpoint, origin) {
     requiredCapabilityAtCopy: requiredCapability,
     prompt,
     liveStateRule: "The checkpoint read after opening the workspace always supersedes this copied orientation.",
+    continuationRule: "Continue across consecutive agent-owned checkpoints; stop only at a live human boundary, supported blocker, or completion.",
     authorityBoundary,
   };
 }

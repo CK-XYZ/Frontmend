@@ -27,6 +27,10 @@ import {
 import { repairVerificationReceiptMarkdown } from "./verification-impact-contract.js";
 import { observedRouteRecords } from "./route-contract.js";
 import {
+  REVISION_BOUND_MISSION_TOOLS,
+  createExecutableMissionAction,
+} from "./mission-checkpoint-contract.js";
+import {
   FRONTMEND_PROTOCOL_VERSION,
   FRONTMEND_TOOL_COUNT,
   FRONTMEND_TOOL_LIBRARY_VERSION,
@@ -38,21 +42,7 @@ const expectedMissionRevisionProperty = {
   minimum: 1,
   description: "Exact mission revision from the latest checkpoint. Stale writes are rejected with the current checkpoint.",
 };
-const checkpointedMutationTools = new Set([
-  "cancel_site_audit",
-  "open_browser_review",
-  "record_browser_review_check",
-  "start_related_page_audit",
-  "open_diagnostic_mission",
-  "submit_runtime_diagnosis",
-  "record_diagnostic_blocker",
-  "start_site_exploration",
-  "prepare_site_repair",
-  "stage_site_repair",
-  "revise_site_repair",
-  "record_repository_implementation",
-  "start_repair_verification",
-]);
+const checkpointedMutationTools = new Set(REVISION_BOUND_MISSION_TOOLS);
 
 function objectInput(input) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
@@ -187,9 +177,9 @@ function protocolEnvelope(service, result, input) {
   const missionRevision = Number.isInteger(checkpoint?.missionRevision)
     ? checkpoint.missionRevision
     : Number.isInteger(activeAudit?.missionRevision) ? activeAudit.missionRevision : 0;
-  const action = result?.data?.nextAction
+  const action = checkpoint?.action
+    ?? result?.data?.nextAction
     ?? result?.data?.recommendedNextAction
-    ?? checkpoint?.action
     ?? null;
   let activeTools = [];
   try {
@@ -209,11 +199,16 @@ function protocolEnvelope(service, result, input) {
     next: action?.tool
       ? {
           tool: action.tool,
+          input: action.input && typeof action.input === "object" && !Array.isArray(action.input)
+            ? JSON.parse(JSON.stringify(action.input))
+            : {},
           requiredCapability: checkpoint?.requiredCapability
             ?? TOOL_CAPABILITIES[action.tool]
             ?? null,
+          ...(typeof action.reason === "string" && action.reason ? { reason: action.reason } : {}),
         }
       : null,
+    agentRun: checkpoint?.agentRun ?? result?.data?.agentRun ?? null,
   };
 }
 
@@ -322,7 +317,7 @@ async function missionProjectionForTool(service, requestedAuditId) {
       browserReview,
       explorations,
     }),
-    checkpoint: report.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId) ?? null,
+    checkpoint: service?.getMissionCheckpoint?.(auditId) ?? report.missionCheckpoint ?? null,
   };
 }
 
@@ -792,7 +787,8 @@ export function createFrontmendTools(service) {
           requiredCapability: checkpoint?.requiredCapability
             ?? TOOL_CAPABILITIES[missionState.nextAction?.tool]
             ?? null,
-          nextAction: missionState.nextAction ?? checkpoint?.action ?? null,
+          nextAction: checkpoint?.action ?? createExecutableMissionAction(missionState.nextAction, audit),
+          agentRun: checkpoint?.agentRun ?? null,
           authorityBoundary: checkpoint?.authorityBoundary ?? null,
         };
       },
@@ -870,7 +866,7 @@ export function createFrontmendTools(service) {
           priorities: projectedPriorities,
           browserReview: detailLevel === "full" ? browserReview : compactBrowserReview(browserReview),
           missionState: detailLevel === "full" ? missionState : compactMissionState(missionState),
-          missionCheckpoint: report.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
+          missionCheckpoint: service?.getMissionCheckpoint?.(auditId) ?? report.missionCheckpoint,
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
             changedPersistedMission: false,
@@ -878,9 +874,15 @@ export function createFrontmendTools(service) {
             maxPriorities: projectionMission.maxPriorities,
             detailLevel,
           },
-          recommendedNextAction: missionState.nextAction
-            ? { tool: missionState.nextAction.tool, ...missionState.nextAction.input, reason: missionState.nextAction.reason }
-            : null,
+          recommendedNextAction: createExecutableMissionAction(
+            missionState.nextAction,
+            {
+              id: auditId,
+              missionRevision: service?.getMissionCheckpoint?.(auditId)?.missionRevision
+                ?? report.missionCheckpoint?.missionRevision
+                ?? remembered?.missionRevision,
+            },
+          ),
         };
       },
     }),
@@ -1560,7 +1562,7 @@ export function createFrontmendTools(service) {
       name: "get_verification_receipt",
       title: "Get verification receipt",
       description:
-        "Return a portable Markdown evidence receipt for a completed repair verification, including every captured rule occurrence and its fresh outcome, before/after metrics, and bounded audit lineage. Omit auditId to use the visible verification audit. This does not change or deploy the target site.",
+        "Read the current reviewed verification matrix and, once every row is terminal, return its portable Markdown evidence receipt. While fresh audits or browser replays are active, the same call returns bounded progress and the exact polling action instead of pretending a receipt exists. Omit auditId to use the visible verification audit. This does not change or deploy the target site.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -1576,10 +1578,29 @@ export function createFrontmendTools(service) {
         const repairId = optionalString(value.repairId, "repairId", 80);
         if (repairId) {
           const aggregate = await service.getRepairVerification(auditId, repairId);
+          if (!aggregate.receiptAvailable) {
+            return {
+              auditId,
+              repairId,
+              status: aggregate.status,
+              receiptAvailable: false,
+              matrix: aggregate,
+              nextAction: createExecutableMissionAction(
+                {
+                  tool: "get_verification_receipt",
+                  input: { repairId },
+                  reason: "Fresh verification is still active; read this reviewed matrix again after the bounded polling delay.",
+                },
+                { id: auditId, missionRevision: aggregate.missionCheckpoint?.missionRevision },
+              ),
+              missionCheckpoint: aggregate.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId) ?? null,
+            };
+          }
           return {
             auditId,
             repairId,
             status: aggregate.status,
+            receiptAvailable: true,
             matrix: aggregate,
             format: "text/markdown",
             downloadPath: `/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verification/receipt`,

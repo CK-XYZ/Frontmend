@@ -62,6 +62,7 @@ test("returns compact mission and one-finding evidence queries with a protocol e
     action: { tool: "get_site_audit_results", input: {} },
     requiredCapability: "full-evidence-reading",
     completionCriteria: ["Review the retained evidence."],
+    agentRun: { schemaVersion: 1, mode: "complete", continueAutomatically: false },
   };
   const mission = createAuditMission({ focusAreas: ["security"] }, "agent", 10);
   const finding = {
@@ -128,8 +129,10 @@ test("returns compact mission and one-finding evidence queries with a protocol e
     activeToolCount: summary.protocol.activeToolCount,
     next: {
       tool: "get_site_audit_results",
+      input: {},
       requiredCapability: "full-evidence-reading",
     },
+    agentRun: checkpoint.agentRun,
   });
   assert.ok(summary.protocol.activeToolCount < FRONTMEND_TOOL_COUNT);
 

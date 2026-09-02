@@ -307,6 +307,7 @@ const HUMAN_AUDIT_FOCUS_OPTIONS = AUDIT_FOCUS_AREAS.map((id) => ({
   id,
   ...AUDIT_FOCUS_COPY[id],
 }));
+const DEFAULT_HUMAN_AUDIT_FOCUS_AREAS = Object.freeze([...AUDIT_FOCUS_AREAS]);
 const WEBMCP_TOOL_COUNT = FRONTMEND_TOOL_COUNT;
 const loadReportWorkspace = () => import("./workspaces/ReportWorkspace.jsx");
 const loadWebMcpCapabilitySheet = () => import("./workspaces/WebMcpCapabilitySheet.jsx");
@@ -1535,19 +1536,18 @@ function Landing({
                 <fieldset>
                   <legend>
                     Focus areas
-                    <small>Choose up to three</small>
+                    <small>Choose the areas to prioritise</small>
                   </legend>
                   <div className="audit-focus-options">
                     {HUMAN_AUDIT_FOCUS_OPTIONS.map((option) => {
                       const selected = focusAreas.includes(option.id);
-                      const unavailable = !selected && focusAreas.length >= 3;
                       return (
                         <label key={option.id} data-selected={selected ? "true" : "false"}>
                           <input
                             type="checkbox"
                             value={option.id}
                             checked={selected}
-                            disabled={unavailable || isSubmitting}
+                            disabled={isSubmitting}
                             onChange={() => onToggleFocus(option.id)}
                           />
                           <span>
@@ -1891,7 +1891,7 @@ export function App() {
   const [error, setError] = useState("");
   const [audit, setAudit] = useState(() => auditService.getActiveAudit());
   const [focusAreas, setFocusAreas] = useState(
-    () => auditService.getActiveAudit()?.mission?.focusAreas ?? [],
+    () => auditService.getActiveAudit()?.mission?.focusAreas ?? DEFAULT_HUMAN_AUDIT_FOCUS_AREAS,
   );
   const [maxPriorities, setMaxPriorities] = useState(
     () => auditService.getActiveAudit()?.mission?.maxPriorities ?? 3,
@@ -2100,7 +2100,7 @@ export function App() {
     auditService.reset();
     setAudit(null);
     setUrl("");
-    setFocusAreas([]);
+    setFocusAreas(DEFAULT_HUMAN_AUDIT_FOCUS_AREAS);
     setMaxPriorities(3);
     setError("");
     setIsStarting(false);
@@ -2313,9 +2313,7 @@ export function App() {
           onToggleFocus={(area) => {
             setFocusAreas((current) => current.includes(area)
               ? current.filter((candidate) => candidate !== area)
-              : current.length < 3
-                ? [...current, area]
-                : current);
+              : [...current, area]);
           }}
           onMaxPrioritiesChange={setMaxPriorities}
           onScopeChange={setScope}

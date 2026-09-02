@@ -42,8 +42,11 @@ test("projects legacy records at mission revision one without rewriting them", (
   assert.equal(checkpoint.workspacePath, "/audits/audit-1");
   assert.equal(checkpoint.requiredCapability, "browser");
   assert.equal(checkpoint.action.tool, "open_browser_review");
+  assert.deepEqual(checkpoint.action.input, { auditId: "audit-1", expectedMissionRevision: 1 });
+  assert.equal(checkpoint.agentRun.mode, "continue");
+  assert.equal(checkpoint.agentRun.continueAutomatically, true);
   assert.match(checkpoint.retainedEvidenceSummary.join(" "), /provider-only/);
-  assert.match(checkpoint.authorityBoundary.humanOnly.join(" "), /Deploy/);
+  assert.match(checkpoint.authorityBoundary.humanOnly.join(" "), /deploy/i);
 });
 
 test("projects exact completion criteria for the current browser assignment", () => {
@@ -74,8 +77,39 @@ test("projects exact completion criteria for the current browser assignment", ()
     },
   });
   assert.equal(checkpoint.missionRevision, 7);
-  assert.deepEqual(checkpoint.action.input, { reviewId: "review-1", checkId: "task-1" });
+  assert.deepEqual(checkpoint.action.input, {
+    reviewId: "review-1",
+    checkId: "task-1",
+    auditId: "audit-1",
+    expectedMissionRevision: 7,
+  });
   assert.match(checkpoint.completionCriteria[0], /both viewports/);
+});
+
+test("projects bounded polling and human stop semantics for autonomous agents", () => {
+  const waiting = createMissionCheckpoint({
+    audit: { ...audit, status: "running", progress: 42, report: null, missionRevision: 3 },
+  });
+  assert.equal(waiting.action.tool, "check_site_audit_progress");
+  assert.deepEqual(waiting.action.input, { auditId: "audit-1" });
+  assert.equal(waiting.agentRun.mode, "wait");
+  assert.equal(waiting.agentRun.retryAfterMs, 1500);
+
+  const humanRequired = createMissionCheckpoint({
+    audit: { ...audit, mission: { schemaVersion: 2, intent: "prepare-fix" } },
+    missionState: {
+      status: "awaiting-human-review",
+      nextActor: "person",
+      nextAction: null,
+      assessmentComplete: true,
+      priorityCount: 1,
+      priorities: [],
+    },
+  });
+  assert.equal(humanRequired.agentRun.mode, "human-required");
+  assert.equal(humanRequired.agentRun.continueAutomatically, false);
+  assert.equal(humanRequired.action, null);
+  assert.match(humanRequired.authorityBoundary.agentMay, /consecutive agent-owned/i);
 });
 
 test("rejects stale writes with the current bounded checkpoint", () => {

@@ -10,6 +10,7 @@ import {
 import { AuditError } from "./url-policy.js";
 import { reconcileAssessmentEvidence } from "./evidence-reconciliation-contract.js";
 import { createSiteRouteCandidates } from "./site-exploration-contract.js";
+import { repairMissionContinuation } from "./repair-contract.js";
 
 export const AUDIT_FOCUS_AREAS = Object.freeze([
   "accessibility",
@@ -72,8 +73,8 @@ function intent(value = "assess") {
 }
 
 function focusAreas(value = []) {
-  if (!Array.isArray(value) || value.length > 3) {
-    throw new AuditError("INVALID_INPUT", "focusAreas must contain zero to three areas.");
+  if (!Array.isArray(value) || value.length > AUDIT_FOCUS_AREAS.length) {
+    throw new AuditError("INVALID_INPUT", `focusAreas must contain zero to ${AUDIT_FOCUS_AREAS.length} areas.`);
   }
   const result = value.map((area) => {
     if (typeof area !== "string" || !area.trim() || area.length > 40) {
@@ -621,6 +622,7 @@ export function deriveAuditMissionState({
     });
     status = "action-available";
     nextActor = "agent";
+    const repairNext = repairMissionContinuation(repair);
     nextAction = diagnosticPriority
       ? diagnosticNextAction({
           findingId: diagnosticPriority.findingId,
@@ -628,12 +630,8 @@ export function deriveAuditMissionState({
           diagnosticMissionId: diagnosticPriority.diagnosticMissionId,
           nextAction: diagnosticPriority.nextAction,
         })
-      : (repair
-      ? {
-          tool: "get_repair_workspace",
-          input: { repairId: repair.id },
-          reason: "Continue the existing reviewed repair mission for the frozen finding package.",
-        }
+      : (repairNext
+      ? repairNext.nextAction
       : {
           tool: "stage_site_repair",
           input: selectedIds.length > 1
@@ -643,6 +641,10 @@ export function deriveAuditMissionState({
             ? "Prepare one bounded repair package for the explicitly selected diagnosed findings."
             : "Prepare a bounded repair draft for the explicitly selected finding.",
         });
+    if (!diagnosticPriority && repairNext) {
+      status = repairNext.status;
+      nextActor = repairNext.nextActor;
+    }
   }
 
   return {

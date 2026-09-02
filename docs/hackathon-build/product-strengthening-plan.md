@@ -17,7 +17,7 @@ The current local candidate already has:
 - separately attributed provider, browser, repository, implementation, deployment, and verification evidence;
 - human review or bounded low-risk delegated authorisation;
 - exact post-deployment replay for browser-observed findings;
-- 21 bounded tools, shared human/WebMCP services, Worker/local-runtime parity, and deterministic contract coverage.
+- 23 bounded tools, shared human/WebMCP services, Worker/local-runtime parity, and deterministic contract coverage.
 
 The main remaining weakness is that assessment browser checks are still selected from a small static catalogue. They are focus-aware, but not yet compiled from the actual provider finding, selector, viewport, route, evidence gap, or desired acceptance condition. That makes the mechanism useful but still easier than it should be to dismiss as a generic checklist wrapped around Lighthouse.
 
@@ -45,7 +45,7 @@ WebMCP is essential because the page owns the durable mission and evidence rules
 3. **Use categorical states, not invented confidence scores.** Prefer `browser-confirmed`, `provider-browser-conflict`, or `diagnosis-required` over false numerical certainty.
 4. **One next action at a time.** The page should expose the smallest valid contextual action and explain why it is active.
 5. **No hidden agent.** Frontmend does not become an LLM wrapper or embedded browser automation service.
-6. **Human authority remains explicit.** Investigation is read-only. Repair intent, policy, approval, deployment, and deployment attestation retain their existing boundaries.
+6. **Human authority is a stop condition, not the product thesis.** Agents should continue automatically through every agent-owned investigation, diagnosis, implementation, and verification transition. Repair intent, policy, approval, deployment authorisation, deployment attestation, and risk acceptance remain explicit person-owned boundaries.
 7. **Bound the impact radius.** Routes, viewports, findings, files, and checks must come from retained evidence or a reviewed agent proposal, never an arbitrary crawl.
 8. **Fresh sessions must be safe.** A new capable agent should resume the mission from durable state without relying on chat history or guessing.
 9. **Do not inflate the tool count for presentation.** Extend the semantics of existing tools unless a new transition is genuinely distinct.
@@ -697,7 +697,8 @@ Some accepted operations carry more than one authoritative record. Retain the co
 - [x] **31. Regression-aware reviewed repair verification** — implemented and locally verified on 31 August 2026; exact repaired rows, retained provider/browser guardrails, and new high/medium findings remain separate through aggregate proof
 - [x] **32. Cohesive multi-finding repair packages** — implemented and locally verified on 31 August 2026; one to three diagnosed findings now share one immutable preparation, proposal, approval, implementation receipt, and per-finding reviewed matrix without delegated-auto expansion
 - [x] **33. Executable full-mission protocol evaluation** — implemented and locally verified on 31 August 2026; the real shared service and local/Worker HTTP adapters now prove one complete deterministic success path plus stale-session and repository-blocker paths without a server, provider cost, deployment, or live-proof claim
-- [ ] **34. Fresh current-candidate browser proof after explicit deployment/server authority**
+- [x] **34. Agent-autonomous mission continuation** — implemented and locally verified on 3 September 2026; executable audit/revision inputs, bounded run modes, real person stop conditions, repair-state progression, and truthful verification polling now share one checkpoint contract without adding a tool
+- [ ] **35. Fresh current-candidate browser proof after explicit deployment/server authority**
 
 Slices 1 and 2 are the highest-value core work. Slice 3 makes that intelligence legible. Slice 4 turns durability across agent sessions into a product capability. Slice 5 expands fresh proof from one target to a reviewed impact radius without becoming an arbitrary crawler. The freeform parity round makes mission-shaping and reviewed route scope first-class in Human mode; the takeover round lets a later capable agent continue that retained human work; and the complete Human rendered-review, repository-diagnosis, conflict-recovery, deferred-workspace, accessibility, fail-closed scope-recovery, authority-bound continuation, checkpoint-complete publication, atomic read-handoff, revision-coherent agent-read, cross-revision reconciliation, atomic compound-publication, and compound-response-integrity rounds ensure that collaboration remains useful, quick to enter, and structurally operable without WebMCP before release production begins.
 

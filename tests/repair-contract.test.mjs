@@ -381,6 +381,8 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   const draft = repairMissionState({ id: "repair-1", status: "draft" });
   assert.equal(draft.state, "awaiting-human-review");
   assert.deepEqual(draft.nextActions, [{ id: "review_in_ui", actor: "person" }]);
+  assert.equal(draft.continuation.nextActor, "person");
+  assert.equal(draft.continuation.nextAction, null);
   assert.equal(draft.steps.find((step) => step.id === "review").owner, "Person");
 
   const approved = repairMissionState({ id: "repair-1", status: "approved" });
@@ -390,6 +392,7 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   assert.equal(approved.deploymentEvidence, "none");
   assert.equal(approved.steps.find((step) => step.id === "deploy").status, "current");
   assert.equal(approved.steps.find((step) => step.id === "verify").status, "blocked");
+  assert.equal(approved.continuation.nextAction.tool, "record_repository_implementation");
   assert.deepEqual(
     approved.nextActions.map((action) => action.actor),
     ["agent", "person", "site-owner", "site-owner"],
@@ -406,6 +409,7 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   assert.equal(attested.deploymentEvidence, "site-owner-attestation");
   assert.equal(attested.steps.find((step) => step.id === "deploy").status, "attested");
   assert.equal(attested.steps.find((step) => step.id === "verify").status, "available");
+  assert.equal(attested.continuation.nextAction.tool, "start_repair_verification");
   assert.deepEqual(
     attested.nextActions.map((action) => action.actor),
     ["person", "person-or-agent"],
@@ -416,6 +420,7 @@ test("repair mission state keeps agent, human, and external actions explicit", (
   assert.equal(changesRequested.steps.find((step) => step.id === "draft").status, "current");
   assert.equal(changesRequested.steps.find((step) => step.id === "review").status, "blocked");
   assert.deepEqual(changesRequested.nextActions, [{ id: "revise_repair", actor: "agent" }]);
+  assert.equal(changesRequested.continuation.nextAction.tool, "revise_site_repair");
 });
 
 test("records bounded agent implementation evidence without claiming deployment", () => {

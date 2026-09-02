@@ -1067,6 +1067,66 @@ function implementationEvidenceState(repair) {
   return "checks-passed";
 }
 
+export function repairMissionContinuation(repair) {
+  if (!repair?.id) return null;
+  if (repair.status === "changes-requested") {
+    return {
+      status: "action-available",
+      nextActor: "agent",
+      nextAction: {
+        tool: "revise_site_repair",
+        input: { repairId: repair.id },
+        reason: "Inspect the retained change request, revise the repository proposal, and return it for person review.",
+      },
+    };
+  }
+  if (repair.status !== "approved") {
+    return { status: "awaiting-human-review", nextActor: "person", nextAction: null };
+  }
+
+  const aggregate = repair.aggregateVerification ?? null;
+  if (aggregate?.receiptAvailable === true) {
+    return { status: "complete", nextActor: null, nextAction: null };
+  }
+  if (repair.verificationRun?.id) {
+    return {
+      status: "in-progress",
+      nextActor: "agent",
+      nextAction: {
+        tool: "get_verification_receipt",
+        input: { repairId: repair.id },
+        reason: "Read the reviewed verification matrix until every fresh evidence row reaches a terminal outcome.",
+      },
+    };
+  }
+  if (Number.isFinite(repair.deploymentAttestedAt)) {
+    return {
+      status: "action-available",
+      nextActor: "agent",
+      nextAction: {
+        tool: "start_repair_verification",
+        input: { repairId: repair.id },
+        reason: "The reviewed deployment is attested, so start the exact fresh verification matrix.",
+      },
+    };
+  }
+
+  if (implementationEvidenceState(repair) === "checks-passed") {
+    return { status: "awaiting-external-deployment", nextActor: "person", nextAction: null };
+  }
+  return {
+    status: "action-available",
+    nextActor: "agent",
+    nextAction: {
+      tool: "record_repository_implementation",
+      input: { repairId: repair.id },
+      reason: repair.implementationReceipt
+        ? "Correct the reviewed implementation, rerun its checks, and replace the incomplete or failed repository receipt."
+        : "Implement the approved repository plan, run its checks, and record the bounded implementation receipt.",
+    },
+  };
+}
+
 export function repairMissionState(repair) {
   const hasDraft = Boolean(repair?.id);
   const approved = repair?.status === "approved";
@@ -1158,6 +1218,7 @@ export function repairMissionState(repair) {
       : approved
         ? "explicit-human-review"
         : "none",
+    continuation: repairMissionContinuation(repair),
   };
 }
 

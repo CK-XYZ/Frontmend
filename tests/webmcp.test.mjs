@@ -830,6 +830,7 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.equal(result.data.priorities[0].diagnosticMissionRequired, true);
   assert.deepEqual(result.data.recommendedNextAction, {
     tool: "open_browser_review",
+    input: { auditId, expectedMissionRevision: 1 },
     reason: "The agent-started accessibility or SEO assessment requires structured rendered-browser evidence beyond provider measurement.",
   });
   assert.deepEqual(result.data.focusSummary.categoryScores, { accessibility: 94, seo: 94 });
@@ -853,7 +854,11 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.equal(browserContributed.data.browserReview.state.status, "complete");
   assert.deepEqual(browserContributed.data.recommendedNextAction, {
     tool: "open_diagnostic_mission",
-    findingId: "mobile-color-contrast",
+    input: {
+      findingId: "mobile-color-contrast",
+      auditId,
+      expectedMissionRevision: 1,
+    },
     reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
   });
   assert.equal(contextualFrontmendToolNames(service).includes("prepare_site_repair"), false);
@@ -1762,6 +1767,33 @@ test("verification receipt tool returns the aggregate reviewed repair matrix", a
   assert.equal(result.data.matrix.status, "resolved");
   assert.match(result.data.receipt, /Reviewed verification matrix/);
   assert.match(result.data.downloadPath, /repair-1\/verification\/receipt$/);
+});
+
+test("verification receipt tool returns honest progress while reviewed rows are active", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const aggregate = {
+    auditId,
+    id: "run-1",
+    repairId: "repair-1",
+    status: "running",
+    receiptAvailable: false,
+    summary: { active: 2 },
+    rows: [{ id: "row-1", path: "/", status: "running" }],
+    missionCheckpoint: { auditId, missionRevision: 8 },
+  };
+  const result = await findTool(createFrontmendTools({
+    getActiveAudit: () => ({ id: auditId, missionRevision: 8 }),
+    getRepairVerification: async () => aggregate,
+  }), "get_verification_receipt").execute({ repairId: "repair-1" });
+
+  assert.equal(result.ok, true);
+  assert.equal(result.data.receiptAvailable, false);
+  assert.equal("receipt" in result.data, false);
+  assert.deepEqual(result.data.nextAction, {
+    tool: "get_verification_receipt",
+    input: { repairId: "repair-1", auditId },
+    reason: "Fresh verification is still active; read this reviewed matrix again after the bounded polling delay.",
+  });
 });
 
 test("implementation receipt tool reports bounded repository evidence only", async () => {

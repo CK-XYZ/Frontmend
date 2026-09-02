@@ -74,6 +74,12 @@ test("creates a bounded Assess mission without retaining prompt text", () => {
     /Unknown mission field: prompt/,
   );
   assert.throws(() => createAuditMission({ focusAreas: ["seo", "seo"] }), /unique supported/);
+  assert.deepEqual(
+    createAuditMission({
+      focusAreas: ["accessibility", "seo", "performance", "security", "reliability"],
+    }, "human", 10).focusAreas,
+    ["accessibility", "seo", "performance", "security", "reliability"],
+  );
   assert.throws(() => createAuditMission({ maxPriorities: 6 }), /one to five/);
   assert.throws(() => createAuditMission({ scope: "crawl" }), /page or bounded-site/);
 });
@@ -518,6 +524,90 @@ test("names repair staging only after an explicit selected finding transition", 
   });
   assert.equal(state.authority.mayDeploy, false);
   assert.equal(state.authority.mayAttestDeployment, false);
+});
+
+test("continues approved repair work autonomously and stops at real person boundaries", () => {
+  const mission = prepareRepairIntent(
+    createAuditMission({ focusAreas: ["accessibility"] }, "human", 10),
+    "mobile-color-contrast",
+    "human",
+    20,
+  );
+  const baseRepair = {
+    id: "repair-1",
+    findingId: "mobile-color-contrast",
+    status: "draft",
+    patchType: "css",
+  };
+
+  const review = deriveAuditMissionState({ report, mission, repairs: [baseRepair] });
+  assert.equal(review.status, "awaiting-human-review");
+  assert.equal(review.nextActor, "person");
+  assert.equal(review.nextAction, null);
+
+  const implementation = deriveAuditMissionState({
+    report,
+    mission,
+    repairs: [{ ...baseRepair, status: "approved" }],
+  });
+  assert.equal(implementation.nextActor, "agent");
+  assert.deepEqual(implementation.nextAction, {
+    tool: "record_repository_implementation",
+    input: { repairId: "repair-1" },
+    reason: "Implement the approved repository plan, run its checks, and record the bounded implementation receipt.",
+  });
+
+  const deployment = deriveAuditMissionState({
+    report,
+    mission,
+    repairs: [{
+      ...baseRepair,
+      status: "approved",
+      implementationReceipt: {
+        agentReported: true,
+        checks: [{ name: "bun test", status: "passed" }],
+      },
+    }],
+  });
+  assert.equal(deployment.status, "awaiting-external-deployment");
+  assert.equal(deployment.nextActor, "person");
+  assert.equal(deployment.nextAction, null);
+
+  const verification = deriveAuditMissionState({
+    report,
+    mission,
+    repairs: [{ ...baseRepair, status: "approved", deploymentAttestedAt: 30 }],
+  });
+  assert.equal(verification.nextActor, "agent");
+  assert.equal(verification.nextAction.tool, "start_repair_verification");
+
+  const verifying = deriveAuditMissionState({
+    report,
+    mission,
+    repairs: [{
+      ...baseRepair,
+      status: "approved",
+      deploymentAttestedAt: 30,
+      verificationRun: { id: "run-1" },
+    }],
+  });
+  assert.equal(verifying.status, "in-progress");
+  assert.equal(verifying.nextAction.tool, "get_verification_receipt");
+
+  const complete = deriveAuditMissionState({
+    report,
+    mission,
+    repairs: [{
+      ...baseRepair,
+      status: "approved",
+      deploymentAttestedAt: 30,
+      verificationRun: { id: "run-1" },
+      aggregateVerification: { receiptAvailable: true, status: "resolved" },
+    }],
+  });
+  assert.equal(complete.status, "complete");
+  assert.equal(complete.nextActor, null);
+  assert.equal(complete.nextAction, null);
 });
 
 test("freezes one to three repair findings and advances only when every required diagnosis is ready", () => {

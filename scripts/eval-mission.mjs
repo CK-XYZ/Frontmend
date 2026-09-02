@@ -479,6 +479,8 @@ async function runMainScenario(adapter, controller) {
   assert.equal(staged.requiresHumanReview, true);
   assert.equal(staged.approval, null);
   assert.match(staged.automation.reasons.join(" "), /multi-finding packages require explicit review/i);
+  assert.equal(staged.missionCheckpoint.agentRun.mode, "human-required");
+  assert.equal(staged.missionCheckpoint.agentRun.continueAutomatically, false);
   const repairId = staged.repairId;
   assert.ok(repairId, "The staged repair response did not expose its stable repair ID.");
 
@@ -490,6 +492,14 @@ async function runMainScenario(adapter, controller) {
   );
   assert.equal(approved.approval.mode, "explicit-review");
   await service.restoreAuditWorkspace(auditId);
+  const implementationSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
+  assert.equal(implementationSummary.agentRun.mode, "continue");
+  assert.deepEqual(implementationSummary.nextAction.input, {
+    repairId,
+    auditId,
+    expectedMissionRevision: implementationSummary.missionCheckpoint.missionRevision,
+  });
+  assert.equal(implementationSummary.nextAction.tool, "record_repository_implementation");
   await callContextualTool(service, "record_repository_implementation", {
     auditId,
     repairId,
@@ -500,6 +510,9 @@ async function runMainScenario(adapter, controller) {
       { name: "bun run build", status: "passed" },
     ],
   }, sequence);
+  const deploymentSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
+  assert.equal(deploymentSummary.agentRun.mode, "human-required");
+  assert.equal(deploymentSummary.nextAction, null);
   revision = service.getMissionCheckpoint(auditId).missionRevision;
   const deployed = await humanMutation(
     adapter,
@@ -508,6 +521,13 @@ async function runMainScenario(adapter, controller) {
   );
   assert.equal(Number.isFinite(deployed.deploymentAttestedAt), true);
   await service.restoreAuditWorkspace(auditId);
+  const verificationSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
+  assert.equal(verificationSummary.agentRun.mode, "continue");
+  assert.equal(verificationSummary.nextAction.tool, "start_repair_verification");
+  assert.equal(
+    verificationSummary.nextAction.input.expectedMissionRevision,
+    verificationSummary.missionCheckpoint.missionRevision,
+  );
 
   controller.setFixed(true);
   const verificationStart = await callContextualTool(service, "start_repair_verification", {
@@ -515,6 +535,7 @@ async function runMainScenario(adapter, controller) {
     repairId,
   }, sequence);
   assert.equal(verificationStart.verificationAuditIds.length, 2);
+  assert.equal(verificationStart.missionCheckpoint.agentRun.mode, "wait");
   await adapter.flush();
   for (const verificationAuditId of verificationStart.verificationAuditIds) {
     let terminalAudit = null;
