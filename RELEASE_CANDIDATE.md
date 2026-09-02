@@ -4,7 +4,7 @@ Prepared: 29 August 2026 (Australia/Perth)
 
 Latest local gate: 30 August 2026 (Australia/Perth)
 
-This is the release-candidate receipt and production verification runbook. It records historical public HTTP/API proof for the deployed revision; the hostname is currently public through a temporary app-scoped Cloudflare Access bypass, the newer local evidence-driven product candidate is not deployed, and fresh ChatGPT/Chrome WebMCP proof is still outstanding.
+This is the release-candidate receipt and production verification runbook. It records historical public HTTP/API proof separately from the current release target; `frontmend.dev` is private behind **Only CK**, and the exact release identity plus fresh ChatGPT/Chrome WebMCP proof must be verified before submission.
 
 Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Chrome WebMCP guide](https://developer.chrome.com/docs/ai/webmcp), [Google's Model Context Tool Inspector](https://chromewebstore.google.com/detail/webmcp-model-context-tool/gbpdfapgefenggkahomfgkhfehlcenpd), and [Cloudflare Wrangler configuration](https://developers.cloudflare.com/workers/wrangler/configuration/).
 
@@ -18,7 +18,7 @@ Reference basis: [OpenAI Site tools](https://learn.chatgpt.com/docs/webmcp), [Ch
 - Wrangler source of truth: `wrangler.jsonc`
 - Runtime: Worker module plus `FrontmendAuditGate` and `FrontmendAuditJob` SQLite Durable Objects
 - Static assets: `dist/client`, exposed to the Worker as `ASSETS`
-- Production URL: `https://frontmend.test.knightware.xyz/`
+- Production URL: `https://frontmend.dev/`
 
 ## Fresh local receipt
 
@@ -38,7 +38,7 @@ Wrangler 4.126.0 still generates six trailing spaces in its runtime declaration 
 
 ## Deployment prerequisites
 
-The older deployed revision is HTTP/API-verified. The current local evidence-driven product candidate is not deployed and must not inherit those production claims.
+The older deployed revision is HTTP/API-verified. The current evidence-driven product candidate must prove its own exact deployment identity and must not inherit those historical production claims.
 
 - [x] Wrangler 4.x is installed (`4.126.0` during this receipt).
 - [x] Wrangler is authenticated to the intended Cloudflare account.
@@ -54,7 +54,7 @@ The older deployed revision is HTTP/API-verified. The current local evidence-dri
 - [x] Verify public DNS through `1.1.1.1` and `8.8.8.8`, valid HTTPS, current hashed assets, SPA restoration, private-target rejection, and Durable Object persistence.
 - [x] Complete the production PageSpeed path on the deployed application commit: final audit `cac6da7e-ca38-4084-a0e1-c5e181451432` returned `live-lighthouse` evidence from Lighthouse 13.4.1 for both mobile and desktop, scored 98, recorded 22 passed checks, zero findings and zero viewport failures, and used no fallback. Mobile scored 98/100/100/91 and desktop 100/100/100/91 for performance/accessibility/best-practices/SEO.
 - [x] Verify the deployed production asset hashes over public HTTPS (`index-BR_ayGCH.css`, `index-CkJVqSRf.js`), SPA restoration, security/WebMCP headers, and structured private-target rejection.
-- [x] Temporarily bypass Access for everyone on only the `Frontmend frontend` application while preserving reusable policy **Only CK** for rollback. Connector policy `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` and a fresh unauthenticated in-app-browser load both confirmed the public path on 30 August 2026.
+- [x] Historical public testing window: the `Frontmend frontend` application temporarily used bypass policy `fa97f6cc-0019-40a7-a9a3-4a71a62b0cdd` on 30 August 2026. On 3 September 2026 the app moved to `frontmend.dev`, the bypass association was removed, and reusable policy **Only CK** became its sole policy.
 - [ ] Complete a fresh Chrome console smoke on the currently deployed asset hashes with zero errors or warnings.
 - [ ] Complete the required fresh-session procedures below against the exact production URL.
 

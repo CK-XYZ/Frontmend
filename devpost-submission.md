@@ -134,9 +134,9 @@ Fresh local release evidence for the browser-review and verification-replay cand
 
 ## Public Demo Link
 
-Planned URL: `https://frontmend.test.knightware.xyz/`
+Planned URL: `https://frontmend.dev/`
 
-Status: **TODO before final submission.** The hostname currently serves an older deployed revision. It is publicly reachable through a temporary app-scoped Cloudflare Access bypass while the reusable **Only CK** policy remains available for rollback. Deploy the current candidate only after explicit authorisation, then re-run the fresh judge procedures against the exact deployed revision.
+Status: **TODO before final submission.** The hostname is temporarily private behind the reusable **Only CK** policy. Verify the current candidate's exact deployment identity, replace the private restriction with verified judge access, then re-run the fresh judge procedures against that exact revision.
 
 ## Public Repository Link
 
@@ -181,8 +181,8 @@ Judging fit:
 
 Current blockers:
 
-- current mission candidate is not deployed;
-- the temporary public Access bypass must remain active through judging or be replaced by another verified public-access arrangement;
+- current mission candidate needs exact production deployment-identity proof;
+- the temporary **Only CK** Access restriction must be removed or replaced by a verified judge-access arrangement;
 - fresh current-version ChatGPT, Codex-repository, and Chrome WebMCP receipts are missing;
 - current Chrome console and 390 px browser proof are missing;
 - public repository URL and visible repository About licence are missing;
@@ -209,7 +209,7 @@ Live fields from `get_submission_requirements`:
 - `28251` — **Organization name** (conditional): `Not applicable unless submitter type is Organization`
 - `28252` — **App Status** (required): draft `New` — repository history begins during the challenge period; confirm before final entry
 - `28253` — **If Existing, explain updates during the submission period**: `Not applicable if App Status is New`; otherwise use the challenge-period mission, diagnosis, preparation, authority, and verification work described above
-- `28254` — **Live URL** (required): `https://frontmend.test.knightware.xyz/` after current deployment and judge-access verification
+- `28254` — **Live URL** (required): `https://frontmend.dev/` after current deployment and judge-access verification
 - `28255` — **Private testing instructions / credentials** (optional): use the Judge path above; `TODO_RESOLVE_ACCESS_OR_ADD_TESTED_JUDGE_CREDENTIALS`
 - `28256` — **Public code repository URL** (required): `TODO_PUBLIC_REPOSITORY_URL`
 - `28257` — **Agents/clients tested** (required): proven historical Codex desktop in-app-browser lifecycle on the older deployment; `TODO_ADD_CURRENT_CANDIDATE_CHATGPT_CODEX_CHROME_RECEIPTS`

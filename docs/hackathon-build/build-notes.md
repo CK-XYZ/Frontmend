@@ -564,3 +564,11 @@
 - Against the retained pre-lazy-loading initial bundle of 546.44 kB raw / 147.66 kB gzip, the current initial entry is 107.16 kB raw (19.61%) and 23.89 kB gzip (16.18%) smaller while retaining URL intake and active audit progress in the initial bundle.
 - Wrangler 4.126.0 strict dry run read sixteen static assets, reported 428.71 KiB raw / 89.65 KiB gzip, recognised `FrontmendAuditGate`, `FrontmendAuditJob`, and `ASSETS`, and exited without upload. `git diff --check` passed.
 - This gate ran from committed application base `5a0f0e0dba428a0ffe87f5154a38a63780b71eb5` plus the intentional uncommitted five-slice application and documentation changes. No development server, deployment, push, commit, Access change, public-repository publication, supported-browser proof, live WebMCP proof, provider spend, or Devpost write occurred.
+
+## 3 September 2026 — Production hostname and private Access migration
+
+- Attached `frontmend.dev` directly to the existing `frontmend` Worker as its sole Custom Domain and detached `frontmend.test.knightware.xyz`; the retired hostname no longer resolves.
+- Moved the existing `Frontmend frontend` Access application to the new apex and retained reusable policy **Only CK** as its only policy. The previous **Temporary public testing** bypass is no longer associated with the application.
+- Unauthenticated requests to both `/` and `/api/version` returned the expected Cloudflare Access `302` and `Www-Authenticate: Cloudflare-Access`; this proves interception, not an authenticated application-body smoke.
+- Updated the Wrangler route and canonical/Open Graph/Twitter URLs to `frontmend.dev`. The complete suite passed 371/371, the production build passed, and the strict Wrangler dry run recognised the existing Durable Object, assets, and version bindings without uploading a Worker version.
+- At the infrastructure-migration checkpoint, application source was still uncommitted and the newer local application bundle had not yet been deployed.

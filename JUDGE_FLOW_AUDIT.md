@@ -1,7 +1,7 @@
 # Frontmend judge-flow audit
 
 Audited: 29–30 August 2026, Australia/Perth
-Surfaces: historical user-run local Frontmend experience on port 3434; current public older-version baseline at `https://frontmend.test.knightware.xyz/`; current candidate static/contract review
+Surfaces: historical user-run local Frontmend experience on port 3434; historical public older-version baseline at the retired `frontmend.test.knightware.xyz` hostname; current private routing and Access boundary at `https://frontmend.dev/`; current candidate static/contract review
 Flow: first audit entry → contextual WebMCP handoff → provider evidence → agent browser review → repository diagnosis → human repair review → proof boundary
 
 ## Overall verdict

@@ -3,14 +3,14 @@ import { readFile } from "node:fs/promises";
 import { test } from "node:test";
 
 const projectRoot = new URL("../", import.meta.url);
-const socialImageUrl = "https://frontmend.test.knightware.xyz/og_image.png";
+const socialImageUrl = "https://frontmend.dev/og_image.png";
 
 test("publishes complete Open Graph and Twitter large-image metadata", async () => {
   const html = await readFile(new URL("index.html", projectRoot), "utf8");
 
   assert.match(
     html,
-    /<link rel="canonical" href="https:\/\/frontmend\.test\.knightware\.xyz\/" \/>/,
+    /<link rel="canonical" href="https:\/\/frontmend\.dev\/" \/>/,
   );
   assert.match(html, /<meta property="og:type" content="website" \/>/);
   assert.match(html, /<meta property="og:site_name" content="Frontmend" \/>/);
