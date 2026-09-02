@@ -72,3 +72,32 @@ The composer was separately captured at desktop width in its open, selected, and
 No blocking issue remains. A future P3 pass could tune the paper warmth after viewing it on the final deployed background compression, but no further change is warranted from the current local evidence.
 
 final result: passed
+
+## 2 September 2026 — audit report case-file redesign
+
+- Source visual truth: selected option 3, `C:\Users\calvi\.codex\generated_images\01a06221-7a60-7a60-a015-8a2a758868f4\exec-9dd55332-00e9-4908-a4e5-4a3c14ae16a8.png`.
+- Implementation route: `http://127.0.0.1:5173/audits/a45e05be-51e7-4993-a239-52a9ef13fdef`.
+- Implementation screenshot: fresh ChromeSight full-page capture at 1440 CSS pixels, 1440 × 2572 image pixels, device scale factor 1, captured 2 September 2026 at 13:27:30 local session time. ChromeSight did not expose a local artifact path.
+- State: completed public-page assessment with one retained CSP response-header finding; More, page evidence, and continuation disclosures collapsed.
+
+### Full-view comparison
+
+The reference and browser implementation were placed together in the same final comparison input. The implementation matches the selected case-file structure: one cobalt/mineral masthead, hostname and assessment state, a persistent case index, an ordered Mission → Evidence → Summary → Finding → Next step argument, a single orange finding rule, and one restrained human-intent action. The implementation uses Frontmend's exact landing bitgrain asset, so its mineral field is more saturated than the generated concept. Its longer full-page height retains the real evidence-source failure, bounded CSP resource inventory, and explicit authority copy instead of substituting mock data.
+
+The first implementation comparison exposed excess report height and duplicated summary UI. Completed-assessment mission and metric cards were removed, section rhythm was tightened, the one-finding selector was collapsed, and the summary now names the actual response-header gap. The final comparison found no remaining P0, P1, or P2 visual issue.
+
+### Focused and interaction review
+
+- Case-index links update the URL fragment and land with a 112px sticky-header offset.
+- More opens a bounded export and handoff menu, then closes without changing route state.
+- Inspect page evidence opens the retained document/viewport controls and closes cleanly.
+- Continue this audit opens the secondary browser handoff, policy, route, and exploration workflows and closes cleanly.
+- The primary Prepare a fix action was not invoked because it records audit intent; its visible enabled state and authority copy were inspected without mutating the assessment.
+
+### Responsive and runtime review
+
+ChromeSight captured fresh mobile (390 × 844), tablet (768 × 1024), desktop (1440 × 1000), and wide (1920 × 1080) viewports. The case index becomes a compact grid below 860px, the hostname stays on one line at 390px, actions form a two-by-two mobile tray, and all report content remains inside the document width. A reduced-motion responsive pass also completed with stable readiness.
+
+The bounded Chrome DevTools evidence session covered clean restoration, repeated responsive captures, disclosure interaction, and the final comparison: 531 responses, zero HTTP errors, zero failed loads, zero console/runtime errors, and zero dropped events. Full tests passed (365/365), contract tests passed (160/160), lint and TypeScript checks passed, production build passed, `git diff --check` passed, and the Wrangler deployment dry run passed. No server was started, and nothing was deployed.
+
+final result: passed

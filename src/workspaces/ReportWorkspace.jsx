@@ -8,6 +8,7 @@ import {
   ClipboardText,
   Desktop,
   DeviceMobile,
+  DotsThree,
   DownloadSimple,
   Info,
   LinkSimple,
@@ -1388,6 +1389,80 @@ function SiteExploration({ report, mission }) {
   );
 }
 
+function caseSourceStatus(report, pattern, fallback = "unavailable") {
+  const adapters = Array.isArray(report.coverage?.adapters) ? report.coverage.adapters : [];
+  const adapter = adapters.find((item) => pattern.test(`${item.adapterId ?? ""} ${item.provider ?? ""}`));
+  return adapter?.status ?? fallback;
+}
+
+function caseStatusLabel(value) {
+  if (typeof value !== "string" || !value) return "Unavailable";
+  const label = value.replaceAll("-", " ");
+  return `${label[0].toUpperCase()}${label.slice(1)}`;
+}
+
+function CaseSectionMarker({ number, label }) {
+  return (
+    <p className="case-section-marker" aria-hidden="true">
+      <span>{number}</span>
+      {label}
+    </p>
+  );
+}
+
+function CaseFileIndex({ report, mission, missionState }) {
+  const documentStatus = caseSourceStatus(
+    report,
+    /document/i,
+    report.coverage?.sources?.document?.status,
+  );
+  const lighthouseStatus = caseSourceStatus(
+    report,
+    /lighthouse|pagespeed/i,
+    report.coverage?.sources?.lighthouse?.status,
+  );
+  const contents = [
+    ["01", "Mission", "case-mission"],
+    ["02", "Evidence", "case-evidence"],
+    ["03", "Summary", "case-summary"],
+    ["04", "Finding", "case-finding"],
+    ["05", "Next step", "case-next-step"],
+  ];
+
+  return (
+    <aside className="case-file-index" aria-label="Audit case index">
+      <p className="kicker">Case index</p>
+      <dl>
+        <div>
+          <dt>Audit</dt>
+          <dd>{report.auditId.slice(0, 8).toUpperCase()}</dd>
+        </div>
+        <div>
+          <dt>Type</dt>
+          <dd>{mission.requestedFocusAreas?.length ? "Focused assessment" : "Full frontend audit"}</dd>
+        </div>
+        <div>
+          <dt>Initiated by</dt>
+          <dd>{mission.requestedBy === "agent" ? "Agent-started" : "Person-started"}</dd>
+        </div>
+        <div>
+          <dt>Scope</dt>
+          <dd>{mission.scope === "bounded-site" ? "Bounded site" : "This public page"}</dd>
+        </div>
+      </dl>
+      <nav aria-label="Case file contents">
+        <p className="kicker">Contents</p>
+        {contents.map(([number, label, id]) => (
+          <a key={id} href={`#${id}`}>
+            <span>{number}</span>
+            {label}
+          </a>
+        ))}
+      </nav>
+    </aside>
+  );
+}
+
 export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAuditRoute }) {
   const report = audit.report;
   const isDocumentAudit = report.engine.mode === "live-document";
@@ -1484,6 +1559,21 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
       ? report.findingsOmitted
       : (report.findingCount ?? report.findings.length) - report.findings.length,
   );
+  const singleFindingLabel = findings[0]
+    ? /header/i.test(findings[0].title)
+      ? "response-header gap"
+      : `${findings[0].category.toLowerCase()} issue`
+    : "retained issue";
+  const summaryHeadline = report.findingCount === 0
+    ? "No retained issues need attention."
+    : report.findingCount === 1
+      ? `One ${singleFindingLabel} needs attention.`
+      : `${report.findingCount} retained issues need attention.`;
+  const assessmentStatusLabel = missionState.assessmentComplete
+    ? "Assessment complete"
+    : missionState.status === "blocked"
+      ? "Assessment blocked · evidence retained"
+      : "Assessment in progress";
 
   useEffect(() => {
     let active = true;
@@ -1616,70 +1706,79 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   return (
     <section className="report-view" aria-labelledby="report-title">
       <div className="report-heading">
-        <div>
-          <div className="report-nav-actions">
-            <button className="back-button" type="button" onClick={onReset}>
-              <ArrowLeft size={17} weight="bold" />
-              New audit
-            </button>
-            {report.exploration?.parentAuditId ? (
-              <a
-                className="share-audit"
-                href={auditWorkspacePath(report.exploration.parentAuditId)}
-              >
-                <ArrowLeft size={16} weight="bold" aria-hidden="true" />
-                Parent audit
-              </a>
-            ) : null}
-            <button className="share-audit" type="button" onClick={copyShareLink}>
-              {shareState === "copied" ? (
-                <Check size={16} weight="bold" />
-              ) : (
-                <LinkSimple size={16} weight="bold" />
-              )}
-              {shareState === "copied"
-                ? "Link copied"
-                : shareState === "manual"
-                  ? "Link shown"
-                  : "Share audit"}
-            </button>
-            {agentHandoff ? (
-              <button className="share-audit agent-handoff-action" type="button" onClick={copyAgentHandoff}>
-                {handoffState === "copied" ? (
-                  <Check size={16} weight="bold" aria-hidden="true" />
-                ) : (
-                  <PaperPlaneTilt size={16} weight="bold" aria-hidden="true" />
-                )}
-                {handoffState === "copied"
-                  ? "Handoff copied"
-                  : handoffState === "manual"
-                    ? "Handoff shown"
-                    : "Copy agent handoff"}
-              </button>
-            ) : null}
-            <a
-              className="share-audit"
-              href={auditService.getAuditReportUrl(report.auditId)}
-              download
-            >
-              <DownloadSimple size={16} weight="bold" aria-hidden="true" />
-              Export report
-            </a>
-            {!report.verification && missionState.assessmentComplete ? (
-              <a
-                className="share-audit assessment-receipt-action"
-                href={auditService.getAssessmentReceiptUrl(report.auditId)}
-                download
-              >
-                <ClipboardText size={16} weight="bold" aria-hidden="true" />
-                Export assessment
-              </a>
-            ) : null}
-          </div>
-          <p className="kicker">
+        <div className="report-heading-copy">
+          <p className="report-case-label">Audit case file</p>
+          <h1 id="report-title">{report.hostname}</h1>
+          <p className="report-heading-state">
+            <CheckCircle size={18} weight="fill" aria-hidden="true" />
+            {assessmentStatusLabel}
+          </p>
+          <p className="report-heading-evidence">
             {report.verification ? "Fresh verification measurement" : "Measurement retained"} · {evidenceLabel}
           </p>
-          <h1 id="report-title">{report.hostname}</h1>
+        </div>
+        <div className="report-nav-actions">
+          <button className="back-button" type="button" onClick={onReset}>
+            <ArrowLeft size={17} weight="bold" />
+            New audit
+          </button>
+          <button className="share-audit" type="button" onClick={copyShareLink}>
+            {shareState === "copied" ? (
+              <Check size={16} weight="bold" />
+            ) : (
+              <LinkSimple size={16} weight="bold" />
+            )}
+            {shareState === "copied"
+              ? "Link copied"
+              : shareState === "manual"
+                ? "Link shown"
+                : "Share"}
+          </button>
+          <a
+            className="share-audit"
+            href={auditService.getAuditReportUrl(report.auditId)}
+            download
+          >
+            <DownloadSimple size={16} weight="bold" aria-hidden="true" />
+            Export
+          </a>
+          <details className="report-more-actions">
+            <summary className="share-audit">
+              <DotsThree size={17} weight="bold" aria-hidden="true" />
+              More
+            </summary>
+            <div>
+              {report.exploration?.parentAuditId ? (
+                <a href={auditWorkspacePath(report.exploration.parentAuditId)}>
+                  <ArrowLeft size={16} weight="bold" aria-hidden="true" />
+                  Parent audit
+                </a>
+              ) : null}
+              {agentHandoff ? (
+                <button type="button" onClick={copyAgentHandoff}>
+                  {handoffState === "copied" ? (
+                    <Check size={16} weight="bold" aria-hidden="true" />
+                  ) : (
+                    <PaperPlaneTilt size={16} weight="bold" aria-hidden="true" />
+                  )}
+                  {handoffState === "copied"
+                    ? "Handoff copied"
+                    : handoffState === "manual"
+                      ? "Handoff shown"
+                      : "Copy agent handoff"}
+                </button>
+              ) : null}
+              {!report.verification && missionState.assessmentComplete ? (
+                <a
+                  href={auditService.getAssessmentReceiptUrl(report.auditId)}
+                  download
+                >
+                  <ClipboardText size={16} weight="bold" aria-hidden="true" />
+                  Export assessment
+                </a>
+              ) : null}
+            </div>
+          </details>
         </div>
       </div>
 
@@ -1709,32 +1808,6 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
           </button>
         </div>
       ) : null}
-
-      <AuditMissionSummary
-        audit={audit}
-        diagnosticMissions={diagnosticMissions}
-        repairs={repairs}
-        browserReview={browserReview}
-        missionState={missionState}
-      />
-
-      <EvidenceOverview report={report} missionState={missionState} />
-
-      <AgentTakeover
-        auditId={report.auditId}
-        state={missionState}
-        webMcp={webMcp}
-        onOpened={setBrowserReview}
-      />
-
-      <BrowserReviewMission
-        auditId={report.auditId}
-        state={missionState}
-        review={browserReview}
-        verification={report.verification}
-        webMcp={webMcp}
-        onChanged={setBrowserReview}
-      />
 
       {shareState === "manual" ? (
         <div className="manual-share" role="status">
@@ -1786,282 +1859,391 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         </div>
       ) : null}
 
-      <div className="summary-row" aria-label="Audit summary">
-        <div>
-          <span className="metric-good">{report.checks.passed}</span>
-          <small>Checks passed</small>
-        </div>
-        <div>
-          <span>{report.findingCount}</span>
-          <small>Findings</small>
-        </div>
-        <div>
-          <span>{report.viewportCount}</span>
-          <small>Viewports measured</small>
-        </div>
-        <p>{report.engine.notice}</p>
-      </div>
+      <div className="case-file-layout">
+        <CaseFileIndex report={report} mission={mission} missionState={missionState} />
 
-      {viewportFailures.length ? (
-        <section className="viewport-failures" aria-labelledby="viewport-failures-title">
-          <Warning size={19} weight="fill" aria-hidden="true" />
-          <div>
-            <strong id="viewport-failures-title">Partial viewport evidence retained</strong>
-            <p>
-              Frontmend kept every successful measurement instead of discarding the run. Unavailable
-              strategies remain explicit and can be retried without turning them into inferred results.
+        <div className="case-file-document">
+          <section className="case-file-section" id="case-mission" aria-labelledby="case-mission-title">
+            <CaseSectionMarker number="01" label="Mission" />
+            <h2 id="case-mission-title">What was measured</h2>
+            {/*
+             * Plain facts about what happened, not a statement about the
+             * integrity of the method. The evidence table below shows
+             * "Unavailable" where a source failed; that demonstrates the
+             * separation this paragraph used to assert, and a reader trusts the
+             * showing far more than the telling.
+             */}
+            <p className="case-file-lede">
+              Frontmend read the public page at {report.hostname}. It did not sign in, run your code, or
+              read your repository.
             </p>
-            <ul>
-              {viewportFailures.map((failure) => (
-                <li key={failure.id}>
-                  <span>{failure.label}</span>
-                  <code>{failure.code}</code>
-                  <small>{failure.message}</small>
-                </li>
-              ))}
-            </ul>
-            {report.documentSupplement ? (
-              <small className="document-supplement-note">
-                {report.documentSupplement.evaluatedRuleCount} non-overlapping document rules added · {report.documentSupplement.overlappingRulesOmitted} overlapping rules omitted from totals. Document evidence does not replace viewport or rendered-browser evidence.
-              </small>
+            {!missionState.assessmentComplete ? (
+              <AuditMissionSummary
+                audit={audit}
+                diagnosticMissions={diagnosticMissions}
+                repairs={repairs}
+                browserReview={browserReview}
+                missionState={missionState}
+              />
             ) : null}
-          </div>
-        </section>
-      ) : null}
+          </section>
 
-      {report.verification ? (
-        <LazyWorkspace
-          load={loadVerificationWorkspace}
-          label="verification evidence workspace"
-          resetKey={`${report.auditId}:verification:${audit.missionRevision ?? 1}`}
-          componentProps={{ verification: report.verification }}
-        />
-      ) : null}
-
-      {findings.length && (repairReadyPriorities.length || preparedFindingIds.length || repairs.length) ? (
-        <LazyWorkspace
-          load={loadRepairPolicyWorkspace}
-          label="repair policy workspace"
-          resetKey={`${report.auditId}:policy:${audit.missionRevision ?? 1}`}
-          variant="inline"
-          componentProps={{
-            auditId: report.auditId,
-            policy: repairPolicy,
-            onPolicyChange: setRepairPolicy,
-          }}
-        />
-      ) : null}
-
-      <RouteJourney
-        exploration={report.exploration}
-        currentPath={new URL(report.finalUrl ?? report.url).pathname}
-      />
-
-      <ObservedRoutes
-        auditId={report.auditId}
-        profile={report.documentProfile}
-        onAuditRoute={onAuditRoute}
-      />
-
-      <SiteExploration report={report} mission={mission} />
-
-      <div className="workspace-grid">
-        <div className="preview-column">
-          <div className="viewport-tabs" role="tablist" aria-label="Preview viewport">
-            {viewports.map((item, index) => {
-              const Icon = item.icon
-                ?? (item.id === "mobile" ? DeviceMobile : item.id === "document" ? Browser : Desktop);
-              const tabId = `${viewportTabIdPrefix}-${item.id}`;
-              return (
-                <button
-                  key={item.id}
-                  id={tabId}
-                  type="button"
-                  role="tab"
-                  aria-selected={item.id === viewportId}
-                  aria-controls={viewportPanelId}
-                  tabIndex={item.id === viewportId ? 0 : -1}
-                  className={item.id === viewportId ? "active" : ""}
-                  onClick={() => setViewportId(item.id)}
-                  onKeyDown={(event) => selectViewportFromKeyboard(event, index)}
-                >
-                  <Icon size={17} aria-hidden="true" />
-                  <span>{item.label}</span>
-                  <small>{item.detail}</small>
-                </button>
-              );
-            })}
-          </div>
-          <BrowserPreview
-            url={report.finalUrl ?? report.url}
-            viewport={viewport}
-            selectedFinding={selectedFinding}
-            documentProfile={report.documentProfile}
-            panelId={viewportPanelId}
-            labelledBy={`${viewportTabIdPrefix}-${viewport.id}`}
-          />
-
-          {selectedFinding ? (
-            <article
-              className="finding-detail"
-              id={findingDetailId}
-              aria-labelledby={findingDetailTitleId}
-              aria-live="polite"
-            >
-              <div className="finding-detail-heading">
-                <span className={`severity-badge ${selectedFinding.severity}`}>
-                  <SeverityIcon severity={selectedFinding.severity} />
-                  {selectedFinding.severity}
-                </span>
-                <span>{selectedFinding.viewport}</span>
+          <section className="case-file-section" id="case-evidence" aria-label="Evidence">
+            <CaseSectionMarker number="02" label="Evidence" />
+            <EvidenceOverview report={report} missionState={missionState} />
+            {!missionState.assessmentComplete ? (
+              <div className="case-required-continuation">
+                <AgentTakeover
+                  auditId={report.auditId}
+                  state={missionState}
+                  webMcp={webMcp}
+                  onOpened={setBrowserReview}
+                />
+                <BrowserReviewMission
+                  auditId={report.auditId}
+                  state={missionState}
+                  review={browserReview}
+                  verification={report.verification}
+                  webMcp={webMcp}
+                  onChanged={setBrowserReview}
+                />
               </div>
-              <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
-              <p>{selectedFinding.summary}</p>
-              {selectedFindingScope.length > 1 ? (
-                <section className="finding-scope" aria-label="Cross-viewport finding scope">
-                  <div>
-                    <span>Repair scope</span>
-                    <strong>{selectedFindingScope.length} measured occurrences</strong>
-                  </div>
+            ) : null}
+          </section>
+
+          <section className="case-file-section case-file-summary" id="case-summary" aria-labelledby="case-summary-title">
+            <CaseSectionMarker number="03" label="Summary" />
+            <h2 id="case-summary-title">{summaryHeadline}</h2>
+            <p className="case-summary-note">
+              {report.checks.passed} of {report.checks.passed + report.findingCount} checks passed.
+            </p>
+            {!missionState.assessmentComplete ? (
+              <div className="summary-row" aria-label="Audit summary">
+                <div>
+                  <span className="metric-good">{report.checks.passed}</span>
+                  <small>Checks passed</small>
+                </div>
+                <div>
+                  <span>{report.findingCount}</span>
+                  <small>Findings</small>
+                </div>
+                <div>
+                  <span>{report.viewportCount}</span>
+                  <small>Viewports measured</small>
+                </div>
+                <p>{report.engine.notice}</p>
+              </div>
+            ) : null}
+            {viewportFailures.length ? (
+              <section className="viewport-failures" aria-labelledby="viewport-failures-title">
+                <Warning size={19} weight="fill" aria-hidden="true" />
+                <div>
+                  <strong id="viewport-failures-title">Partial viewport evidence retained</strong>
+                  <p>
+                    Some viewport measurements did not complete. The ones that did are listed below, and the
+                    rest can be retried.
+                  </p>
                   <ul>
-                    {selectedFindingScope.map((occurrence) => (
-                      <li key={occurrence.id}>
-                        <span>{occurrence.viewport}</span>
-                        <code title={occurrence.selector}>{occurrence.selector}</code>
+                    {viewportFailures.map((failure) => (
+                      <li key={failure.id}>
+                        <span>{failure.label}</span>
+                        <code>{failure.code}</code>
+                        <small>{failure.message}</small>
                       </li>
                     ))}
                   </ul>
-                  <p>One repository change may own several failures; verify every listed strategy.</p>
-                </section>
+                  {report.documentSupplement ? (
+                    <small className="document-supplement-note">
+                      {report.documentSupplement.evaluatedRuleCount} non-overlapping document rules added · {report.documentSupplement.overlappingRulesOmitted} overlapping rules omitted from totals. Document evidence does not replace viewport or rendered-browser evidence.
+                    </small>
+                  ) : null}
+                </div>
+              </section>
+            ) : null}
+          </section>
+
+          {report.verification ? (
+            <div className="case-file-verification">
+              <LazyWorkspace
+                load={loadVerificationWorkspace}
+                label="verification evidence workspace"
+                resetKey={`${report.auditId}:verification:${audit.missionRevision ?? 1}`}
+                componentProps={{ verification: report.verification }}
+              />
+            </div>
+          ) : null}
+
+          <section className="case-file-section case-file-finding" id="case-finding" aria-labelledby="case-finding-title">
+            <CaseSectionMarker number="04" label="Finding" />
+            <h2 id="case-finding-title">What needs attention</h2>
+            <div className="workspace-grid">
+              <aside className={`findings-panel ${findings.length === 1 ? "single-finding" : ""}`} aria-label="Audit findings">
+                <div className="findings-heading">
+                  <div>
+                    <p className="kicker">Ranked priorities</p>
+                    <h3>{findings.length === 1 ? "1 retained finding" : `${findings.length} retained findings`}</h3>
+                  </div>
+                  <span>{findings.length}</span>
+                </div>
+                <div className="finding-list">
+                  {findings.map((finding, index) => (
+                    <button
+                      type="button"
+                      key={finding.id}
+                      className={finding.id === selectedFindingId ? "selected" : ""}
+                      aria-pressed={finding.id === selectedFindingId}
+                      aria-controls={findingDetailId}
+                      onClick={() => selectFinding(finding.id)}
+                    >
+                      <span className={`finding-index ${finding.severity}`}>{index + 1}</span>
+                      <span className="finding-copy">
+                        <small>{finding.category}</small>
+                        <strong>{finding.title}</strong>
+                        <em>{finding.selector}</em>
+                      </span>
+                      <ArrowRight size={16} weight="bold" aria-hidden="true" />
+                    </button>
+                  ))}
+                  {!findings.length ? (
+                    <p className="empty-findings">
+                      {missionState.browserReview.required && missionState.browserReview.status !== "complete"
+                        ? "No provider failure matched this focus. The rendered-browser review is still active."
+                        : "No material failures were found in this completed assessment slice."}
+                    </p>
+                  ) : null}
+                </div>
+                {omittedFindingCount > 0 ? (
+                  <p className="findings-omitted" role="note">
+                    Showing the {report.findings.length} highest-priority findings. {omittedFindingCount} additional
+                    measured failure{omittedFindingCount === 1 ? " remains" : "s remain"} in the explicit
+                    rule-outcome record and export.
+                  </p>
+                ) : null}
+                {missionState.priorities.length ? (
+                  <details className="case-priority-details">
+                    <summary>Open mission evidence chain</summary>
+                    <MissionPriorities
+                      state={missionState}
+                      selectedFindingId={selectedFindingId}
+                      onSelect={selectFinding}
+                      detailId={findingDetailId}
+                    />
+                  </details>
+                ) : null}
+              </aside>
+
+              <div className="preview-column">
+                {selectedFinding ? (
+                  <article
+                    className="finding-detail"
+                    id={findingDetailId}
+                    aria-labelledby={findingDetailTitleId}
+                    aria-live="polite"
+                  >
+                    <div className="finding-detail-heading">
+                      <span className={`severity-badge ${selectedFinding.severity}`}>
+                        <SeverityIcon severity={selectedFinding.severity} />
+                        {selectedFinding.severity} · {selectedFinding.category} · {selectedFinding.viewport}
+                      </span>
+                    </div>
+                    <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
+                    <p>{selectedFinding.summary}</p>
+                    {selectedFindingScope.length > 1 ? (
+                      <section className="finding-scope" aria-label="Cross-viewport finding scope">
+                        <div>
+                          <span>Repair scope</span>
+                          <strong>{selectedFindingScope.length} measured occurrences</strong>
+                        </div>
+                        <ul>
+                          {selectedFindingScope.map((occurrence) => (
+                            <li key={occurrence.id}>
+                              <span>{occurrence.viewport}</span>
+                              <code title={occurrence.selector}>{occurrence.selector}</code>
+                            </li>
+                          ))}
+                        </ul>
+                        <p>One repository change may own several failures; verify every listed strategy.</p>
+                      </section>
+                    ) : null}
+                    <dl>
+                      <div>
+                        <dt>Evidence retained</dt>
+                        <dd>{selectedFinding.evidence}</dd>
+                      </div>
+                      <div>
+                        <dt>Suggested repair</dt>
+                        <dd>{selectedFinding.repair}</dd>
+                      </div>
+                    </dl>
+                    <BrowserFindingProvenance finding={selectedFinding} />
+                    {selectedFinding.diagnosticEvidence ? (
+                      <LazyWorkspace
+                        load={loadDiagnosisWorkspace}
+                        label="diagnostic evidence workspace"
+                        resetKey={`${report.auditId}:evidence:${selectedFinding.id}`}
+                        variant="inline"
+                        componentProps={{ mode: "evidence", evidence: selectedFinding.diagnosticEvidence }}
+                      />
+                    ) : null}
+                    <CspResourceInventory context={selectedFinding.repairContext} />
+                  </article>
+                ) : null}
+                {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
+                  <LazyWorkspace
+                    load={loadDiagnosisWorkspace}
+                    label="repository diagnosis workspace"
+                    resetKey={`${report.auditId}:diagnosis:${selectedFinding.id}:${audit.missionRevision ?? 1}`}
+                    variant="inline"
+                    componentProps={{
+                      mode: "mission",
+                      auditId: report.auditId,
+                      finding: selectedFinding,
+                      mission: selectedDiagnosticMission,
+                      webMcp,
+                    }}
+                  />
+                ) : null}
+                <details className="case-preview-disclosure">
+                  <summary>
+                    <span>Inspect page evidence</span>
+                    <small>Open the retained document or viewport view</small>
+                  </summary>
+                  <div>
+                    <div className="viewport-tabs" role="tablist" aria-label="Preview viewport">
+                      {viewports.map((item, index) => {
+                        const Icon = item.icon
+                          ?? (item.id === "mobile" ? DeviceMobile : item.id === "document" ? Browser : Desktop);
+                        const tabId = `${viewportTabIdPrefix}-${item.id}`;
+                        return (
+                          <button
+                            key={item.id}
+                            id={tabId}
+                            type="button"
+                            role="tab"
+                            aria-selected={item.id === viewportId}
+                            aria-controls={viewportPanelId}
+                            tabIndex={item.id === viewportId ? 0 : -1}
+                            className={item.id === viewportId ? "active" : ""}
+                            onClick={() => setViewportId(item.id)}
+                            onKeyDown={(event) => selectViewportFromKeyboard(event, index)}
+                          >
+                            <Icon size={17} aria-hidden="true" />
+                            <span>{item.label}</span>
+                            <small>{item.detail}</small>
+                          </button>
+                        );
+                      })}
+                    </div>
+                    <BrowserPreview
+                      url={report.finalUrl ?? report.url}
+                      viewport={viewport}
+                      selectedFinding={selectedFinding}
+                      documentProfile={report.documentProfile}
+                      panelId={viewportPanelId}
+                      labelledBy={`${viewportTabIdPrefix}-${viewport.id}`}
+                    />
+                  </div>
+                </details>
+              </div>
+            </div>
+          </section>
+
+          <section className="case-file-section case-file-next-step" id="case-next-step" aria-labelledby="case-next-step-title">
+            <CaseSectionMarker number="05" label="Next step" />
+            <h2 id="case-next-step-title">
+              {selectedFinding ? "Prepare a fix" : "No repair action is required"}
+            </h2>
+            <p className="case-file-lede">
+              {selectedFinding
+                ? selectedDiagnosticReady || selectedRepairPrepared
+                  ? "Frontmend can record a bounded repair proposal for review. Preparation is not approval, implementation, deployment, or proof that the issue is resolved."
+                  : "Repair controls unlock only after the retained symptom has supported browser and repository diagnosis. No proposal, code change, or deployment has been authorised."
+                : "The retained assessment has no ranked repair target. You can still export the evidence or continue with an optional rendered review."}
+            </p>
+            {selectedFinding && (selectedDiagnosticReady || selectedRepairPrepared) ? (
+              <PrepareRepairIntent
+                auditId={report.auditId}
+                priority={selectedPriority}
+                priorities={repairReadyPriorities}
+                mission={mission}
+                preparedFindingTitle={preparedFinding?.title}
+              />
+            ) : null}
+            {(selectedRepairPrepared || selectedRepair) ? (
+              <LazyWorkspace
+                load={loadRepairWorkspace}
+                label="repair and verification workspace"
+                resetKey={`${report.auditId}:repair:${selectedFinding?.id ?? "none"}:${audit.missionRevision ?? 1}`}
+                variant="inline"
+                componentProps={{
+                  auditId: report.auditId,
+                  finding: selectedRepairPrepared ? preparedFindings[0] : selectedFinding,
+                  findings: selectedRepairPrepared ? preparedFindings : [selectedFinding].filter(Boolean),
+                  repair: selectedRepair,
+                  repairPrepared: selectedRepairPrepared,
+                  diagnosticReady: selectedDiagnosticReady,
+                  onRepairChange: rememberRepair,
+                  onVerify,
+                }}
+              />
+            ) : null}
+          </section>
+
+          <details className="case-file-continuation" open={!missionState.assessmentComplete}>
+            <summary>
+              <span>Continue this audit</span>
+              <small>Browser handoff, review policy, observed routes, site exploration, and exports</small>
+            </summary>
+            <div>
+              {missionState.assessmentComplete ? (
+                <>
+                  <AgentTakeover
+                    auditId={report.auditId}
+                    state={missionState}
+                    webMcp={webMcp}
+                    onOpened={setBrowserReview}
+                  />
+                  <BrowserReviewMission
+                    auditId={report.auditId}
+                    state={missionState}
+                    review={browserReview}
+                    verification={report.verification}
+                    webMcp={webMcp}
+                    onChanged={setBrowserReview}
+                  />
+                </>
               ) : null}
-              <dl>
-                <div>
-                  <dt>Evidence</dt>
-                  <dd>{selectedFinding.evidence}</dd>
-                </div>
-                <div>
-                  <dt>Suggested repair</dt>
-                  <dd>{selectedFinding.repair}</dd>
-                </div>
-              </dl>
-              <BrowserFindingProvenance finding={selectedFinding} />
-              {selectedFinding.diagnosticEvidence ? (
+              {findings.length && (repairReadyPriorities.length || preparedFindingIds.length || repairs.length) ? (
                 <LazyWorkspace
-                  load={loadDiagnosisWorkspace}
-                  label="diagnostic evidence workspace"
-                  resetKey={`${report.auditId}:evidence:${selectedFinding.id}`}
+                  load={loadRepairPolicyWorkspace}
+                  label="repair policy workspace"
+                  resetKey={`${report.auditId}:policy:${audit.missionRevision ?? 1}`}
                   variant="inline"
-                  componentProps={{ mode: "evidence", evidence: selectedFinding.diagnosticEvidence }}
+                  componentProps={{
+                    auditId: report.auditId,
+                    policy: repairPolicy,
+                    onPolicyChange: setRepairPolicy,
+                  }}
                 />
               ) : null}
-              <CspResourceInventory context={selectedFinding.repairContext} />
-            </article>
-          ) : null}
-          {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
-            <LazyWorkspace
-              load={loadDiagnosisWorkspace}
-              label="repository diagnosis workspace"
-              resetKey={`${report.auditId}:diagnosis:${selectedFinding.id}:${audit.missionRevision ?? 1}`}
-              variant="inline"
-              componentProps={{
-                mode: "mission",
-                auditId: report.auditId,
-                finding: selectedFinding,
-                mission: selectedDiagnosticMission,
-                webMcp,
-              }}
-            />
-          ) : null}
-          {selectedFinding && (selectedDiagnosticReady || selectedRepairPrepared) ? (
-            <PrepareRepairIntent
-              auditId={report.auditId}
-              priority={selectedPriority}
-              priorities={repairReadyPriorities}
-              mission={mission}
-              preparedFindingTitle={preparedFinding?.title}
-            />
-          ) : null}
-          {(selectedRepairPrepared || selectedRepair) ? (
-            <LazyWorkspace
-              load={loadRepairWorkspace}
-              label="repair and verification workspace"
-              resetKey={`${report.auditId}:repair:${selectedFinding?.id ?? "none"}:${audit.missionRevision ?? 1}`}
-              variant="inline"
-              componentProps={{
-                auditId: report.auditId,
-                finding: selectedRepairPrepared ? preparedFindings[0] : selectedFinding,
-                findings: selectedRepairPrepared ? preparedFindings : [selectedFinding].filter(Boolean),
-                repair: selectedRepair,
-                repairPrepared: selectedRepairPrepared,
-                diagnosticReady: selectedDiagnosticReady,
-                onRepairChange: rememberRepair,
-                onVerify,
-              }}
-            />
-          ) : null}
-        </div>
-
-        <aside className="findings-panel" aria-label="Audit findings">
-          <div className="findings-heading">
-            <div>
-              <p className="kicker">Evidence queue</p>
-              <h2>What needs attention</h2>
+              <RouteJourney
+                exploration={report.exploration}
+                currentPath={new URL(report.finalUrl ?? report.url).pathname}
+              />
+              <ObservedRoutes
+                auditId={report.auditId}
+                profile={report.documentProfile}
+                onAuditRoute={onAuditRoute}
+              />
+              <SiteExploration report={report} mission={mission} />
             </div>
-            <span>{findings.length}</span>
-          </div>
-          <MissionPriorities
-            state={missionState}
-            selectedFindingId={selectedFindingId}
-            onSelect={selectFinding}
-            detailId={findingDetailId}
-          />
-          <div className="finding-list">
-            {findings.map((finding, index) => (
-              <button
-                type="button"
-                key={finding.id}
-                className={finding.id === selectedFindingId ? "selected" : ""}
-                aria-pressed={finding.id === selectedFindingId}
-                aria-controls={findingDetailId}
-                onClick={() => selectFinding(finding.id)}
-              >
-                <span className={`finding-index ${finding.severity}`}>{index + 1}</span>
-                <span className="finding-copy">
-                  <small>{finding.category}</small>
-                  <strong>{finding.title}</strong>
-                  <em>{finding.selector}</em>
-                </span>
-                <ArrowRight size={16} weight="bold" aria-hidden="true" />
-              </button>
-            ))}
-            {!findings.length ? (
-              <p className="empty-findings">
-                {missionState.browserReview.required && missionState.browserReview.status !== "complete"
-                  ? "No provider failure matched this focus. The rendered-browser review is still active."
-                  : "No material failures were found in this completed assessment slice."}
-              </p>
-            ) : null}
-          </div>
-          {omittedFindingCount > 0 ? (
-            <p className="findings-omitted" role="note">
-              Showing the {report.findings.length} highest-priority findings. {omittedFindingCount} additional
-              measured failure{omittedFindingCount === 1 ? " remains" : "s remain"} in the explicit
-              rule-outcome record and export.
-            </p>
-          ) : null}
-          <div className="agent-handoff">
-            <Sparkle size={18} weight="fill" aria-hidden="true" />
-            <p>
-              {repairPolicy.mode === "auto-low-risk"
-                ? selectedDiagnosticReady
-                  ? "After you prepare this diagnosed priority, an agent can submit an eligible low-risk mission under your recorded auto grant. Deployment remains yours."
-                  : "Repository diagnosis comes first. Repair controls unlock only after the retained symptom has a supported owner and reproduction."
-                : selectedDiagnosticReady
-                  ? "This diagnosed priority is ready to prepare for a bounded repair mission. You approve any proposal in this shared workspace."
-                  : "An agent can investigate the retained browser and repository evidence. Repair controls unlock only after diagnosis is ready."}
-            </p>
-          </div>
-        </aside>
+          </details>
+
+          <p className="case-file-authority">
+            <ShieldCheck size={18} weight="duotone" aria-hidden="true" />
+            <span>Agent may investigate and prepare. <strong>Only a person may approve or deploy.</strong></span>
+          </p>
+        </div>
       </div>
     </section>
   );
