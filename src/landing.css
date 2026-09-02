@@ -1626,12 +1626,23 @@
 }
 
 .evidence-loop-field {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
   background-color: var(--fm-cobalt-deep);
+  color: var(--fm-bone);
+}
+
+.evidence-loop-field::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: -16px;
   background-image: url("/backgrounds/frontmend-evidence-field.webp");
   background-position: right center;
   background-repeat: no-repeat;
   background-size: cover;
-  color: var(--fm-bone);
+  filter: blur(8px);
 }
 
 /* --------------------------------------------------- shared section type */
