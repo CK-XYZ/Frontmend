@@ -171,6 +171,97 @@ summary:focus-visible,
   background: var(--surface);
 }
 
+/*
+ * Ground for a restored audit address.
+ *
+ * A purpose-drawn error-page field: cobalt with halftone burn-in at the corners
+ * and a clear middle the card sits in. No wash over it - the earlier warm
+ * vignette was tuned for the paper texture and would only milk this one.
+ *
+ * Absolute, not fixed: the shell is the containing block and can be taller than
+ * the viewport, and a fixed layer would slide out from under it on scroll. The
+ * colour underneath matches the art so nothing flashes cream before it loads.
+ */
+.app-shell.restore::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  /*
+   * The hero's wash, copied: `.hero` in landing.css lays the same radial black
+   * over its terrain - heaviest in the middle, clearing to almost nothing at
+   * the corners - so the art burns at the edges and recedes behind whatever it
+   * has to carry. Same stops here, over a busier field and a card instead of
+   * type. The landing puts no blur on its own art, so neither does this.
+   */
+  background-color: #000;
+  background-image:
+    radial-gradient(
+      ellipse 82% 72% at 50% 51%,
+      rgba(0, 0, 0, 0.75) 0%,
+      rgba(0, 0, 0, 0.64) 52%,
+      rgba(0, 0, 0, 0.08) 100%
+    ),
+    url("/backgrounds/frontmend-error-page.webp");
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, cover;
+  pointer-events: none;
+}
+
+/*
+ * Shell chrome over the art.
+ *
+ * The workspace header and footer are ink on warm white, and this route put a
+ * cobalt field underneath them - the footer went nearly unreadable and the
+ * controls lost their edges. The fix is the treatment the landing already uses
+ * over its own field: a dark translucent bar, bone type, low-alpha fills.
+ *
+ * A bar and not the landing's pill island: that island is a scroll response,
+ * and this page does not scroll.
+ */
+.app-shell.restore .site-header {
+  border-bottom: 1px solid rgb(245 243 241 / 13%);
+  background-color: rgb(0 8 34 / 55%);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+/*
+ * The child combinator matters: this is the back link standing on the art, not
+ * the "Start a new audit" secondary inside the card, which stays ink on white.
+ */
+.app-shell.restore :is(.text-button, .webmcp-status),
+.app-shell.restore .progress-view > .back-button {
+  color: var(--fm-bone);
+}
+
+.app-shell.restore .webmcp-status .status-dot {
+  background: rgb(245 243 241 / 62%);
+  box-shadow: 0 0 0 4px rgb(245 243 241 / 12%);
+}
+
+.app-shell.restore .agent-activity-trigger {
+  border-color: rgb(245 243 241 / 16%);
+  background: rgb(245 243 241 / 7%);
+  color: var(--fm-bone);
+}
+
+.app-shell.restore .agent-activity-trigger:hover,
+.app-shell.restore .text-button:hover {
+  border-color: rgb(245 243 241 / 28%);
+  color: #fff;
+}
+
+/*
+ * The card goes opaque here. At 82% the cobalt reads straight through it and
+ * the warm white turns grey-blue, which is the one colour this system does not
+ * have.
+ */
+.app-shell.restore .progress-card {
+  background: #fffefa;
+}
+
 .main-content {
   min-height: 100svh;
 }
@@ -643,6 +734,132 @@ summary:focus-visible,
 
 .progress-card h1 {
   font-size: clamp(39px, 5vw, 62px);
+}
+
+/* ------------------------------------------------- the live audit card
+ *
+ * One object, two grounds (DESIGN.md section 1). The cobalt hero carries
+ * everything that moves - orb, phase, thread, stage marks - on the evidence
+ * field the landing uses for its own loop band. The warm half below carries the
+ * standing facts of the assessment. Before this they were one flat warm card,
+ * with the part that changes every few seconds set in the same key as the part
+ * that never changes.
+ */
+.app-shell.progress .progress-card {
+  padding: 0;
+  overflow: hidden;
+  border-radius: 28px;
+  background: #fffefa;
+  text-align: left;
+}
+
+.progress-hero {
+  padding: clamp(34px, 5vw, 54px) clamp(24px, 4vw, 56px) clamp(28px, 3.6vw, 40px);
+  background-color: var(--fm-cobalt-deep);
+  background-image:
+    radial-gradient(
+      ellipse 78% 74% at 50% 46%,
+      rgba(0, 0, 0, 0.62) 0%,
+      rgba(0, 0, 0, 0.5) 54%,
+      rgba(0, 0, 0, 0.06) 100%
+    ),
+    url("/backgrounds/frontmend-evidence-field.webp");
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, cover;
+  color: var(--fm-bone);
+  text-align: center;
+}
+
+.progress-hero .thinking-orb {
+  --orb-size: 62px;
+  --orb-tint: #d3f778;
+  --orb-halo: rgb(185 237 80 / 20%);
+
+  margin: 0 auto 22px;
+}
+
+.progress-hero .kicker {
+  color: var(--fm-bone-muted);
+}
+
+.progress-hero h1 {
+  /* An audit phase is a status line, not a hero claim. */
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(28px, 3.4vw, 44px);
+  font-weight: 500;
+  letter-spacing: -0.035em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.progress-hero .audit-url {
+  margin: 15px 0 30px;
+  color: var(--fm-bone-muted);
+  font-family: var(--fm-mono);
+  font-size: 13px;
+}
+
+.progress-hero .progress-track {
+  background: rgb(245 243 241 / 16%);
+}
+
+.progress-hero .progress-track span {
+  background: var(--fm-lime);
+}
+
+.progress-hero .progress-stages li {
+  color: rgb(197 213 255 / 62%);
+}
+
+.progress-hero .progress-stages li > span {
+  border-color: var(--fm-cobalt-line);
+  background: rgb(245 243 241 / 6%);
+}
+
+.progress-hero .progress-stages li.active {
+  color: var(--fm-bone);
+}
+
+.progress-hero .progress-stages li.active > span {
+  border-color: var(--fm-lime);
+  background: rgb(220 239 59 / 16%);
+  color: var(--fm-lime);
+}
+
+.progress-hero .progress-stages li.complete {
+  color: var(--fm-bone);
+}
+
+.progress-hero .progress-stages li.complete > span {
+  border-color: transparent;
+  background: var(--fm-lime);
+  color: var(--fm-ink);
+}
+
+.progress-hero .audit-engine-note {
+  margin-top: 26px;
+  color: rgb(197 213 255 / 52%);
+}
+
+.progress-evidence {
+  padding: clamp(22px, 3vw, 30px) clamp(22px, 3.4vw, 34px) clamp(24px, 3vw, 32px);
+}
+
+/*
+ * The summary is the card's lower band, not a tile floating inside it: its own
+ * border and fill made a card-in-a-card against the hero's hard edge. Scoped
+ * through the shell to outrank `.progress-card .audit-mission-summary`, which
+ * centres and caps it further down this file.
+ */
+.app-shell.progress .progress-evidence .audit-mission-summary {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: none;
 }
 
 .audit-url {
@@ -1852,6 +2069,15 @@ summary:focus-visible,
   white-space: nowrap;
 }
 
+/*
+ * An error is not a hero. The shared .progress-card headline is display scale
+ * because the live audit view earns it; a card that exists to say something
+ * went wrong reads as shouting at the same size.
+ */
+.audit-failure h1 {
+  font-size: clamp(27px, 3.2vw, 40px);
+}
+
 .audit-failure .audit-orbit {
   border-color: #f0d5c6;
   background: #fff1e9;
@@ -2038,6 +2264,178 @@ summary:focus-visible,
   justify-content: space-between;
   gap: 30px;
   margin-bottom: 28px;
+}
+
+/* =================================================== the report as a document
+ *
+ * The report was ten sibling rectangles at one width, one weight and one gap,
+ * in three unrelated darks and four unrelated tints. Nothing led, so nothing
+ * grouped, and a page of real evidence read as a component gallery.
+ *
+ * Three rules fix it, and they are the whole system:
+ *
+ * 1. ONE DARK, AND IT IS COBALT. `.site-exploration` was #20251f and
+ *    `.mission-priorities` was #272e28 - two near-blacks that matched each
+ *    other, the masthead, and nothing else. Both are surfaces the *agent*
+ *    populates - crawl candidates, its ranked queue - so both take the
+ *    masthead's cobalt, and the page becomes paper for your evidence and cobalt
+ *    for the agent's territory. The handoff panel is deliberately NOT in this
+ *    set: it is a person's control, its body copy is written for paper, and it
+ *    carries a dark CTA that vanishes on a dark ground. Agent-owned is not the
+ *    same as agent-related.
+ * 2. ONE RADIUS. 20px. It was 20, 22 and 26 within a single screen.
+ * 3. RHYTHM, NOT A CONSTANT GAP. Siblings sit close; a new movement opens with
+ *    real air. Equal spacing everywhere is what made ten sections read as one
+ *    undifferentiated pile.
+ */
+.app-shell.report .report-view > * {
+  margin-bottom: 16px;
+}
+
+/* Each of these opens a movement: the verdict, the findings, the exploration. */
+.app-shell.report .report-view > :is(.summary-row, .workspace-grid, .site-exploration) {
+  margin-top: 40px;
+}
+
+.app-shell.report :is(
+  .evidence-overview,
+  .agent-takeover,
+  .summary-row,
+  .site-exploration,
+  .findings-panel,
+  .audit-mission-summary
+) {
+  border-radius: 20px;
+}
+
+/*
+ * 4. THE PAPER SECTIONS ARE NOT OBJECTS.
+ *
+ * This is the move that turns the pile into a document. The provenance of the
+ * run - what was requested, what was measured, what it scored, what remains -
+ * is one continuous argument, and boxing each paragraph of it in its own
+ * bordered, rounded, tinted rectangle is what made ten related statements look
+ * like ten unrelated widgets.
+ *
+ * They lose their card chrome and sit on the page under a hairline, keeping
+ * their internal rules. What stays an object is what genuinely is one: the
+ * cobalt surfaces the agent owns, the handoff control, and the findings panel.
+ */
+/*
+ * `.repair-policy` is matched without the child combinator: it renders inside a
+ * LazyWorkspace boundary, so it is a grandchild of the view, not a child.
+ */
+.app-shell.report .repair-policy,
+.app-shell.report .report-view > :is(
+  .audit-mission-summary,
+  .evidence-overview,
+  .summary-row,
+  .observed-routes
+) {
+  padding-right: 0;
+  padding-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  border-left: 0;
+  border-radius: 0;
+  background: none;
+  box-shadow: none;
+}
+
+.app-shell.report .repair-policy,
+.app-shell.report .report-view > :is(
+  .evidence-overview,
+  .summary-row,
+  .observed-routes
+) {
+  padding-top: clamp(26px, 2.6vw, 36px);
+  border-top: 1px solid var(--line);
+}
+
+/* The mission summary opens the document; it needs no rule above it. */
+.app-shell.report .report-view > .audit-mission-summary {
+  padding-top: clamp(22px, 2.2vw, 30px);
+  border-top: 0;
+}
+
+/*
+ * The agent's surfaces, in the product's one dark. Flat cobalt rather than the
+ * masthead's art: these carry controls and lists, and the field would fight
+ * every hairline inside them.
+ */
+.app-shell.report :is(.site-exploration, .mission-priorities) {
+  border-color: rgb(197 213 255 / 22%);
+  background: var(--fm-cobalt-deep);
+}
+
+/*
+ * A section title has to outrank its own body text. Everything on this page sat
+ * between 9px and 20px, so no section announced itself and the eye had nothing
+ * to skim by.
+ */
+.app-shell.report .report-view > * > h2,
+.app-shell.report :is(.evidence-overview, .agent-takeover, .site-exploration) h2,
+.app-shell.report .human-agent-policy h2 {
+  font-family: var(--fm-display);
+  font-size: clamp(21px, 1.9vw, 27px);
+  font-weight: 500;
+  letter-spacing: -0.03em;
+  line-height: 1.12;
+}
+
+/* ------------------------------------------------- the report masthead
+ *
+ * Same move as the live audit card (DESIGN.md section 1): the identity of the
+ * run - who was measured, what state the record is in, and every action that
+ * leaves this page - sits on cobalt, and the evidence below it stays warm
+ * white. Before this the domain was ink on cream with a hairline under it, and
+ * a report of forty sections opened with nothing to anchor it.
+ */
+.app-shell.report .report-heading {
+  align-items: flex-end;
+  padding: clamp(24px, 2.6vw, 36px) clamp(22px, 2.6vw, 40px) clamp(22px, 2.4vw, 32px);
+  border-radius: 24px;
+  background-color: var(--fm-cobalt-deep);
+  background-image:
+    radial-gradient(
+      ellipse 76% 78% at 38% 44%,
+      rgba(0, 0, 0, 0.6) 0%,
+      rgba(0, 0, 0, 0.46) 56%,
+      rgba(0, 0, 0, 0.04) 100%
+    ),
+    url("/backgrounds/frontmend-evidence-field.webp");
+  background-position: center, center;
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, cover;
+  color: var(--fm-bone);
+}
+
+.app-shell.report .report-heading h1 {
+  color: var(--fm-bone);
+  font-family: var(--fm-display);
+  font-size: clamp(34px, 4.2vw, 60px);
+  font-weight: 500;
+  letter-spacing: -0.042em;
+}
+
+.app-shell.report .report-heading .kicker {
+  color: var(--fm-bone-muted);
+}
+
+/* The controls come with it, on the island's own low-alpha material. */
+.app-shell.report .report-heading :is(.back-button, .share-audit) {
+  color: var(--fm-bone);
+}
+
+.app-shell.report .report-heading .share-audit {
+  border-color: rgb(245 243 241 / 18%);
+  background: rgb(245 243 241 / 8%);
+}
+
+.app-shell.report .report-heading .share-audit:hover,
+.app-shell.report .report-heading .back-button:hover {
+  border-color: rgb(245 243 241 / 32%);
+  color: #fff;
 }
 
 .report-heading .back-button {
@@ -3258,6 +3656,22 @@ summary:focus-visible,
   display: block;
   border: 0;
   background: #fff;
+}
+
+/*
+ * The live embed does not take the pointer.
+ *
+ * An iframe swallows the wheel: with the cursor anywhere over this panel - and
+ * it is a large panel, low on a long report - the page simply stopped
+ * scrolling, with no scrollbar change and nothing in the console to explain it.
+ *
+ * Nothing is lost by refusing the pointer. The frame is `sandbox=""`, so it
+ * runs no scripts and submits no forms; it is evidence of what the page looks
+ * like, not a thing to operate. Anyone who wants to use the site has the real
+ * URL in the chrome above it.
+ */
+.frame-stage iframe {
+  pointer-events: none;
 }
 
 .captured-evidence {

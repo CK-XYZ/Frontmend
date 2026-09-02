@@ -28,6 +28,7 @@ import {
   VerifiedSpecimen,
 } from "./ui/EvidenceSpecimens.jsx";
 import { AUDIT_FOCUS_AREAS, createAuditMission } from "./audit-mission-contract.js";
+import { ThinkingOrb } from "./ui/ThinkingOrb.jsx";
 import { AuditMissionSummary } from "./ui/AuditMissionSummary.jsx";
 import { humanMissionMutationFailure } from "./ui/human-mission-recovery.js";
 import { LazyWorkspace } from "./ui/LazyWorkspace.jsx";
@@ -351,13 +352,22 @@ function Brand({ onClick }) {
   );
 }
 
-function WebMcpStatus({ status, expanded, restoring, onClick, buttonRef }) {
+/*
+ * `restoring` withholds the contextual tools, and it stays true after a
+ * restoration fails - the tools really are still paused, because there is no
+ * authoritative workspace to scope them to. But "restoring" describes work in
+ * progress, and on a dead audit address no work is happening or ever will. The
+ * state is the same; the word for it is not.
+ */
+function WebMcpStatus({ status, expanded, restoring, restoreFailed, onClick, buttonRef }) {
   const ready = status.status === "ready";
   const failed = status.status === "error";
   const activeCount = status.activeTools ?? status.toolNames.length;
   const totalCount = status.totalTools ?? WEBMCP_TOOL_COUNT;
   const label = restoring
-    ? "WebMCP · restoring"
+    ? restoreFailed
+      ? "WebMCP · paused"
+      : "WebMCP · restoring"
     : ready
       ? "WebMCP ready"
       : status.status === "registering"
@@ -366,7 +376,9 @@ function WebMcpStatus({ status, expanded, restoring, onClick, buttonRef }) {
           ? `WebMCP · ${status.toolNames.length}/${activeCount} active`
           : "Human mode";
   const accessibleLabel = restoring
-    ? "WebMCP tools paused while Frontmend restores authoritative audit state"
+    ? restoreFailed
+      ? "WebMCP tools stay paused until an audit workspace is restored or a new audit starts"
+      : "WebMCP tools paused while Frontmend restores authoritative audit state"
     : ready
       ? `WebMCP ready with ${status.toolNames.length} contextual tools active from a library of ${totalCount}`
       : failed
@@ -382,7 +394,9 @@ function WebMcpStatus({ status, expanded, restoring, onClick, buttonRef }) {
       className={`webmcp-status ${ready && !restoring ? "ready" : ""} ${failed && !restoring ? "error" : ""}`}
       title={
         restoring
-          ? "Contextual tools resume after authoritative state is restored."
+          ? restoreFailed
+            ? "Contextual tools resume once an audit workspace is restored, or when a new audit starts."
+            : "Contextual tools resume after authoritative state is restored."
           : status.errors?.join("\n") || undefined
       }
       aria-label={accessibleLabel}
@@ -1697,48 +1711,66 @@ function AuditProgress({
         <ArrowLeft size={17} weight="bold" />
         {isCancelling ? "Cancelling…" : "Cancel audit"}
       </button>
+      {/*
+       * One card, two grounds: the cobalt hero carries everything that is
+       * moving - the orb, the phase, the thread, the stage marks - and the warm
+       * half below carries the standing facts of the assessment. They used to
+       * be stacked in one warm card with no hierarchy between the part that
+       * changes every few seconds and the part that does not change at all.
+       */}
       <div className="progress-card">
-        <div className="audit-orbit" aria-hidden="true">
-          <Pulse size={31} weight="duotone" />
-        </div>
-        <p className="kicker" role="status" aria-live="polite" aria-atomic="true">
-          Live audit · attempt {audit.attempt ?? 1} · {audit.progress}%
-        </p>
-        <h1 id="progress-title">{audit.phaseLabel}</h1>
-        <p className="audit-url">{audit.url}</p>
-        <AuditMissionSummary audit={audit} />
-        <div
-          className="progress-track"
+        <div className="progress-hero">
+          {/*
+           * The orb, not the old pulsing tile. Its loop is the sanctioned one
+           * (DESIGN.md section 6): work is genuinely in flight here, and it
+           * stops when the audit does. It also moves the animation inside the
+           * reduced-motion opt-in, which `audit-pulse` never was.
+           */}
+          <ThinkingOrb />
+          <p className="kicker" role="status" aria-live="polite" aria-atomic="true">
+            Live audit · attempt {audit.attempt ?? 1} · {audit.progress}%
+          </p>
+          <h1 id="progress-title">{audit.phaseLabel}</h1>
+          <p className="audit-url">{audit.url}</p>
+          <div
+            className="progress-track"
           role="progressbar"
           aria-valuemin="0"
           aria-valuemax="100"
           aria-valuenow={audit.progress}
           aria-valuetext={`${audit.progress}% complete — ${audit.phaseLabel}`}
           aria-label="Live audit progress"
-        >
-          <span style={{ width: `${audit.progress}%` }} />
+          >
+            <span style={{ width: `${audit.progress}%` }} />
+          </div>
+          <ol className="progress-stages">
+            {stages.map((stage, index) => {
+              const Icon = stage.icon;
+              const complete = phaseIndex > index;
+              const active = phaseIndex === index;
+              return (
+                <li
+                  key={stage.id}
+                  className={complete ? "complete" : active ? "active" : ""}
+                  aria-current={active ? "step" : undefined}
+                >
+                  <span aria-hidden="true">
+                    {complete ? <Check size={16} weight="bold" /> : <Icon size={17} />}
+                  </span>
+                  <span className="sr-only">
+                    {complete ? "Completed" : active ? "Current" : "Upcoming"}:{" "}
+                  </span>
+                  {stage.label}
+                </li>
+              );
+            })}
+          </ol>
+          <p className="audit-engine-note">
+            Live PageSpeed Insights job · Lighthouse mobile and desktop evidence
+          </p>
         </div>
-        <ol className="progress-stages">
-          {stages.map((stage, index) => {
-            const Icon = stage.icon;
-            const complete = phaseIndex > index;
-            const active = phaseIndex === index;
-            return (
-              <li
-                key={stage.id}
-                className={complete ? "complete" : active ? "active" : ""}
-                aria-current={active ? "step" : undefined}
-              >
-                <span aria-hidden="true">{complete ? <Check size={16} weight="bold" /> : <Icon size={17} />}</span>
-                <span className="sr-only">{complete ? "Completed" : active ? "Current" : "Upcoming"}: </span>
-                {stage.label}
-              </li>
-            );
-          })}
-        </ol>
-        <p className="audit-engine-note">
-          Live PageSpeed Insights job · Lighthouse mobile and desktop evidence
-        </p>
+        <div className="progress-evidence">
+          <AuditMissionSummary audit={audit} />
         {pollError ? (
           <div className="audit-poll-warning" role="alert" aria-busy={isRefreshingStatus}>
             <Warning size={20} weight="duotone" aria-hidden="true" />
@@ -1757,19 +1789,39 @@ function AuditProgress({
           </div>
         ) : null}
         {cancelError ? <p className="failure-message" role="alert">{cancelError}</p> : null}
+        </div>
       </div>
     </section>
   );
 }
 
-function RestoringAudit({ error, isRestoring, onCancel, onRetry }) {
+/*
+ * Restoring a shared audit address.
+ *
+ * Two failures live here, and they are not the same failure. A missing audit is
+ * terminal - the job is gone or the address was never one Frontmend issued, and
+ * no amount of retrying conjures it - so that branch withdraws the retry
+ * button. Offering an action that provably cannot succeed is worse than
+ * offering none, and the page used to offer it as the only thing on screen.
+ * Everything else that fails here is a read that can be read again.
+ */
+const RESTORE_NOT_FOUND = "AUDIT_NOT_FOUND";
+
+function RestoringAudit({ error, errorCode, isRestoring, onCancel, onRetry }) {
   const failed = Boolean(error);
+  const gone = failed && errorCode === RESTORE_NOT_FOUND;
   return (
     <section className="progress-view" aria-labelledby="restore-title">
-      <button className="back-button" type="button" onClick={onCancel}>
-        <ArrowLeft size={17} weight="bold" />
-        Start a new audit
-      </button>
+      {/*
+       * Nothing to go back to when the audit is gone: the card owns the only
+       * move, and the brand mark is still a way home.
+       */}
+      {gone ? null : (
+        <button className="back-button" type="button" onClick={onCancel}>
+          <ArrowLeft size={17} weight="bold" />
+          Start a new audit
+        </button>
+      )}
       <div
         className={`progress-card ${failed ? "audit-failure restoration-failure" : ""}`}
         role={failed ? "alert" : "status"}
@@ -1779,21 +1831,50 @@ function RestoringAudit({ error, isRestoring, onCancel, onRetry }) {
         <div className="audit-orbit" aria-hidden="true">
           {failed ? <Warning size={31} weight="duotone" /> : <Pulse size={31} weight="duotone" />}
         </div>
-        <p className="kicker">{failed ? "Shared audit unavailable" : "Shared audit"}</p>
+        {/* The failure headline already says this; a label above it says it twice. */}
+        {failed ? null : <p className="kicker">Shared audit</p>}
         <h1 id="restore-title">
-          {failed ? "This workspace could not be restored" : "Restoring the live workspace"}
+          {gone
+            ? "Nothing to restore at this address"
+            : failed
+              ? "This workspace could not be restored"
+              : "Restoring the live workspace"}
         </h1>
         {failed ? (
           <>
-            <p className="failure-message">{error}</p>
-            <p className="restoration-note">
-              The stable audit address remains in your browser. Retrying only reads the existing
-              authoritative job; it does not restart the audit or replay a mission action.
+            {/*
+             * The retention window is the useful fact, and the page never said
+             * it: JOB_RETENTION_MS is 24h from the moment an audit reaches a
+             * terminal state, after which the job deletes itself. A dead link
+             * has two causes and this covers both without guessing which.
+             */}
+            <p className="failure-message">
+              {gone
+                ? "Frontmend keeps a finished audit for 24 hours and then deletes it. Either this one is past that window, or the address was never one Frontmend issued."
+                : error}
             </p>
+            {gone ? null : (
+              <p className="restoration-note">
+                The stable audit address remains in your browser. Retrying only reads the existing
+                authoritative job; it does not restart the audit or replay a mission action.
+              </p>
+            )}
             <div className="failure-actions">
-              <button className="retry-audit" type="button" onClick={onRetry} disabled={isRestoring}>
-                <Pulse size={17} weight="bold" />
-                {isRestoring ? "Reading workspace…" : "Try restoring again"}
+              {gone ? null : (
+                <button className="retry-audit" type="button" onClick={onRetry} disabled={isRestoring}>
+                  <Pulse size={17} weight="bold" />
+                  {isRestoring ? "Reading workspace…" : "Try restoring again"}
+                </button>
+              )}
+              <button
+                className={gone ? "retry-audit" : "back-button"}
+                type="button"
+                onClick={onCancel}
+                disabled={isRestoring}
+              >
+                {gone ? null : <ArrowLeft size={17} weight="bold" />}
+                Start a new audit
+                {gone ? <ArrowRight size={16} weight="bold" /> : null}
               </button>
             </div>
           </>
@@ -1840,6 +1921,12 @@ export function App() {
   });
   const [restorationAttempt, setRestorationAttempt] = useState(0);
   const [restorationError, setRestorationError] = useState("");
+  /*
+   * Kept beside the message because the message alone cannot say whether
+   * retrying is worth offering. Only AUDIT_NOT_FOUND is terminal; AuditError's
+   * `recoverable` flag defaults to true and means something else entirely.
+   */
+  const [restorationErrorCode, setRestorationErrorCode] = useState("");
   const [isRestoring, setIsRestoring] = useState(() => Boolean(restorationAuditId));
   const [webMcp, setWebMcp] = useState({
     supported: false,
@@ -1878,6 +1965,7 @@ export function App() {
     let active = true;
     setIsRestoring(true);
     setRestorationError("");
+    setRestorationErrorCode("");
     void auditService
       .restoreAuditWorkspace(restorationAuditId)
       .then(({ audit: next }) => {
@@ -1896,6 +1984,7 @@ export function App() {
         setRestorationError(
           cause instanceof AuditError ? cause.message : "That shared audit could not be restored.",
         );
+        setRestorationErrorCode(cause instanceof AuditError ? cause.code : "");
       })
       .finally(() => {
         if (active) setIsRestoring(false);
@@ -1993,9 +2082,11 @@ export function App() {
       : mode === "guide"
         ? "How Frontmend works — Frontmend"
         : mode === "restore"
-          ? restorationError
-            ? "Could not restore audit — Frontmend"
-            : "Restoring audit — Frontmend"
+          ? restorationErrorCode === RESTORE_NOT_FOUND
+            ? "Audit not found — Frontmend"
+            : restorationError
+              ? "Could not restore audit — Frontmend"
+              : "Restoring audit — Frontmend"
           : mode === "report"
             ? "Audit results — Frontmend"
             : audit?.status === "failed"
@@ -2003,7 +2094,7 @@ export function App() {
               : audit?.status === "cancelled"
                 ? "Audit cancelled — Frontmend"
                 : `${audit?.phaseLabel ?? "Audit in progress"} — Frontmend`;
-  }, [audit?.phaseLabel, audit?.status, mode, restorationError]);
+  }, [audit?.phaseLabel, audit?.status, mode, restorationError, restorationErrorCode]);
 
   const reset = () => {
     auditService.reset();
@@ -2021,6 +2112,7 @@ export function App() {
     setRestorationAuditId("");
     setRestorationAttempt(0);
     setRestorationError("");
+    setRestorationErrorCode("");
     setIsRestoring(false);
     setStaticRoute(null);
     window.history.replaceState(null, "", "/");
@@ -2030,6 +2122,7 @@ export function App() {
   const retryRestoration = () => {
     if (!restorationAuditId || isRestoring) return;
     setRestorationError("");
+    setRestorationErrorCode("");
     setIsRestoring(true);
     setRestorationAttempt((attempt) => attempt + 1);
   };
@@ -2195,6 +2288,7 @@ export function App() {
             status={webMcp}
             expanded={showWebMcp}
             restoring={Boolean(restorationAuditId)}
+            restoreFailed={Boolean(restorationError)}
             onClick={() => setShowWebMcp(true)}
           />
         </div>
@@ -2244,6 +2338,7 @@ export function App() {
         {mode === "restore" ? (
           <RestoringAudit
             error={restorationError}
+            errorCode={restorationErrorCode}
             isRestoring={isRestoring}
             onCancel={reset}
             onRetry={retryRestoration}
@@ -2265,9 +2360,15 @@ export function App() {
         ) : null}
       </main>
 
+      {/*
+       * No footer on the restored-audit route. It is a strapline and a product
+       * name pinned to the bottom corners of a page whose whole job is one card
+       * and one decision, and on the art they are two more things to read past.
+       * Both states go without it, so nothing appears when the restore resolves.
+       */}
       {mode === "landing" || mode === "guide" ? (
         <LandingFooter onHome={reset} onLanding={mode === "landing"} />
-      ) : (
+      ) : mode === "restore" ? null : (
         <footer className="site-footer">
           <span>Find what broke. Prove the fix.</span>
           <span>Frontmend · Live audit engine</span>

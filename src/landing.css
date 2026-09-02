@@ -309,10 +309,18 @@
 :is(.app-shell.landing, .app-shell.guide) .site-footer {
   position: static;
   display: block;
-  width: var(--fm-page);
-  margin: 0 auto;
-  padding: clamp(56px, 7vw, 92px) var(--fm-gutter) 30px;
+  width: 100%;
+  margin: 0;
+  padding:
+    clamp(56px, 7vw, 92px)
+    max(var(--fm-gutter), calc((100% - 1440px) / 2 + var(--fm-gutter)))
+    30px;
   border-top: 1px solid var(--fm-cobalt-line);
+  background-color: var(--fm-cobalt-deep);
+  background-image: url("/backgrounds/frontmend-footer-evidence-path.webp");
+  background-position: center bottom;
+  background-repeat: no-repeat;
+  background-size: cover;
   color: var(--fm-bone-muted);
   font-size: inherit;
   letter-spacing: normal;
@@ -2070,11 +2078,32 @@
 .ledger {
   position: relative;
   z-index: 4;
-  background: var(--fm-cobalt-deep);
+  isolation: isolate;
+  overflow: hidden;
+  background-color: var(--fm-cobalt-deep);
+  background-image: url("/backgrounds/frontmend-authority-boundary.webp");
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
   color: var(--fm-bone);
 }
 
+.ledger::before {
+  content: "";
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    ellipse 72% 76% at 50% 50%,
+    rgb(0 8 46 / 48%) 0%,
+    rgb(0 8 46 / 26%) 48%,
+    transparent 100%
+  );
+}
+
 .ledger > .evidence-loop-shell {
+  z-index: 1;
   padding-block: clamp(64px, 9vh, 108px);
 }
 
