@@ -145,6 +145,8 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
       ? "Assessment blocked · evidence retained"
       : state.assessmentComplete
         ? "Assessment complete"
+        : state.rankingStatus === "provisional"
+          ? "Measurement complete · ranking provisional"
         : state.browserReview?.required && state.browserReview.status !== "complete"
           ? "Measurement complete · browser review active"
           : "Measurement complete · diagnosis active";

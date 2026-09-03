@@ -114,6 +114,11 @@ function requiredInvestigations(kind) {
       "Map the affected rule or element to repository ownership",
       "Name fresh provider and browser checks that can resolve the conflict",
     ],
+    "repository-trace": [
+      "Reconfirm the retained occurrence on its exact route and viewport",
+      "Map the affected rendered element to repository-relative source ownership",
+      "Name local and fresh-browser checks that will prove the proposed repair",
+    ],
   };
   return byKind[kind] ?? [];
 }
@@ -291,7 +296,11 @@ export function diagnosticMissionSnapshot(mission) {
 
 export function createDiagnosticMission({ auditId, finding, relationship = null, now = Date.now() }) {
   const kind = diagnosticKind(finding)
-    ?? (relationship === "provider-browser-conflict" ? "evidence-conflict" : null);
+    ?? (relationship === "provider-browser-conflict"
+      ? "evidence-conflict"
+      : relationship === "repair-trace-required"
+        ? "repository-trace"
+        : null);
   if (!kind) {
     throw new AuditError(
       "DIAGNOSTIC_NOT_SUPPORTED",

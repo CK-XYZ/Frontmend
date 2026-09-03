@@ -8,13 +8,25 @@ const MISSION_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]
 const TERMINAL_STATUSES = new Set(["complete", "failed", "cancelled"]);
 const SEVERITY_RANK = Object.freeze({ low: 1, medium: 2, high: 3 });
 
-function routeCandidateId(auditId, path) {
+function stableHash(...parts) {
   let hash = 2_166_136_261;
-  for (const character of `${auditId}\n${path}`) {
+  for (const character of parts.join("\n")) {
     hash ^= character.codePointAt(0);
     hash = Math.imul(hash, 16_777_619);
   }
-  return `route-${(hash >>> 0).toString(16).padStart(8, "0")}`;
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
+function routeCandidateId(auditId, path) {
+  return `route-${stableHash(auditId, path)}`;
+}
+
+function aggregateFindingId(rootAuditId, provider, ruleId) {
+  return `site-${stableHash(rootAuditId, provider, ruleId)}`;
+}
+
+function occurrenceId(auditId, findingId, strategy, selector) {
+  return `occ-${stableHash(auditId, findingId, strategy, selector)}`;
 }
 
 function boundedText(value, limit) {
@@ -172,12 +184,9 @@ function pageSnapshot(child, audit) {
     findingCount: Number.isFinite(report?.findingCount) ? report.findingCount : null,
     renderedReview: renderedReviewSuggested
       ? {
-          status: "available",
-          action: {
-            tool: "open_browser_review",
-            input: { auditId: child.auditId, expectedMissionRevision: missionRevision },
-          },
-          reason: "This selected route has retained findings. A bounded rendered review can distinguish document evidence from the client-rendered page before prioritisation.",
+          status: "retained-for-root-review",
+          action: null,
+          reason: "This route has retained findings. The root mission will compile exact rendered checks for supported aggregate issues before its ranking becomes final.",
         }
       : {
           status: status === "complete" ? "not-suggested" : "unavailable",
@@ -206,14 +215,17 @@ function aggregateIssues(mission, auditsById) {
       const ruleId = boundedText(finding?.source?.auditId ?? finding?.id, 120) || "unknown-rule";
       const category = boundedText(finding?.category, 80) || "other";
       const title = boundedText(finding?.title, 180) || "Untitled finding";
-      const key = `${provider}\n${ruleId}\n${category}\n${title}`;
+      const key = `${provider}\n${ruleId}`;
       const severity = SEVERITY_RANK[finding?.severity] ? finding.severity : "low";
+      const findingId = aggregateFindingId(mission.rootAuditId, provider, ruleId);
       const current = issues.get(key) ?? {
+        findingId,
         ruleId,
         provider,
         category,
         title,
         severity,
+        status: "detected",
         focusAreas: [],
         suggestedRepair: "Diagnose the retained cross-page evidence before repair.",
         occurrenceCount: 0,
@@ -225,18 +237,32 @@ function aggregateIssues(mission, auditsById) {
         ...current.focusAreas,
         ...(Array.isArray(finding?.focusAreas) ? finding.focusAreas : []),
       ])].slice(0, 5);
-      if (finding?.suggestedRepair) {
-        current.suggestedRepair = boundedText(finding.suggestedRepair, 500);
+      if (finding?.repair || finding?.suggestedRepair) {
+        current.suggestedRepair = boundedText(finding.repair ?? finding.suggestedRepair, 500);
       }
       current.occurrenceCount += 1;
       current.pageKeys.add(child.auditId || child.path);
       if (current.occurrences.length < MAX_OCCURRENCES) {
+        const sourceFindingId = boundedText(finding?.id, 160);
+        const strategy = boundedText(finding?.source?.strategy, 40) || "document";
+        const selector = boundedText(finding?.selector, 200) || null;
         current.occurrences.push({
+          occurrenceId: occurrenceId(child.auditId, sourceFindingId, strategy, selector),
+          findingId,
+          sourceFindingId,
           auditId: child.auditId,
           path: child.path,
-          findingId: boundedText(finding?.id, 160),
-          strategy: boundedText(finding?.source?.strategy, 40),
+          url: child.url,
+          viewport: ["mobile", "desktop"].includes(strategy) ? strategy : "document",
+          strategy,
+          selector,
           evidence: boundedText(finding?.evidence ?? finding?.summary, 300),
+          evidenceIds: [`${child.auditId}:${sourceFindingId}`.slice(0, 240)],
+          source: {
+            provider,
+            auditId: ruleId,
+            strategy,
+          },
         });
       }
       issues.set(key, current);

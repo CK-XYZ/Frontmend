@@ -5,6 +5,7 @@ import {
   auditMissionSignature,
   createAuditMission,
   deriveAuditMissionState,
+  explorationAssessmentFindings,
   focusedAuditPriorities,
   prepareRepairIntent,
 } from "../src/audit-mission-contract.js";
@@ -15,6 +16,7 @@ import {
 } from "../src/diagnostic-contract.js";
 import {
   createBrowserReviewMission,
+  extendBrowserReviewMission,
   recordBrowserReviewCheck,
   withdrawBrowserReview,
 } from "../src/browser-review-contract.js";
@@ -145,6 +147,165 @@ test("holds bounded-site completion for server-issued routes and folds recurrenc
   assert.equal(complete.assessmentComplete, true);
   assert.equal(complete.siteScope.status, "complete");
   assert.equal(complete.priorities[0].occurrenceCount, 2);
+});
+
+test("converges route exploration into the root review and one repairable canonical finding", () => {
+  const canonicalFindingId = "site-6d9c91c2";
+  const scopedReport = {
+    ...report,
+    finalUrl: "https://example.com/",
+    findings: [],
+    documentProfile: { routes: ["/remove"] },
+  };
+  const mission = createAuditMission({
+    scope: "bounded-site",
+    routeLimit: 1,
+    focusAreas: ["accessibility"],
+  }, "agent", 10);
+  let review = createBrowserReviewMission({
+    auditId: report.auditId,
+    mission,
+    report: scopedReport,
+    target: scopedReport.finalUrl,
+    now: 20,
+  });
+  let now = 30;
+  while (review.state.nextCheck) {
+    review = recordBrowserReviewCheck(review, {
+      checkId: review.state.nextCheck.id,
+      outcome: "passed",
+      summary: "The retained root-page browser check passed.",
+      observations: ["The requested root-page state was inspected directly."],
+    }, "agent", now++);
+  }
+  const exploration = {
+    id: "232d593c-6c81-48c3-b137-a3df269454ff",
+    rootAuditId: report.auditId,
+    status: "complete",
+    createdAt: 50,
+    summary: { pagesRequested: 1, pagesComplete: 1, pagesFailed: 0 },
+    issues: [{
+      findingId: canonicalFindingId,
+      provider: "Lighthouse",
+      ruleId: "label",
+      title: "The upload control has no accessible label",
+      severity: "high",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      status: "detected",
+      occurrenceCount: 1,
+      distinctPageCount: 1,
+      suggestedRepair: "Give the upload input an explicit accessible name.",
+      occurrences: [{
+        occurrenceId: "occurrence-7e0f4cb1",
+        findingId: canonicalFindingId,
+        sourceFindingId: "mobile-label",
+        auditId: "route-audit-1",
+        path: "/remove",
+        url: "https://example.com/remove",
+        viewport: "mobile",
+        strategy: "mobile",
+        selector: "input[type=file]",
+        evidence: "The file input has no associated label.",
+        evidenceIds: ["/api/audits/route-audit-1/evidence/mobile"],
+        source: { provider: "Lighthouse", auditId: "label", strategy: "mobile" },
+      }],
+    }],
+  };
+
+  const awaitingRouteReview = deriveAuditMissionState({
+    report: scopedReport,
+    mission,
+    browserReview: review,
+    explorations: [exploration],
+  });
+  assert.equal(awaitingRouteReview.assessmentComplete, false);
+  assert.equal(awaitingRouteReview.rankingStatus, "provisional");
+  assert.equal(awaitingRouteReview.browserReview.extensionRequired, true);
+  assert.equal(awaitingRouteReview.nextAction.tool, "open_browser_review");
+
+  review = extendBrowserReviewMission({
+    review,
+    report: {
+      ...scopedReport,
+      findings: explorationAssessmentFindings([exploration]),
+    },
+    mission,
+    target: scopedReport.finalUrl,
+    now: 60,
+  });
+  const routeTask = review.state.nextCheck;
+  assert.equal(routeTask.kind, "provider-confirmation");
+  assert.equal(routeTask.target.path, "/remove");
+  assert.equal(routeTask.trigger.findingId, canonicalFindingId);
+  assert.equal(routeTask.trigger.occurrences[0].occurrenceId, "occurrence-7e0f4cb1");
+  assert.equal(routeTask.trigger.occurrences[0].sourceFindingId, "mobile-label");
+  assert.deepEqual(routeTask.trigger.occurrences[0].evidenceIds, [
+    "/api/audits/route-audit-1/evidence/mobile",
+  ]);
+
+  review = recordBrowserReviewCheck(review, {
+    checkId: routeTask.id,
+    outcome: "issue",
+    summary: "The route-level upload control still has no accessible name.",
+    observations: ["At the retained mobile viewport the file input exposes no accessible name."],
+    findings: [{
+      title: "The upload control has no accessible label",
+      severity: "high",
+      focusArea: "accessibility",
+      evidence: "The retained file input exposes no accessible name at the mobile viewport.",
+      suggestedRepair: "Associate a visible label with the file input.",
+      element: "input[type=file]",
+    }],
+  }, "agent", 70);
+
+  const finalAssessment = deriveAuditMissionState({
+    report: scopedReport,
+    mission,
+    browserReview: review,
+    explorations: [exploration],
+  });
+  assert.equal(finalAssessment.assessmentComplete, true);
+  assert.equal(finalAssessment.rankingStatus, "final");
+  assert.equal(finalAssessment.priorities[0].findingId, canonicalFindingId);
+  assert.equal(finalAssessment.priorities[0].relationship, "browser-confirmed");
+  assert.equal(finalAssessment.priorities[0].distinctPageCount, 1);
+
+  const repairMission = prepareRepairIntent(mission, canonicalFindingId, "agent", 80);
+  const awaitingTrace = deriveAuditMissionState({
+    report: scopedReport,
+    mission: repairMission,
+    browserReview: review,
+    explorations: [exploration],
+  });
+  assert.equal(awaitingTrace.nextAction.tool, "open_diagnostic_mission");
+  let diagnostic = createDiagnosticMission({
+    auditId: report.auditId,
+    finding: {
+      id: canonicalFindingId,
+      title: awaitingTrace.priorities[0].title,
+      source: awaitingTrace.priorities[0].source,
+    },
+    relationship: "repair-trace-required",
+    now: 90,
+  });
+  diagnostic = submitDiagnosticEvidence(diagnostic, {
+    summary: "The shared uploader renders the file input without its visible label relationship.",
+    reproduction: "Open /remove at the retained mobile viewport and inspect the upload input's accessible name.",
+    observations: [{ kind: "accessibility", detail: "The file input has no accessible name." }],
+    sourceLocations: [{ file: "src/components/Uploader.jsx", line: 42, symbol: "Uploader", reason: "Owns the shared file input." }],
+    verificationChecks: ["bun test", "Replay /remove at the mobile viewport"],
+    confidence: "high",
+  }, "agent", 100);
+  const repairReady = deriveAuditMissionState({
+    report: scopedReport,
+    mission: repairMission,
+    diagnosticMissions: [diagnostic],
+    browserReview: review,
+    explorations: [exploration],
+  });
+  assert.equal(repairReady.nextAction.tool, "stage_site_repair");
+  assert.equal(repairReady.nextAction.input.findingId, canonicalFindingId);
 });
 
 test("keeps a zero-route bounded-site assessment blocked and receipt-ineligible", () => {

@@ -145,13 +145,16 @@ test("aggregates recurring rule evidence across completed page audits", () => {
     recurringIssues: 1,
   });
   assert.equal(snapshot.issues[0].ruleId, "document-content-security-policy");
+  assert.match(snapshot.issues[0].findingId, /^site-[a-f0-9]{8}$/);
   assert.equal(snapshot.issues[0].occurrenceCount, 2);
   assert.equal(snapshot.issues[0].distinctPageCount, 2);
   assert.deepEqual(snapshot.issues[0].occurrences.map((item) => item.path), ["/privacy", "/terms"]);
-  assert.deepEqual(snapshot.pages[0].renderedReview.action, {
-    tool: "open_browser_review",
-    input: { auditId: CHILD_A, expectedMissionRevision: 4 },
-  });
+  assert.ok(snapshot.issues[0].occurrences.every((item) => item.findingId === snapshot.issues[0].findingId));
+  assert.ok(snapshot.issues[0].occurrences.every((item) => item.sourceFindingId === "document-content-security-policy"));
+  assert.ok(snapshot.issues[0].occurrences.every((item) => /^occ-[a-f0-9]{8}$/.test(item.occurrenceId)));
+  assert.equal(snapshot.pages[0].renderedReview.status, "retained-for-root-review");
+  assert.equal(snapshot.pages[0].renderedReview.action, null);
+  assert.match(snapshot.pages[0].renderedReview.reason, /root mission/i);
 });
 
 test("separates viewport occurrences from distinct affected pages", () => {

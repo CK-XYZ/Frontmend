@@ -23,6 +23,11 @@ import {
   openCandidateReview,
   recordCandidateReviewCheck,
 } from "../src/candidate-review-contract.js";
+import { explorationAssessmentFindings } from "../src/audit-mission-contract.js";
+import {
+  createDiagnosticMission,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const finding = {
   id: "document-content-security-policy",
@@ -129,6 +134,142 @@ test("repository handoffs retain bounded measured diagnostics without promoting 
   assert.match(markdown, /Measured diagnostics: console-errors · actionable/);
   assert.match(markdown, /ReferenceError: widget is not defined/);
   assert.match(markdown, /https:\/\/example\.com\/app\.js:42:7/);
+});
+
+test("repository handoff preserves aggregate route evidence and contributed source ownership", () => {
+  const report = {
+    schemaVersion: 5,
+    auditId: "root-audit",
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 100,
+    engine: { mode: "live-lighthouse", provider: "PageSpeed Insights / Lighthouse" },
+    findings: [],
+    ruleOutcomes: [],
+  };
+  const exploration = {
+    id: "232d593c-6c81-48c3-b137-a3df269454ff",
+    rootAuditId: report.auditId,
+    status: "complete",
+    createdAt: 200,
+    issues: [{
+      findingId: "site-6d9c91c2",
+      provider: "Lighthouse",
+      ruleId: "label",
+      title: "Upload inputs have no accessible label",
+      severity: "high",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      status: "detected",
+      occurrenceCount: 2,
+      distinctPageCount: 2,
+      suggestedRepair: "Associate a visible label with each shared upload input.",
+      occurrences: [
+        {
+          occurrenceId: "occ-11111111",
+          sourceFindingId: "mobile-label",
+          auditId: "remove-audit",
+          path: "/remove",
+          url: "https://example.com/remove",
+          strategy: "mobile",
+          viewport: "mobile",
+          selector: "#pdf-upload",
+          evidence: "The PDF input has no accessible name.",
+          evidenceIds: ["/api/audits/remove-audit/evidence/mobile"],
+          source: { provider: "Lighthouse", auditId: "label", strategy: "mobile" },
+        },
+        {
+          occurrenceId: "occ-22222222",
+          sourceFindingId: "desktop-label",
+          auditId: "word-audit",
+          path: "/word",
+          url: "https://example.com/word",
+          strategy: "desktop",
+          viewport: "desktop",
+          selector: "#word-upload",
+          evidence: "The Word input has no accessible name.",
+          evidenceIds: ["/api/audits/word-audit/evidence/desktop"],
+          source: { provider: "Lighthouse", auditId: "label", strategy: "desktop" },
+        },
+      ],
+    }],
+  };
+  const [aggregateFinding] = explorationAssessmentFindings([exploration]);
+  let diagnosis = createDiagnosticMission({
+    auditId: report.auditId,
+    finding: aggregateFinding,
+    relationship: "repair-trace-required",
+    now: 300,
+  });
+  diagnosis = submitDiagnosticEvidence(diagnosis, {
+    summary: "Both routes render the same shared upload component without its label relationship.",
+    reproduction: "Inspect #pdf-upload on /remove and #word-upload on /word at their retained viewports.",
+    observations: [{ kind: "accessibility", detail: "Both file inputs expose no accessible name." }],
+    sourceLocations: [{
+      file: "src/components/UploadField.jsx",
+      line: 38,
+      symbol: "UploadField",
+      reason: "Owns the shared input and visible prompt on both retained routes.",
+    }],
+    verificationChecks: ["bun test", "Replay both retained routes at their measured viewports"],
+    confidence: "high",
+  }, "agent", 400);
+
+  const brief = createRepositoryFixBrief(
+    report,
+    aggregateFinding.id,
+    [aggregateFinding],
+    null,
+    [diagnosis],
+  );
+
+  assert.equal(brief.findingId, "site-6d9c91c2");
+  assert.equal(brief.evidence.occurrenceCount, 2);
+  assert.deepEqual(brief.target.routes.map((route) => [route.auditId, route.path]), [
+    ["remove-audit", "/remove"],
+    ["word-audit", "/word"],
+  ]);
+  assert.deepEqual(brief.evidence.occurrences.map((occurrence) => ({
+    occurrenceId: occurrence.occurrenceId,
+    sourceFindingId: occurrence.sourceFindingId,
+    selector: occurrence.selector,
+    evidenceIds: occurrence.evidenceIds,
+  })), [
+    {
+      occurrenceId: "occ-11111111",
+      sourceFindingId: "mobile-label",
+      selector: "#pdf-upload",
+      evidenceIds: ["/api/audits/remove-audit/evidence/mobile"],
+    },
+    {
+      occurrenceId: "occ-22222222",
+      sourceFindingId: "desktop-label",
+      selector: "#word-upload",
+      evidenceIds: ["/api/audits/word-audit/evidence/desktop"],
+    },
+  ]);
+  assert.deepEqual(brief.repositoryHandoff.contributedDiagnosis.sourceLocations, [{
+    file: "src/components/UploadField.jsx",
+    line: 38,
+    symbol: "UploadField",
+    reason: "Owns the shared input and visible prompt on both retained routes.",
+  }]);
+  assert.deepEqual(brief.repositoryHandoff.contributedDiagnosis.verificationChecks, [
+    "bun test",
+    "Replay both retained routes at their measured viewports",
+  ]);
+
+  const repair = createRepairDraft({
+    repairId: "aggregate-repair",
+    auditId: report.auditId,
+    finding: aggregateFinding,
+    diagnosticMissions: [diagnosis],
+    report,
+    source: "agent",
+  });
+  assert.equal(repair.findingScope.rootAffected, false);
+  assert.deepEqual(repair.findingScope.routes.map((route) => route.path), ["/remove", "/word"]);
+  assert.equal(repair.diagnosticMission.diagnosis.sourceLocations[0].file, "src/components/UploadField.jsx");
 });
 
 test("delegated auto mode consumes a bounded human grant only for eligible repository plans", () => {

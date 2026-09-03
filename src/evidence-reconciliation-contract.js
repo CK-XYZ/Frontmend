@@ -9,6 +9,32 @@ function sourceKey(provider, auditId) {
 }
 
 function providerFindingRecord(finding) {
+  const occurrences = Array.isArray(finding?.occurrences)
+    ? finding.occurrences.slice(0, 8).map((occurrence) => ({
+        occurrenceId: bounded(occurrence?.occurrenceId, 80) || null,
+        findingId: bounded(occurrence?.findingId ?? finding?.id, 160),
+        sourceFindingId: bounded(occurrence?.sourceFindingId, 160) || null,
+        auditId: bounded(occurrence?.auditId, 160) || null,
+        path: bounded(occurrence?.path, 256) || "/",
+        url: bounded(occurrence?.url, 2_048) || null,
+        viewport: ["mobile", "desktop", "document"].includes(occurrence?.viewport)
+          ? occurrence.viewport
+          : ["mobile", "desktop", "document"].includes(occurrence?.strategy)
+            ? occurrence.strategy
+            : "document",
+        strategy: bounded(occurrence?.strategy ?? "document", 40),
+        selector: occurrence?.selector ? bounded(occurrence.selector, 200) : null,
+        evidence: bounded(occurrence?.evidence, 600),
+        evidenceIds: Array.isArray(occurrence?.evidenceIds)
+          ? occurrence.evidenceIds.slice(0, 4).map((item) => bounded(item, 240)).filter(Boolean)
+          : [],
+        source: {
+          provider: bounded(occurrence?.source?.provider ?? finding?.source?.provider ?? "unknown", 120),
+          auditId: bounded(occurrence?.source?.auditId ?? finding?.source?.auditId ?? finding?.id, 160),
+          strategy: bounded(occurrence?.source?.strategy ?? occurrence?.strategy ?? "document", 40),
+        },
+      }))
+    : [];
   return {
     findingId: bounded(finding?.id, 160),
     title: bounded(finding?.title, 240),
@@ -16,6 +42,7 @@ function providerFindingRecord(finding) {
     category: bounded(finding?.category, 80),
     focusAreas: Array.isArray(finding?.focusAreas) ? finding.focusAreas.slice(0, 5).map((item) => bounded(item, 40)) : [],
     strategy: bounded(finding?.source?.strategy ?? "document", 40),
+    viewport: bounded(finding?.viewport ?? finding?.source?.strategy ?? "document", 100),
     selector: finding?.selector ? bounded(finding.selector, 200) : null,
     evidence: bounded(finding?.evidence, 600),
     suggestedRepair: bounded(finding?.repair, 600),
@@ -29,8 +56,11 @@ function providerFindingRecord(finding) {
         auditId: bounded(finding.route.auditId, 160),
         path: bounded(finding.route.path, 256),
         explorationId: bounded(finding.route.explorationId, 160),
+        occurrenceId: bounded(finding.route.occurrenceId, 80) || null,
+        sourceFindingId: bounded(finding.route.sourceFindingId, 160) || null,
       },
     } : {}),
+    occurrences,
     diagnosticKind: finding?.diagnosticEvidence?.kind ?? null,
   };
 }

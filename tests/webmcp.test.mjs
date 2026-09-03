@@ -19,6 +19,10 @@ import {
   openCandidateReview as openCandidateReviewContract,
   recordCandidateReviewCheck as recordCandidateReviewCheckContract,
 } from "../src/candidate-review-contract.js";
+import {
+  createDiagnosticMission,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const ALL_AGENT_CAPABILITIES = createAgentCapabilityDeclaration({
   visualBrowserAccess: true,
@@ -450,7 +454,7 @@ test("site-exploration tools start and read one durable cross-page mission", asy
   assert.equal(activities[3][2].explorationId, exploration.id);
 });
 
-test("selected child findings expose bounded rendered-review actions", () => {
+test("selected child findings remain on the root review instead of exposing orphaned child actions", () => {
   const service = {
     getActiveAudit: () => ({ id: "root-audit", status: "complete", report: { findings: [] } }),
     getRepairs: () => [],
@@ -460,18 +464,15 @@ test("selected child findings expose bounded rendered-review actions", () => {
         pages: [{
           auditId: "child-audit",
           renderedReview: {
-            status: "available",
-            action: {
-              tool: "open_browser_review",
-              input: { auditId: "child-audit", expectedMissionRevision: 4 },
-            },
+            status: "retained-for-root-review",
+            action: null,
           },
         }],
       },
     }],
   };
 
-  assert.ok(contextualFrontmendToolNames(service).includes("open_browser_review"));
+  assert.equal(contextualFrontmendToolNames(service).includes("open_browser_review"), false);
 });
 
 test("agent tools use the same audit service as the human interface", async () => {
@@ -1612,6 +1613,7 @@ test("repair preparation updates contextual tools without exposing person-only a
     source: { provider: "Frontmend document audit", auditId: "description", strategy: "document" },
   };
   let audit;
+  let diagnosticMission;
   let notifications = 0;
   const service = createAuditService({
     now: () => 10,
@@ -1649,6 +1651,27 @@ test("repair preparation updates contextual tools without exposing person-only a
           missionCheckpoint: { auditId, missionRevision: 2 },
         };
       },
+      openDiagnosticMission: async (_auditId, findingId) => {
+        diagnosticMission = {
+          ...createDiagnosticMission({
+            auditId,
+            finding,
+            relationship: "repair-trace-required",
+            now: 30,
+          }),
+          missionCheckpoint: { auditId, missionRevision: 3 },
+        };
+        assert.equal(findingId, finding.id);
+        return diagnosticMission;
+      },
+      submitDiagnosticEvidence: async (_auditId, missionId, input, source) => {
+        assert.equal(missionId, diagnosticMission.id);
+        diagnosticMission = {
+          ...submitDiagnosticEvidence(diagnosticMission, input, source, 40),
+          missionCheckpoint: { auditId, missionRevision: 4 },
+        };
+        return diagnosticMission;
+      },
     },
   });
   service.subscribe(() => {
@@ -1681,9 +1704,32 @@ test("repair preparation updates contextual tools without exposing person-only a
     "get_active_evidence_capsule",
     "get_evidence_chain",
     "get_repository_fix_brief",
+    "open_diagnostic_mission",
     "prepare_site_repair",
-    "stage_site_repair",
   ]);
+  const opened = await findTool(
+    createFrontmendTools(service),
+    "open_diagnostic_mission",
+  ).execute({ findingId: finding.id });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.data.measuredEvidence.kind, "repository-trace");
+  assert.equal(contextualFrontmendToolNames(service).includes("stage_site_repair"), false);
+  assert.equal(contextualFrontmendToolNames(service).includes("submit_runtime_diagnosis"), true);
+
+  const diagnosed = await findTool(
+    createFrontmendTools(service),
+    "submit_runtime_diagnosis",
+  ).execute({
+    missionId: opened.data.diagnosticMissionId,
+    summary: "The shared upload field is rendered without an accessible label.",
+    reproduction: "Open the retained route and inspect the upload control's accessible name.",
+    observations: [{ kind: "accessibility", detail: "The upload input has no accessible name." }],
+    sourceLocations: [{ file: "src/components/Uploader.jsx", line: 42, symbol: "Uploader", reason: "Owns the rendered upload input." }],
+    verificationChecks: ["bun test", "Replay the retained browser check"],
+    confidence: "high",
+  });
+  assert.equal(diagnosed.ok, true);
+  assert.equal(contextualFrontmendToolNames(service).includes("stage_site_repair"), true);
   assert.ok(notifications >= 2);
   assert.equal(TOOL_NAMES.some((name) => /(approve|attest|deploy|repair_policy)/.test(name)), false);
 });
@@ -2351,6 +2397,21 @@ test("contextual tool availability follows the visible audit and human review st
 
   audit = { id: "audit-1", status: "complete", report: { findings: [] } };
   assert.deepEqual(contextualFrontmendToolNames(service), ["get_mission_summary", "get_site_audit_results"]);
+
+  audit = {
+    id: "audit-1",
+    status: "complete",
+    report: { findings: [{ id: "persisted-finding" }] },
+    missionWorkspace: {
+      status: "partial",
+      unavailable: ["browserReview"],
+      requirements: [{ artifact: "browserReview", nextOperation: { tool: "get_mission_summary" } }],
+    },
+  };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
+    "get_site_audit_results",
+  ]);
 
   audit = {
     id: "audit-1",

@@ -562,10 +562,23 @@ export function createAuditService(options = {}) {
   };
 
   const revisionFor = (auditId, expectedMissionRevision) => {
+    const audit = jobs.get(auditId);
+    if (audit?.missionWorkspace?.status === "partial") {
+      throw new AuditError(
+        "MISSION_WORKSPACE_INCOMPLETE",
+        "The persisted audit evidence is available, but mission actions are paused until every retained workspace record is coherent. Retry the mission summary before acting.",
+        true,
+        {
+          missionCheckpoint: audit.missionCheckpoint ?? null,
+          unavailable: audit.missionWorkspace.unavailable ?? [],
+          requirements: audit.missionWorkspace.requirements ?? [],
+        },
+      );
+    }
     if (Number.isInteger(expectedMissionRevision) && expectedMissionRevision > 0) {
       return expectedMissionRevision;
     }
-    return auditMissionRevision(jobs.get(auditId));
+    return auditMissionRevision(audit);
   };
 
   const checkpointFor = (auditId) => {
@@ -859,12 +872,30 @@ export function createAuditService(options = {}) {
     const unavailable = Object.entries(results)
       .filter(([, ready]) => !ready)
       .map(([name]) => name);
+    const workspaceFamilies = ["audit", "repairs", "diagnostics", "browserReview", "explorations"];
+    const requirements = snapshot.settled
+      .map((result, index) => ({ result, artifact: workspaceFamilies[index] }))
+      .filter(({ result }) => result.status === "rejected")
+      .map(({ result, artifact }) => ({
+        artifact,
+        status: "unavailable",
+        errorCode: typeof result.reason?.code === "string"
+          ? result.reason.code.slice(0, 80)
+          : "WORKSPACE_READ_FAILED",
+        recoverable: result.reason?.recoverable !== false,
+        nextOperation: {
+          tool: "get_mission_summary",
+          input: { auditId },
+          reason: `Retry coherent ${artifact} hydration from the retained audit checkpoint before acting.`,
+        },
+      }));
     if (expectedGeneration !== generation) {
       return {
         auditId,
         missionCheckpoint,
         refreshed: results,
         unavailable,
+        requirements,
         published: false,
       };
     }
@@ -874,6 +905,7 @@ export function createAuditService(options = {}) {
         missionCheckpoint,
         refreshed: results,
         unavailable,
+        requirements,
         published: false,
       };
     }
@@ -894,6 +926,12 @@ export function createAuditService(options = {}) {
         ...refreshedAudit,
         missionRevision: missionCheckpoint.missionRevision,
         missionCheckpoint,
+        missionWorkspace: {
+          status: "complete",
+          unavailable: [],
+          requirements: [],
+          refreshedAt: now(),
+        },
       });
     }
     if (repairResult.status === "fulfilled") {
@@ -921,6 +959,7 @@ export function createAuditService(options = {}) {
       missionCheckpoint,
       refreshed: results,
       unavailable,
+      requirements,
       published: true,
     };
   };
@@ -947,6 +986,7 @@ export function createAuditService(options = {}) {
         {
           missionCheckpoint: workspace.missionCheckpoint,
           unavailable: workspace.unavailable,
+          requirements: workspace.requirements,
         },
       );
     }
@@ -976,15 +1016,43 @@ export function createAuditService(options = {}) {
 
     const workspace = await refreshMissionWorkspace(auditId, { publishOnlyWhenComplete: true });
     if (workspace.unavailable.length) {
-      throw new AuditError(
-        "MISSION_WORKSPACE_INCOMPLETE",
-        "The audit job was found, but Frontmend could not restore every mission record. Retry before acting.",
-        true,
-        {
-          missionCheckpoint: workspace.missionCheckpoint,
-          unavailable: workspace.unavailable,
+      const persistedAudit = jobs.get(auditId);
+      if (!persistedAudit?.report) {
+        throw new AuditError(
+          "MISSION_WORKSPACE_INCOMPLETE",
+          "The audit job was found, but Frontmend could not restore its persisted evidence snapshot. Retry before acting.",
+          true,
+          {
+            missionCheckpoint: workspace.missionCheckpoint,
+            unavailable: workspace.unavailable,
+            requirements: workspace.requirements,
+          },
+        );
+      }
+      const readOnlyAudit = {
+        ...persistedAudit,
+        missionRevision: workspace.missionCheckpoint.missionRevision,
+        missionCheckpoint: workspace.missionCheckpoint,
+        missionWorkspace: {
+          status: "partial",
+          unavailable: [...workspace.unavailable],
+          requirements: workspace.requirements.map((requirement) => ({
+            ...requirement,
+            nextOperation: requirement.nextOperation
+              ? {
+                  ...requirement.nextOperation,
+                  input: { ...(requirement.nextOperation.input ?? {}) },
+                }
+              : null,
+          })),
+          refreshedAt: now(),
         },
-      );
+      };
+      jobs.set(auditId, readOnlyAudit);
+      activeAuditId = auditId;
+      emit();
+      await restoreActivityLedger(auditId, expectedGeneration);
+      return { ...workspace, audit: readOnlyAudit, readOnly: true };
     }
     const restoredAudit = jobs.get(auditId);
     if (!restoredAudit) {
@@ -1999,7 +2067,11 @@ export function createAuditService(options = {}) {
         audit,
         report: audit.report,
         missionState,
-        findings: assessmentFindings(audit.report, browserReview),
+        findings: assessmentFindings(
+          audit.report,
+          browserReview,
+          explorations.get(auditId) ?? [],
+        ),
         browserReview,
         findingId: retainedFindingId,
       });

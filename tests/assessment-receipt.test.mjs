@@ -354,3 +354,108 @@ test("retains rendered route provenance in a completed bounded-site receipt", ()
     "agent-reported-browser-route",
   );
 });
+
+test("exports final aggregate priorities with stable route occurrences", () => {
+  const boundedMission = createAuditMission({
+    scope: "bounded-site",
+    routeLimit: 2,
+    focusAreas: ["accessibility"],
+  }, "human", 100);
+  const scopedReport = {
+    ...report,
+    findings: [],
+    documentProfile: { routes: ["/remove", "/convert"] },
+  };
+  const exploration = {
+    id: "232d593c-6c81-48c3-b137-a3df269454ff",
+    rootAuditId: report.auditId,
+    status: "complete",
+    createdAt: 600,
+    summary: { pagesRequested: 2, pagesComplete: 2, pagesFailed: 0 },
+    issues: [{
+      findingId: "site-6d9c91c2",
+      provider: "Lighthouse",
+      ruleId: "label",
+      title: "Upload controls have no accessible label",
+      severity: "high",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      status: "detected",
+      occurrenceCount: 2,
+      distinctPageCount: 2,
+      suggestedRepair: "Give each upload input an explicit accessible name.",
+      occurrences: [
+        {
+          occurrenceId: "occ-11111111",
+          findingId: "site-6d9c91c2",
+          sourceFindingId: "mobile-label",
+          auditId: "route-audit-1",
+          path: "/remove",
+          viewport: "mobile",
+          strategy: "mobile",
+          selector: "#pdf-upload",
+          evidence: "The PDF input has no accessible name.",
+          evidenceIds: ["/api/audits/route-audit-1/evidence/mobile"],
+          source: { provider: "Lighthouse", auditId: "label", strategy: "mobile" },
+        },
+        {
+          occurrenceId: "occ-22222222",
+          findingId: "site-6d9c91c2",
+          sourceFindingId: "desktop-label",
+          auditId: "route-audit-2",
+          path: "/convert",
+          viewport: "desktop",
+          strategy: "desktop",
+          selector: "#word-upload",
+          evidence: "The Word input has no accessible name.",
+          evidenceIds: ["/api/audits/route-audit-2/evidence/desktop"],
+          source: { provider: "Lighthouse", auditId: "label", strategy: "desktop" },
+        },
+      ],
+    }],
+  };
+
+  const receipt = createAssessmentReceipt({
+    report: scopedReport,
+    mission: boundedMission,
+    explorations: [exploration],
+  });
+
+  assert.equal(receipt.assessment.rankingStatus, "final");
+  assert.equal(receipt.assessment.scopeVersion, 2);
+  assert.equal(receipt.assessment.pendingRoutes, 0);
+  assert.equal(receipt.priorities[0].findingId, "site-6d9c91c2");
+  assert.deepEqual(
+    receipt.priorities[0].occurrences.map((occurrence) => ({
+      occurrenceId: occurrence.occurrenceId,
+      auditId: occurrence.auditId,
+      path: occurrence.path,
+      viewport: occurrence.viewport,
+      selector: occurrence.selector,
+      evidenceIds: occurrence.evidenceIds,
+    })),
+    [
+      {
+        occurrenceId: "occ-11111111",
+        auditId: "route-audit-1",
+        path: "/remove",
+        viewport: "mobile",
+        selector: "#pdf-upload",
+        evidenceIds: ["/api/audits/route-audit-1/evidence/mobile"],
+      },
+      {
+        occurrenceId: "occ-22222222",
+        auditId: "route-audit-2",
+        path: "/convert",
+        viewport: "desktop",
+        selector: "#word-upload",
+        evidenceIds: ["/api/audits/route-audit-2/evidence/desktop"],
+      },
+    ],
+  );
+
+  const markdown = assessmentReceiptMarkdown(receipt);
+  assert.match(markdown, /Priority ranking: final \(scope v2\)/);
+  assert.match(markdown, /\| \/remove \| mobile \| #pdf-upload \| \/api\/audits\/route-audit-1\/evidence\/mobile \|/);
+  assert.match(markdown, /\| \/convert \| desktop \| #word-upload \| \/api\/audits\/route-audit-2\/evidence\/desktop \|/);
+});

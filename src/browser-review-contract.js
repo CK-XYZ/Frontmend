@@ -1,6 +1,7 @@
 import { AuditError } from "./url-policy.js";
 import { AGENT_CAPABILITIES, requiredCapabilitiesForBrowserTask } from "./agent-capability-contract.js";
 import {
+  BROWSER_INVESTIGATION_LIMIT,
   compileBrowserInvestigations,
   projectLegacyBrowserCheck,
 } from "./browser-investigation-compiler.js";
@@ -208,9 +209,23 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
   const occurrences = Array.isArray(task.trigger?.occurrences)
     ? task.trigger.occurrences.slice(0, 8).map((item) => ({
         findingId: item?.findingId ? boundedString(item.findingId, "task.trigger.occurrences.findingId", 160) : null,
+        sourceFindingId: item?.sourceFindingId
+          ? boundedString(item.sourceFindingId, "task.trigger.occurrences.sourceFindingId", 160)
+          : null,
+        occurrenceId: item?.occurrenceId
+          ? boundedString(item.occurrenceId, "task.trigger.occurrences.occurrenceId", 80)
+          : null,
         strategy: ["mobile", "desktop", "document"].includes(item?.strategy) ? item.strategy : viewport,
         selector: item?.selector ? boundedString(item.selector, "task.trigger.occurrences.selector", 200) : null,
         evidence: boundedString(item?.evidence ?? "Retained provider symptom.", "task.trigger.occurrences.evidence", 600),
+        path: item?.path ? boundedString(item.path, "task.trigger.occurrences.path", 256) : path,
+        evidenceIds: Array.isArray(item?.evidenceIds)
+          ? item.evidenceIds.slice(0, 4).map((value) => boundedString(
+              value,
+              "task.trigger.occurrences.evidenceIds",
+              240,
+            ))
+          : [],
       }))
     : [];
   return {
@@ -552,6 +567,47 @@ export function createBrowserReviewMission({
     results: [],
     history: [],
     createdAt: now,
+    updatedAt: now,
+  });
+}
+
+export function browserReviewInvestigationGap(reviewValue, {
+  report,
+  mission,
+  target,
+} = {}) {
+  if (!reviewValue?.id || reviewValue?.purpose !== "assessment") return [];
+  const review = browserReviewSnapshot(reviewValue);
+  if (review.withdrawal?.status === "withdrawn") return [];
+  const remaining = Math.max(0, BROWSER_INVESTIGATION_LIMIT - review.requestedChecks.length);
+  if (!remaining) return [];
+  const existingIds = new Set(review.requestedChecks.map((task) => task.id));
+  return compileBrowserInvestigations({
+    report,
+    documentProfile: report?.documentProfile ?? null,
+    mission,
+    target: target ?? review.target,
+    includeFallbacks: false,
+  })
+    .filter((task) => task.kind === "provider-confirmation" && !existingIds.has(task.id))
+    .slice(0, remaining);
+}
+
+export function extendBrowserReviewMission({
+  review: reviewValue,
+  report,
+  mission,
+  target,
+  now = Date.now(),
+} = {}) {
+  const review = browserReviewSnapshot(reviewValue);
+  if (review.purpose !== "assessment" || !browserReviewState(review).complete) return review;
+  const tasks = browserReviewInvestigationGap(review, { report, mission, target });
+  if (!tasks.length) return review;
+  return browserReviewSnapshot({
+    ...review,
+    tasks: [...review.requestedChecks, ...tasks],
+    requestedChecks: [...review.requestedChecks, ...tasks],
     updatedAt: now,
   });
 }

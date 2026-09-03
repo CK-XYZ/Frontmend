@@ -392,17 +392,16 @@ export function contextualFrontmendToolNames(service) {
   if (audit.status !== "complete") {
     return ["check_site_audit_progress", "cancel_site_audit", "get_mission_summary"];
   }
+  if (audit.missionWorkspace?.status === "partial") {
+    return ["get_mission_summary", "get_site_audit_results"];
+  }
 
   const available = new Set(["get_mission_summary", "get_site_audit_results"]);
   const browserReview = service?.getBrowserReview?.(audit.id) ?? null;
-  const findings = assessmentFindings(audit.report, browserReview);
   const repairs = service?.getRepairs?.(audit.id) ?? [];
   const diagnosticMissions = service?.getDiagnosticMissions?.(audit.id) ?? [];
   const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
-  const childRenderedReviewAvailable = explorations.some((exploration) =>
-    (exploration?.currentSnapshot ?? exploration)?.pages?.some(
-      (page) => page?.renderedReview?.action?.tool === "open_browser_review",
-    ));
+  const findings = assessmentFindings(audit.report, browserReview, explorations);
   const missionState = [1, 2].includes(audit.mission?.schemaVersion)
     ? deriveAuditMissionState({
         report: audit.report,
@@ -463,7 +462,7 @@ export function contextualFrontmendToolNames(service) {
   ) {
     available.add("open_browser_review");
   }
-  if (childRenderedReviewAvailable) available.add("open_browser_review");
+  if (missionState?.browserReview?.extensionRequired) available.add("open_browser_review");
   if (verificationReplayRequired && !browserReview) {
     available.add("open_browser_review");
   }
@@ -506,16 +505,24 @@ export function contextualFrontmendToolNames(service) {
     available.add("record_diagnostic_blocker");
   }
   const preparedFindingId = audit.mission?.repairPreparation?.findingId ?? null;
+  const preparedFindingIds = audit.mission?.repairPreparation?.findingIds
+    ?? (preparedFindingId ? [preparedFindingId] : []);
   const preparedFinding = findings.find((finding) => finding.id === preparedFindingId);
   const preparedDiagnostic = diagnosticMissions.find(
     (mission) => mission.findingId === preparedFindingId,
   );
+  const agentRepositoryTraceRequired = audit.mission?.repairPreparation?.requestedBy === "agent";
+  const preparedRepositoryTraceReady = preparedFindingIds.every((id) =>
+    diagnosticMissions.find((mission) => mission.findingId === id)?.state?.state === "ready-for-repair");
   if (
     missionState?.assessmentComplete !== false &&
     preparedFinding &&
     (
-      (!findingRequiresDiagnosticMission(preparedFinding) && !diagnosticPriorityIds.has(preparedFindingId)) ||
-      preparedDiagnostic?.state?.state === "ready-for-repair"
+      (!agentRepositoryTraceRequired
+        && !findingRequiresDiagnosticMission(preparedFinding)
+        && !diagnosticPriorityIds.has(preparedFindingId)) ||
+      (agentRepositoryTraceRequired && preparedRepositoryTraceReady) ||
+      (!agentRepositoryTraceRequired && preparedDiagnostic?.state?.state === "ready-for-repair")
     )
   ) {
     available.add("stage_site_repair");
@@ -1383,8 +1390,13 @@ export function createFrontmendTools(service) {
         const brief = createRepositoryFixBrief(
           report,
           findingId,
-          assessmentFindings(report, service?.getBrowserReview?.(auditId) ?? null),
+          assessmentFindings(
+            report,
+            service?.getBrowserReview?.(auditId) ?? null,
+            service?.getSiteExplorations?.(auditId) ?? [],
+          ),
           verificationCandidates,
+          service?.getDiagnosticMissions?.(auditId) ?? [],
         );
         return {
           ...brief,
@@ -1443,12 +1455,12 @@ export function createFrontmendTools(service) {
       name: "open_diagnostic_mission",
       title: "Open diagnostic mission",
       description:
-        "Open an idempotent diagnostic mission for a finding with structured runtime evidence, such as console errors, low-contrast nodes, or main-thread blocking. The mission returns an evidenceChain that keeps the measured symptom separate from required browser reproduction, repository ownership, and planned verification. Continue with submit_runtime_diagnosis only from evidence you actually obtain; if browser/repository access is unavailable or the runtime conflicts, use record_diagnostic_blocker instead of inventing a cause. This tool does not diagnose, read repository source, stage a repair, or change the target site.",
+        "Open an idempotent diagnostic mission for a structured runtime symptom, evidence conflict, or explicitly selected agent-prepared repair. The mission keeps measured and browser evidence separate from the repository-relative source ownership and planned checks that the coding agent must contribute. Continue with submit_runtime_diagnosis only from evidence you actually obtain; if browser/repository access is unavailable or the runtime conflicts, use record_diagnostic_blocker instead of inventing a cause. This tool does not diagnose, read repository source, stage a repair, or change the target site.",
       inputSchema: {
         type: "object",
         properties: {
           auditId: { type: "string", minLength: 1, description: "Optional completed audit ID; defaults to the visible audit." },
-          findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact structured diagnostic finding ID." },
+          findingId: { type: "string", minLength: 1, maxLength: 160, description: "Exact retained finding ID requested by the current mission action." },
         },
         required: ["findingId"],
         additionalProperties: false,

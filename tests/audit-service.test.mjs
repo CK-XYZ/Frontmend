@@ -6,6 +6,10 @@ import {
   createHttpAuditTransport,
   normalizePublicUrl,
 } from "../src/audit-service.js";
+import {
+  createDiagnosticMission,
+  submitDiagnosticEvidence,
+} from "../src/diagnostic-contract.js";
 
 const AUDIT_ID = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
 const missionCheckpoint = (missionRevision = 1) => ({ auditId: AUDIT_ID, missionRevision });
@@ -238,15 +242,20 @@ test("restores a completed audit only after every mission snapshot shares one re
   assert.equal(service.getSiteExplorations(AUDIT_ID)[0].id, "exploration-1");
 });
 
-test("keeps a completed fresh-session workspace gated when one mission read is unavailable", async () => {
+test("restores persisted evidence read-only when one mission record is unavailable", async () => {
+  let mutationCalls = 0;
   const service = createAuditService({
+    now: () => 50,
     transport: {
       get: async () => ({
         id: AUDIT_ID,
         url: "https://example.com/",
         status: "complete",
         missionRevision: 5,
-        report: { auditId: AUDIT_ID, findings: [] },
+        report: {
+          auditId: AUDIT_ID,
+          findings: [{ id: "document-description", title: "Missing description" }],
+        },
       }),
       checkpoint: async () => ({ auditId: AUDIT_ID, missionRevision: 5 }),
       listRepairs: async () => ({ auditId: AUDIT_ID, repairs: [] }),
@@ -255,14 +264,36 @@ test("keeps a completed fresh-session workspace gated when one mission read is u
         throw new AuditError("BROWSER_REVIEW_UNAVAILABLE", "Review unavailable.");
       },
       listExplorations: async () => ({ rootAuditId: AUDIT_ID, explorations: [] }),
+      prepareRepair: async () => {
+        mutationCalls += 1;
+        throw new Error("A partial workspace must fail before transport mutation.");
+      },
     },
   });
 
+  const restored = await service.restoreAuditWorkspace(AUDIT_ID);
+
+  assert.equal(restored.readOnly, true);
+  assert.equal(restored.audit.report.findings[0].id, "document-description");
+  assert.equal(restored.audit.missionWorkspace.status, "partial");
+  assert.deepEqual(restored.audit.missionWorkspace.unavailable, ["browserReview"]);
+  assert.deepEqual(restored.audit.missionWorkspace.requirements, [{
+    artifact: "browserReview",
+    status: "unavailable",
+    errorCode: "BROWSER_REVIEW_UNAVAILABLE",
+    recoverable: true,
+    nextOperation: {
+      tool: "get_mission_summary",
+      input: { auditId: AUDIT_ID },
+      reason: "Retry coherent browserReview hydration from the retained audit checkpoint before acting.",
+    },
+  }]);
   await assert.rejects(
-    () => service.restoreAuditWorkspace(AUDIT_ID),
+    () => service.prepareRepair(AUDIT_ID, "document-description", "agent"),
     (error) => error.code === "MISSION_WORKSPACE_INCOMPLETE"
-      && error.details?.unavailable?.[0] === "browserReview",
+      && error.details?.requirements?.[0]?.artifact === "browserReview",
   );
+  assert.equal(mutationCalls, 0);
 });
 
 test("rejects an audit identity change during coherent workspace restoration", async () => {
@@ -2318,6 +2349,14 @@ test("HTTP transport carries human-selected server-issued verification targets i
 test("prepares one retained finding through the service and derives the remembered mission", async () => {
   const calls = [];
   let audit;
+  let diagnosticMission;
+  const finding = {
+    id: "document-description",
+    title: "The document has no description",
+    severity: "medium",
+    focusAreas: ["seo"],
+    source: { provider: "Frontmend document audit", auditId: "description" },
+  };
   const service = createAuditService({
     now: () => 10,
     transport: {
@@ -2331,13 +2370,7 @@ test("prepares one retained finding through the service and derives the remember
           progress: 100,
           report: {
             auditId: AUDIT_ID,
-            findings: [{
-              id: "document-description",
-              title: "The document has no description",
-              severity: "medium",
-              focusAreas: ["seo"],
-              source: { provider: "Frontmend document audit", auditId: "description" },
-            }],
+            findings: [finding],
           },
         };
         return audit;
@@ -2357,6 +2390,27 @@ test("prepares one retained finding through the service and derives the remember
           missionCheckpoint: missionCheckpoint(2),
         };
       },
+      openDiagnosticMission: async (auditId, findingId) => {
+        calls.push({ auditId, findingId, operation: "open-diagnostic" });
+        diagnosticMission = {
+          ...createDiagnosticMission({
+            auditId,
+            finding,
+            relationship: "repair-trace-required",
+            now: 30,
+          }),
+          missionCheckpoint: missionCheckpoint(3),
+        };
+        return diagnosticMission;
+      },
+      submitDiagnosticEvidence: async (auditId, missionId, input, source) => {
+        calls.push({ auditId, missionId, source, operation: "submit-diagnostic" });
+        diagnosticMission = {
+          ...submitDiagnosticEvidence(diagnosticMission, input, source, 40),
+          missionCheckpoint: missionCheckpoint(4),
+        };
+        return diagnosticMission;
+      },
     },
   });
 
@@ -2365,12 +2419,26 @@ test("prepares one retained finding through the service and derives the remember
   const prepared = await service.prepareRepair(AUDIT_ID, "document-description", "agent");
   assert.equal(prepared.mission.intent, "prepare-fix");
   assert.equal(service.getActiveAudit().mission.repairPreparation.findingId, "document-description");
+  assert.equal(service.getActiveAuditMissionState().nextAction.tool, "open_diagnostic_mission");
+  const opened = await service.openDiagnosticMission(AUDIT_ID, finding.id);
+  assert.equal(opened.measuredEvidence.kind, "repository-trace");
+  assert.equal(service.getActiveAuditMissionState().nextAction.tool, "submit_runtime_diagnosis");
+  await service.submitDiagnosticEvidence(AUDIT_ID, opened.id, {
+    summary: "The shared upload field is rendered without an accessible label.",
+    reproduction: "Open the retained route at the measured viewport and inspect the upload control's accessible name.",
+    observations: [{ kind: "accessibility", detail: "The upload input has no accessible name." }],
+    sourceLocations: [{ file: "src/components/Uploader.jsx", line: 42, symbol: "Uploader", reason: "Owns the rendered upload input." }],
+    verificationChecks: ["bun test", "Replay the retained browser check"],
+    confidence: "high",
+  });
   assert.equal(service.getActiveAuditMissionState().nextAction.tool, "stage_site_repair");
-  assert.deepEqual(calls, [{
+  assert.deepEqual(calls[0], {
     auditId: AUDIT_ID,
     findingId: "document-description",
     source: "agent",
-  }]);
+  });
+  assert.equal(calls[1].operation, "open-diagnostic");
+  assert.equal(calls[2].operation, "submit-diagnostic");
   await assert.rejects(
     () => service.prepareRepair("", "document-description"),
     (error) => error.code === "INVALID_INPUT",

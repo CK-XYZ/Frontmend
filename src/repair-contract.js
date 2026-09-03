@@ -460,6 +460,7 @@ export function createRepositoryFixBrief(
   findingId,
   findingCandidates = report?.findings,
   verificationImpact = null,
+  diagnosticMissions = [],
 ) {
   if (!report || typeof report !== "object") {
     throw new AuditError("AUDIT_REPORT_UNAVAILABLE", "A completed audit report is required.");
@@ -476,15 +477,61 @@ export function createRepositoryFixBrief(
     candidate?.source?.provider === source.provider &&
     candidate?.source?.auditId === source.auditId;
   const matchingFindings = retainedFindings.filter(sameRule);
-  const occurrences = matchingFindings.slice(0, 4).map((candidate) => ({
-    findingId: briefText(candidate.id, 160),
-    strategy: briefText(candidate.source?.strategy, 40),
-    viewport: briefText(candidate.viewport, 100),
-    selector: briefText(candidate.selector, 160),
-    measured: briefText(candidate.evidence, 300),
-    severity: briefText(candidate.severity, 20),
-    diagnostics: diagnosticEvidenceSnapshot(candidate.diagnosticEvidence),
-  }));
+  const allOccurrences = matchingFindings.flatMap((candidate) =>
+    Array.isArray(candidate?.occurrences) && candidate.occurrences.length
+      ? candidate.occurrences.map((occurrence) => ({
+          occurrenceId: briefText(occurrence.occurrenceId, 80) || null,
+          findingId: briefText(candidate.id, 160),
+          sourceFindingId: briefText(occurrence.sourceFindingId, 160) || null,
+          auditId: briefText(occurrence.auditId, 160) || null,
+          path: briefText(occurrence.path, 256) || "/",
+          url: briefText(occurrence.url, 2_048) || null,
+          strategy: briefText(occurrence.strategy, 40),
+          viewport: briefText(occurrence.viewport ?? occurrence.strategy, 100),
+          selector: briefText(occurrence.selector, 200) || null,
+          measured: briefText(occurrence.evidence, 300),
+          severity: briefText(candidate.severity, 20),
+          evidenceIds: Array.isArray(occurrence.evidenceIds)
+            ? occurrence.evidenceIds.slice(0, 4).map((item) => briefText(item, 240))
+            : [],
+          diagnostics: diagnosticEvidenceSnapshot(candidate.diagnosticEvidence),
+        }))
+      : [{
+          occurrenceId: null,
+          findingId: briefText(candidate.id, 160),
+          sourceFindingId: null,
+          auditId: briefText(candidate.route?.auditId, 160) || briefText(report.auditId, 160),
+          path: briefText(candidate.route?.path, 256) || publicPathFromUrl(finalUrl),
+          url: briefText(candidate.route?.url, 2_048) || finalUrl,
+          strategy: briefText(candidate.source?.strategy, 40),
+          viewport: briefText(candidate.viewport, 100),
+          selector: briefText(candidate.selector, 200) || null,
+          measured: briefText(candidate.evidence, 300),
+          severity: briefText(candidate.severity, 20),
+          evidenceIds: [],
+          diagnostics: diagnosticEvidenceSnapshot(candidate.diagnosticEvidence),
+        }]);
+  const uniqueOccurrences = allOccurrences.filter((occurrence, index, values) =>
+    values.findIndex((candidate) =>
+      (occurrence.occurrenceId && candidate.occurrenceId === occurrence.occurrenceId)
+      || (!occurrence.occurrenceId
+        && candidate.auditId === occurrence.auditId
+        && candidate.sourceFindingId === occurrence.sourceFindingId
+        && candidate.strategy === occurrence.strategy
+        && candidate.selector === occurrence.selector)) === index);
+  const occurrences = uniqueOccurrences.slice(0, 8);
+  const diagnosis = diagnosticMissions.find((mission) => mission?.findingId === finding.id) ?? null;
+  const contributedDiagnosis = diagnosticMissionSnapshotForArtifact(diagnosis);
+  const routes = uniqueOccurrences
+    .filter((occurrence) => occurrence.path)
+    .filter((occurrence, index, values) =>
+      values.findIndex((candidate) => candidate.auditId === occurrence.auditId && candidate.path === occurrence.path) === index)
+    .slice(0, 4)
+    .map((occurrence) => ({
+      auditId: occurrence.auditId,
+      path: occurrence.path,
+      url: occurrence.url,
+    }));
   const failedStrategies = [
     ...new Set([
       ...(Array.isArray(report.ruleOutcomes)
@@ -507,6 +554,7 @@ export function createRepositoryFixBrief(
       url: briefText(report.url, 2_048),
       finalUrl,
       publicPath: publicPathFromUrl(finalUrl),
+      routes,
     },
     evidence: {
       title: briefText(finding.title, 240),
@@ -520,10 +568,20 @@ export function createRepositoryFixBrief(
       engineMode: briefText(report.engine?.mode, 80),
       lighthouseVersion: briefText(report.engine?.lighthouseVersion, 40) || null,
       diagnostics: diagnosticEvidenceSnapshot(finding.diagnosticEvidence),
-      occurrenceCount: Math.max(matchingFindings.length, failedStrategies.length),
+      occurrenceCount: Math.max(
+        uniqueOccurrences.length,
+        finding.aggregateEvidence?.occurrenceCount ?? 0,
+        matchingFindings.length,
+        failedStrategies.length,
+      ),
       occurrencesOmitted: Math.max(
         0,
-        Math.max(matchingFindings.length, failedStrategies.length) - occurrences.length,
+        Math.max(
+          uniqueOccurrences.length,
+          finding.aggregateEvidence?.occurrenceCount ?? 0,
+          matchingFindings.length,
+          failedStrategies.length,
+        ) - occurrences.length,
       ),
       failingStrategies: failedStrategies,
       occurrences,
@@ -532,6 +590,20 @@ export function createRepositoryFixBrief(
       patchType: template.patchType,
       risk: template.risk,
       inspectFor: repositorySourceHints(template.patchType),
+      contributedDiagnosis: contributedDiagnosis
+        ? {
+            missionId: contributedDiagnosis.id,
+            provenance: contributedDiagnosis.diagnosis.agentReported
+              ? "agent-reported-repository"
+              : "person-reported-repository",
+            summary: contributedDiagnosis.diagnosis.summary,
+            reproduction: contributedDiagnosis.diagnosis.reproduction,
+            observations: contributedDiagnosis.diagnosis.observations,
+            sourceLocations: contributedDiagnosis.diagnosis.sourceLocations,
+            verificationChecks: contributedDiagnosis.diagnosis.verificationChecks,
+            confidence: contributedDiagnosis.diagnosis.confidence,
+          }
+        : null,
       suggestedChange: briefText(template.patch, 1_200),
       verificationPlan: briefText(template.verificationPlan, 700),
       acceptanceCriteria: [
@@ -599,6 +671,9 @@ function findingScopeSources(scope, fallbackSource) {
 
 function repairFindingScope(report, finding) {
   const primary = boundedFindingSource(finding?.source);
+  const retainedOccurrences = Array.isArray(finding?.occurrences)
+    ? finding.occurrences.slice(0, 8)
+    : [];
   const failedSources = Array.isArray(report?.ruleOutcomes)
     ? report.ruleOutcomes
         .filter(
@@ -607,20 +682,44 @@ function repairFindingScope(report, finding) {
         )
         .map((outcome) => outcome.source)
     : [];
+  const occurrenceSources = retainedOccurrences.map((occurrence) => ({
+    provider: occurrence?.source?.provider ?? primary?.provider,
+    auditId: occurrence?.source?.auditId ?? primary?.auditId,
+    strategy: occurrence?.source?.strategy ?? occurrence?.strategy ?? primary?.strategy,
+  }));
   const allSources = [];
-  for (const candidate of [primary, ...failedSources]) {
+  for (const candidate of [primary, ...failedSources, ...occurrenceSources]) {
     const bounded = boundedFindingSource(candidate);
     if (bounded && !allSources.some((source) => sameFindingSource(source, bounded))) {
       allSources.push(bounded);
     }
   }
+  const routes = retainedOccurrences
+    .filter((occurrence) => occurrence?.auditId || occurrence?.path)
+    .filter((occurrence, index, values) => values.findIndex((candidate) =>
+      candidate?.auditId === occurrence?.auditId && candidate?.path === occurrence?.path) === index)
+    .slice(0, 4)
+    .map((occurrence) => ({
+      auditId: briefText(occurrence.auditId, 160) || null,
+      path: briefText(occurrence.path, 256) || "/",
+      url: briefText(occurrence.url, 2_048) || null,
+    }));
+  const rootAffected = retainedOccurrences.length
+    ? retainedOccurrences.some((occurrence) => occurrence?.auditId === report?.auditId)
+    : true;
   return {
     focusAreas: Array.isArray(finding?.focusAreas)
       ? [...new Set(finding.focusAreas.filter((area) => typeof area === "string"))].slice(0, 3)
       : [],
-    occurrenceCount: allSources.length,
-    occurrencesOmitted: Math.max(0, allSources.length - 4),
+    occurrenceCount: Math.max(
+      retainedOccurrences.length,
+      finding?.aggregateEvidence?.occurrenceCount ?? 0,
+      allSources.length,
+    ),
+    occurrencesOmitted: Math.max(0, retainedOccurrences.length - routes.length),
     sources: allSources.slice(0, 4),
+    routes,
+    rootAffected,
   };
 }
 

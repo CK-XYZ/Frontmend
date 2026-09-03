@@ -181,6 +181,15 @@ function targetPath(target) {
   }
 }
 
+function stableHash(value) {
+  let hash = 2_166_136_261;
+  for (const character of String(value ?? "")) {
+    hash ^= character.codePointAt(0);
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, "0");
+}
+
 function sourceRule(finding) {
   return boundedText(finding?.source?.auditId ?? finding?.id, 120);
 }
@@ -197,10 +206,44 @@ function occurrence(finding) {
     : "desktop";
   return {
     findingId: boundedText(finding?.id, 160) || null,
+    sourceFindingId: boundedText(finding?.sourceFindingId, 160) || null,
+    occurrenceId: boundedText(finding?.occurrenceId, 80) || null,
     strategy,
     selector: boundedText(finding?.selector, 200) || null,
     evidence: boundedText(finding?.evidence, 600),
+    path: boundedText(finding?.route?.path, 256) || null,
+    evidenceIds: Array.isArray(finding?.evidenceIds)
+      ? finding.evidenceIds.slice(0, 4).map((item) => boundedText(item, 240)).filter(Boolean)
+      : [],
+    routeSpecific: Boolean(finding?.route?.path),
   };
+}
+
+function findingOccurrences(finding, fallbackPath) {
+  if (!Array.isArray(finding?.occurrences) || !finding.occurrences.length) {
+    const retained = occurrence(finding);
+    return [{ ...retained, path: retained.path ?? fallbackPath }];
+  }
+  return finding.occurrences.slice(0, MAX_OCCURRENCES).map((item) => {
+    const strategy = ["mobile", "desktop", "document"].includes(item?.strategy)
+      ? item.strategy
+      : ["mobile", "desktop", "document"].includes(item?.viewport)
+        ? item.viewport
+        : "desktop";
+    return {
+      findingId: boundedText(item?.findingId ?? finding.id, 160) || null,
+      sourceFindingId: boundedText(item?.sourceFindingId, 160) || null,
+      occurrenceId: boundedText(item?.occurrenceId, 80) || null,
+      strategy,
+      selector: boundedText(item?.selector ?? finding.selector, 200) || null,
+      evidence: boundedText(item?.evidence ?? finding.evidence, 600),
+      path: boundedText(item?.path ?? finding?.route?.path, 256) || fallbackPath,
+      evidenceIds: Array.isArray(item?.evidenceIds)
+        ? item.evidenceIds.slice(0, 4).map((value) => boundedText(value, 240)).filter(Boolean)
+        : [],
+      routeSpecific: true,
+    };
+  });
 }
 
 function taskResponseContract(findingsAllowed = true) {
@@ -225,7 +268,8 @@ function providerTask(group, path) {
   const selector = occurrences.find((item) => item.selector)?.selector ?? null;
   const retainedEvidence = occurrences.map((item) => item.evidence).find(Boolean) ?? "A provider rule requires rendered inspection.";
   const viewport = affectedViewports.includes("mobile") ? "mobile" : affectedViewports.includes("desktop") ? "desktop" : "desktop";
-  const id = `investigate-${group.ruleId}-${affectedViewports.join("-")}`.slice(0, 80);
+  const routeSuffix = group.routeSpecific ? `-${stableHash(path)}` : "";
+  const id = `investigate-${group.ruleId}-${affectedViewports.join("-")}${routeSuffix}`.slice(0, 80);
   const task = {
     schemaVersion: 1,
     id,
@@ -302,42 +346,52 @@ function genericTask(definition, path) {
   };
 }
 
-export function compileBrowserInvestigations({ report, documentProfile, mission, target } = {}) {
+export function compileBrowserInvestigations({
+  report,
+  documentProfile,
+  mission,
+  target,
+  includeFallbacks = true,
+} = {}) {
   const requested = focusAreas(mission);
   const requestedSet = new Set(requested);
   const groups = new Map();
+  const path = targetPath(target ?? report?.finalUrl ?? report?.url);
   for (const finding of Array.isArray(report?.findings) ? report.findings : []) {
     const ruleId = sourceRule(finding);
     const recipe = RECIPES[ruleId];
     if (!recipe || (requestedSet.size && !requestedSet.has(recipe.focusArea))) continue;
-    const key = `${boundedText(finding?.source?.provider, 120)}:${ruleId}`;
-    const existing = groups.get(key) ?? {
-      ruleId,
-      provider: finding?.source?.provider,
-      recipe,
-      severity: "low",
-      occurrences: [],
-    };
-    if ((SEVERITY_RANK[finding?.severity] ?? 2) < (SEVERITY_RANK[existing.severity] ?? 2)) {
-      existing.severity = finding.severity;
+    for (const retainedOccurrence of findingOccurrences(finding, path)) {
+      const key = `${boundedText(finding?.source?.provider, 120)}:${ruleId}:${retainedOccurrence.path}`;
+      const existing = groups.get(key) ?? {
+        ruleId,
+        provider: finding?.source?.provider,
+        recipe,
+        path: retainedOccurrence.path,
+        routeSpecific: retainedOccurrence.routeSpecific,
+        severity: "low",
+        occurrences: [],
+      };
+      if ((SEVERITY_RANK[finding?.severity] ?? 2) < (SEVERITY_RANK[existing.severity] ?? 2)) {
+        existing.severity = finding.severity;
+      }
+      existing.occurrences.push(retainedOccurrence);
+      groups.set(key, existing);
     }
-    existing.occurrences.push(occurrence(finding));
-    groups.set(key, existing);
   }
 
-  const path = targetPath(target ?? report?.finalUrl ?? report?.url);
   const providerTasks = [...groups.values()]
-    .map((group) => providerTask(group, path))
+    .map((group) => providerTask(group, group.path ?? path))
     .sort((a, b) =>
       (SEVERITY_RANK[a.severity] ?? 2) - (SEVERITY_RANK[b.severity] ?? 2)
       || b.usefulness - a.usefulness
       || a.id.localeCompare(b.id));
   const covered = new Set(providerTasks.map((task) => task.focusArea));
-  const fallbacks = GENERIC_TASKS
+  const fallbacks = includeFallbacks ? GENERIC_TASKS
     .filter((task) => requestedSet.has(task.focusArea) && !covered.has(task.focusArea))
-    .map((task) => genericTask(task, path));
+    .map((task) => genericTask(task, path)) : [];
 
-  if (requestedSet.has("seo") && !covered.has("seo")) {
+  if (includeFallbacks && requestedSet.has("seo") && !covered.has("seo")) {
     const structureIndex = fallbacks.findIndex((task) => task.id === "rendered-structure");
     if (structureIndex < 0) {
       const rendered = genericTask(GENERIC_TASKS[0], path);

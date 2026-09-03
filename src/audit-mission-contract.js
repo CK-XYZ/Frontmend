@@ -1,6 +1,7 @@
 import {
   browserReviewAdoptionAvailable,
   browserReviewFindings,
+  browserReviewInvestigationGap,
   browserReviewChecksForMission,
   browserReviewPolicy,
   browserReviewProvenance,
@@ -226,45 +227,120 @@ export function prepareRepairIntent(missionValue, selectedFindingId, source = "h
   });
 }
 
-export function assessmentFindings(report, browserReview = null) {
+export function explorationAssessmentFindings(explorations = []) {
+  const findings = [];
+  const latest = (Array.isArray(explorations) ? explorations : [])
+    .map((retained) => retained?.currentSnapshot ?? retained)
+    .sort((left, right) => (right?.createdAt ?? 0) - (left?.createdAt ?? 0))[0] ?? null;
+  for (const retained of latest ? [latest] : []) {
+    const exploration = retained?.currentSnapshot ?? retained;
+    if (exploration?.status !== "complete") continue;
+    for (const issue of Array.isArray(exploration?.issues) ? exploration.issues : []) {
+      const occurrences = (Array.isArray(issue?.occurrences) ? issue.occurrences : [])
+        .slice(0, 8)
+        .map((occurrence) => ({
+          occurrenceId: occurrence?.occurrenceId ?? null,
+          findingId: issue.findingId ?? occurrence?.findingId ?? `site:${exploration.id}:${issue.ruleId}`,
+          sourceFindingId: occurrence?.sourceFindingId ?? null,
+          auditId: occurrence?.auditId ?? null,
+          path: occurrence?.path ?? "/",
+          url: occurrence?.url ?? null,
+          viewport: ["mobile", "desktop", "document"].includes(occurrence?.viewport)
+            ? occurrence.viewport
+            : ["mobile", "desktop", "document"].includes(occurrence?.strategy)
+              ? occurrence.strategy
+              : "document",
+          strategy: occurrence?.strategy || "document",
+          selector: occurrence?.selector ?? null,
+          evidence: occurrence?.evidence || "Retained cross-page occurrence.",
+          evidenceIds: Array.isArray(occurrence?.evidenceIds)
+            ? occurrence.evidenceIds.slice(0, 4)
+            : [],
+          source: {
+            provider: occurrence?.source?.provider ?? issue.provider,
+            auditId: occurrence?.source?.auditId ?? issue.ruleId,
+            strategy: occurrence?.source?.strategy ?? occurrence?.strategy ?? "document",
+          },
+        }));
+      if (!occurrences.length) continue;
+      const first = occurrences[0];
+      const canonicalFindingId = issue.findingId ?? first.findingId;
+      const occurrenceCount = issue.occurrenceCount ?? occurrences.length;
+      const distinctPageCount = issue.distinctPageCount
+        ?? new Set(occurrences.map((item) => item.auditId || item.path)).size;
+      findings.push({
+        id: canonicalFindingId,
+        title: issue.title,
+        severity: issue.severity,
+        category: issue.category,
+        focusAreas: Array.isArray(issue.focusAreas) ? issue.focusAreas : [],
+        viewport: first.viewport,
+        selector: first.selector,
+        evidence: `${occurrenceCount} retained occurrence${occurrenceCount === 1 ? "" : "s"} across ${distinctPageCount} selected page${distinctPageCount === 1 ? "" : "s"}. ${first.path}: ${first.evidence}`,
+        repair: issue.suggestedRepair,
+        source: {
+          provider: issue.provider,
+          auditId: issue.ruleId,
+          strategy: first.strategy,
+        },
+        route: {
+          auditId: first.auditId,
+          path: first.path,
+          explorationId: exploration.id,
+          occurrenceId: first.occurrenceId,
+          sourceFindingId: first.sourceFindingId,
+        },
+        occurrences: occurrences.map((occurrence) => ({
+          ...occurrence,
+          findingId: canonicalFindingId,
+        })),
+        aggregateEvidence: {
+          findingId: canonicalFindingId,
+          explorationId: exploration.id,
+          status: issue.status ?? "detected",
+          occurrenceCount,
+          distinctPageCount,
+        },
+      });
+    }
+  }
+  return findings;
+}
+
+export function assessmentFindings(report, browserReview = null, explorations = []) {
   return [
     ...(Array.isArray(report?.findings) ? report.findings : []),
+    ...explorationAssessmentFindings(explorations),
     ...browserReviewFindings(browserReview),
   ];
 }
 
 function explorationEvidenceReport(report, explorations) {
-  const findings = [];
-  for (const retained of Array.isArray(explorations) ? explorations.slice(0, 10) : []) {
-    const exploration = retained?.currentSnapshot ?? retained;
-    if (exploration?.status !== "complete") continue;
-    for (const issue of Array.isArray(exploration?.issues) ? exploration.issues : []) {
-      for (const occurrence of Array.isArray(issue?.occurrences) ? issue.occurrences : []) {
-        findings.push({
-          id: occurrence.findingId || `site:${exploration.id}:${issue.ruleId}`,
-          title: issue.title,
-          severity: issue.severity,
-          category: issue.category,
-          focusAreas: Array.isArray(issue.focusAreas) ? issue.focusAreas : [],
-          evidence: `${occurrence.path}: ${occurrence.evidence || "Retained cross-page occurrence."}`,
-          repair: issue.suggestedRepair,
-          source: {
-            provider: issue.provider,
-            auditId: issue.ruleId,
-            strategy: occurrence.strategy || "document",
-          },
-          route: {
-            auditId: occurrence.auditId,
-            path: occurrence.path,
-            explorationId: exploration.id,
-          },
-        });
-      }
-    }
-  }
+  const findings = explorationAssessmentFindings(explorations);
   return findings.length
     ? { ...report, findings: [...(report?.findings ?? []), ...findings] }
     : report;
+}
+
+function expandedProviderOccurrences(providerFindings, browserFindings) {
+  const retained = providerFindings.length ? providerFindings : browserFindings;
+  return retained.flatMap((finding) => finding.occurrences?.length
+    ? finding.occurrences.map((occurrence) => ({
+        ...finding,
+        findingId: occurrence.findingId ?? finding.findingId,
+        strategy: occurrence.strategy ?? finding.strategy,
+        viewport: occurrence.viewport ?? finding.viewport,
+        selector: occurrence.selector ?? finding.selector,
+        evidence: occurrence.evidence ?? finding.evidence,
+        route: {
+          auditId: occurrence.auditId,
+          path: occurrence.path,
+          explorationId: finding.route?.explorationId,
+          occurrenceId: occurrence.occurrenceId,
+          sourceFindingId: occurrence.sourceFindingId,
+        },
+      }))
+    : [finding]);
 }
 
 export function focusedAuditPriorities(
@@ -292,7 +368,7 @@ export function focusedAuditPriorities(
     const providerFindings = item.evidenceRecords.provider?.findings ?? [];
     const browserFindings = item.evidenceRecords.browser?.findings ?? [];
     const finding = providerFindings[0] ?? browserFindings[0];
-    const occurrenceFindings = providerFindings.length ? providerFindings : browserFindings;
+    const occurrenceFindings = expandedProviderOccurrences(providerFindings, browserFindings);
     const affectedStrategies = [...new Set(occurrenceFindings.map((entry) => entry.strategy).filter(Boolean))];
     const distinctPageKeys = new Set(
       occurrenceFindings
@@ -376,7 +452,10 @@ export function focusedAuditPriorities(
   return {
     requestedFocusAreas: [...mission.focusAreas],
     matchingFindingCount: candidates.reduce((total, item) => {
-      const providerCount = item.evidenceRecords.provider?.findings?.length ?? 0;
+      const providerCount = (item.evidenceRecords.provider?.findings ?? []).reduce(
+        (count, finding) => count + Math.max(1, finding.occurrences?.length ?? 0),
+        0,
+      );
       const browserCount = item.evidenceRecords.provider ? 0 : item.evidenceRecords.browser?.findings?.length ?? 0;
       return total + providerCount + browserCount;
     }, 0),
@@ -508,12 +587,27 @@ export function deriveAuditMissionState({
   const reviewRequired = browserReviewRequired(mission, browserReview);
   const reviewAdoptionAvailable = browserReviewAdoptionAvailable(mission, browserReview);
   const reviewState = browserReview ? browserReviewState(browserReview) : null;
-  const requestedBrowserCheckCount = reviewState?.requestedCheckCount
-    ?? (reviewRequired ? browserReviewChecksForMission(mission).length : 0);
-  const reviewOutstanding = reviewRequired && !reviewState?.complete;
+  const initialReviewOutstanding = reviewRequired && !reviewState?.complete;
   const siteScope = boundedSiteState(report, mission, explorations, {
-    routeDiscoveryPending: reviewOutstanding,
+    routeDiscoveryPending: initialReviewOutstanding,
   });
+  const explorationFindings = siteScope.status === "complete"
+    ? explorationAssessmentFindings(explorations)
+    : [];
+  const explorationReviewTasks = reviewRequired
+    && reviewState?.complete
+    && explorationFindings.length
+    ? browserReviewInvestigationGap(browserReview, {
+        report: { ...report, findings: explorationFindings },
+        mission,
+        target: report?.finalUrl ?? report?.url,
+      })
+    : [];
+  const reviewExtensionPending = explorationReviewTasks.length > 0;
+  const reviewOutstanding = initialReviewOutstanding || reviewExtensionPending;
+  const requestedBrowserCheckCount = (reviewState?.requestedCheckCount
+    ?? (reviewRequired ? browserReviewChecksForMission(mission).length : 0))
+    + explorationReviewTasks.length;
   const unresolved = projection.priorities.find((priority) => diagnosticNextAction(priority));
   const blocked = projection.priorities.find(
     (priority) => priority.evidenceState === "diagnosis-blocked",
@@ -532,7 +626,7 @@ export function deriveAuditMissionState({
         reason: "The measurement job has not produced a completed report yet.",
       };
 
-  if (auditComplete && reviewOutstanding) {
+  if (auditComplete && initialReviewOutstanding) {
     status = reviewState?.status === "blocked"
       ? "blocked"
       : browserReview
@@ -557,19 +651,7 @@ export function deriveAuditMissionState({
         };
   }
 
-  if (auditComplete && !reviewOutstanding && unresolved) {
-    status = unresolved.evidenceState === "diagnosis-recommended" ? "action-available" : "in-progress";
-    nextActor = "agent";
-    nextAction = diagnosticNextAction(unresolved);
-  }
-
-  if (auditComplete && !reviewOutstanding && !unresolved && blocked) {
-    status = "blocked";
-    nextActor = null;
-    nextAction = null;
-  }
-
-  if (auditComplete && !reviewOutstanding && !unresolved && !blocked && siteScope.requested) {
+  if (auditComplete && !initialReviewOutstanding && siteScope.requested) {
     if (siteScope.status === "not-started") {
       status = "action-available";
       nextActor = "agent";
@@ -594,11 +676,41 @@ export function deriveAuditMissionState({
   }
 
   const siteScopeSuccessful = !siteScope.requested || siteScope.status === "complete";
+  if (auditComplete && siteScopeSuccessful && reviewExtensionPending) {
+    status = "action-available";
+    nextActor = "agent";
+    nextAction = {
+      tool: "open_browser_review",
+      input: {},
+      reason: "The completed bounded-site exploration discovered exact route-level evidence. Extend the root browser review before treating the ranking as final.",
+    };
+  }
+
+  if (auditComplete && siteScopeSuccessful && !reviewOutstanding && unresolved) {
+    status = unresolved.evidenceState === "diagnosis-recommended" ? "action-available" : "in-progress";
+    nextActor = "agent";
+    nextAction = diagnosticNextAction(unresolved);
+  }
+
+  if (auditComplete && siteScopeSuccessful && !reviewOutstanding && !unresolved && blocked) {
+    status = "blocked";
+    nextActor = null;
+    nextAction = null;
+  }
+
   const assessmentComplete = measurementComplete
     && !reviewOutstanding
     && !unresolved
     && !blocked
     && siteScopeSuccessful;
+  const pendingRoutes = siteScope.requested
+    ? siteScope.status === "not-started" || siteScope.status === "awaiting-route-discovery"
+      ? siteScope.routeCandidates.length
+      : Math.max(0, siteScope.pagesRequested - siteScope.pagesComplete)
+    : 0;
+  const rankingStatus = measurementComplete && siteScopeSuccessful && !reviewOutstanding
+    ? "final"
+    : "provisional";
   if (assessmentComplete && siteScopeSuccessful && mission.intent === "prepare-fix" && !mission.repairPreparation) {
     status = "awaiting-repair-preparation";
     nextActor = "person";
@@ -610,6 +722,15 @@ export function deriveAuditMissionState({
     const selectedPriorities = selectedIds.map((selectedId) => projection.priorities.find(
       (priority) => priority.findingId === selectedId,
     )).filter(Boolean);
+    const agentRepositoryTraceRequired = mission.repairPreparation.requestedBy === "agent";
+    const repositoryTracePriority = agentRepositoryTraceRequired
+      ? selectedPriorities.find((priority) => diagnosticMissions.find(
+          (diagnostic) => diagnostic.findingId === priority.findingId,
+        )?.state?.state !== "ready-for-repair")
+      : null;
+    const repositoryTraceMission = repositoryTracePriority
+      ? diagnosticMissions.find((diagnostic) => diagnostic.findingId === repositoryTracePriority.findingId) ?? null
+      : null;
     const diagnosticPriority = selectedPriorities.find((priority) => diagnosticNextAction({
       findingId: priority.findingId,
       evidenceState: priority.evidenceState,
@@ -623,27 +744,48 @@ export function deriveAuditMissionState({
     status = "action-available";
     nextActor = "agent";
     const repairNext = repairMissionContinuation(repair);
-    nextAction = diagnosticPriority
-      ? diagnosticNextAction({
-          findingId: diagnosticPriority.findingId,
-          evidenceState: diagnosticPriority.evidenceState,
-          diagnosticMissionId: diagnosticPriority.diagnosticMissionId,
-          nextAction: diagnosticPriority.nextAction,
-        })
-      : (repairNext
-      ? repairNext.nextAction
-      : {
-          tool: "stage_site_repair",
-          input: selectedIds.length > 1
-            ? { findingId: selectedIds[0], findingIds: selectedIds }
-            : { findingId: selectedIds[0] },
-          reason: selectedIds.length > 1
-            ? "Prepare one bounded repair package for the explicitly selected diagnosed findings."
-            : "Prepare a bounded repair draft for the explicitly selected finding.",
-        });
-    if (!diagnosticPriority && repairNext) {
-      status = repairNext.status;
-      nextActor = repairNext.nextActor;
+    if (repositoryTracePriority) {
+      if (!repositoryTraceMission) {
+        nextAction = {
+          tool: "open_diagnostic_mission",
+          input: { findingId: repositoryTracePriority.findingId },
+          reason: "Trace the selected finding to repository-relative source ownership and exact checks before proposing a patch.",
+        };
+      } else if (repositoryTraceMission.state?.state === "blocked") {
+        status = "blocked";
+        nextActor = null;
+        nextAction = null;
+      } else {
+        status = "in-progress";
+        nextAction = {
+          tool: "submit_runtime_diagnosis",
+          input: { missionId: repositoryTraceMission.id },
+          reason: "Contribute the bounded browser reproduction, repository-relative ownership, and planned checks before proposing a patch.",
+        };
+      }
+    } else {
+      nextAction = diagnosticPriority
+        ? diagnosticNextAction({
+            findingId: diagnosticPriority.findingId,
+            evidenceState: diagnosticPriority.evidenceState,
+            diagnosticMissionId: diagnosticPriority.diagnosticMissionId,
+            nextAction: diagnosticPriority.nextAction,
+          })
+        : (repairNext
+        ? repairNext.nextAction
+        : {
+            tool: "stage_site_repair",
+            input: selectedIds.length > 1
+              ? { findingId: selectedIds[0], findingIds: selectedIds }
+              : { findingId: selectedIds[0] },
+            reason: selectedIds.length > 1
+              ? "Prepare one bounded repair package for the explicitly selected diagnosed findings."
+              : "Prepare a bounded repair draft for the explicitly selected finding.",
+          });
+      if (!diagnosticPriority && repairNext) {
+        status = repairNext.status;
+        nextActor = repairNext.nextActor;
+      }
     }
   }
 
@@ -663,6 +805,22 @@ export function deriveAuditMissionState({
     matchingFindingCount: projection.matchingFindingCount,
     categoryScores: projection.categoryScores,
     priorities: projection.priorities,
+    rankingStatus,
+    scopeVersion: mission.schemaVersion,
+    pendingRoutes,
+    priorityRanking: {
+      status: rankingStatus,
+      scopeVersion: mission.schemaVersion,
+      pendingRoutes,
+      pendingBrowserChecks: reviewOutstanding
+        ? Math.max(0, requestedBrowserCheckCount - (reviewState?.completedCheckCount ?? 0))
+        : 0,
+      reason: rankingStatus === "final"
+        ? "The retained route scope and required browser evidence are complete."
+        : siteScope.requested && !siteScopeSuccessful
+          ? "Bounded route evidence is still being collected, so priorities may change."
+          : "Required rendered-browser evidence is still being collected, so priorities may change.",
+    },
     browserReview: {
       required: reviewRequired,
       policy: reviewPolicy.mode,
@@ -673,6 +831,8 @@ export function deriveAuditMissionState({
       adoption: browserReview?.adoption ? { ...browserReview.adoption } : null,
       status: reviewState?.status === "withdrawn"
         ? "withdrawn"
+        : reviewExtensionPending
+          ? "coverage-required"
         : reviewRequired ? reviewState?.status ?? "not-opened" : "not-required",
       reviewId: browserReview?.id ?? null,
       requestedCheckCount: requestedBrowserCheckCount,
@@ -680,6 +840,8 @@ export function deriveAuditMissionState({
       issueCount: reviewState?.issueCount ?? 0,
       blockedCheckCount: reviewState?.blockedCheckCount ?? 0,
       nextCheck: reviewState?.nextCheck ?? null,
+      extensionRequired: reviewExtensionPending,
+      extensionChecks: explorationReviewTasks,
       withdrawalAvailable: reviewState?.withdrawalAvailable ?? false,
       withdrawal: reviewState?.withdrawal ?? null,
       provenance: browserReview ? browserReviewProvenance(browserReview) : null,

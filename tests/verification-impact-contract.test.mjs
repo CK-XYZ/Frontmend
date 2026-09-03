@@ -91,6 +91,61 @@ test("automatically retains failed routes and exposes only evaluated completed r
   assert.equal(value.targets.some((target) => target.path === "/discovered-only"), false);
 });
 
+test("verifies a child-only aggregate finding on exact retained routes without inventing a root failure", () => {
+  const aggregateRoot = report({
+    auditId: "aggregate-root",
+    outcomes: [["document", "passed", "document-title"]],
+  });
+  const removeRoute = report({
+    auditId: "remove-audit",
+    path: "/remove",
+    outcomes: [["mobile", "failed", "label"]],
+    findings: [{ id: "mobile-label", source: source("mobile", "label") }],
+  });
+  const wordRoute = report({
+    auditId: "word-audit",
+    path: "/word",
+    outcomes: [["desktop", "failed", "label"]],
+    findings: [{ id: "desktop-label", source: source("desktop", "label") }],
+  });
+
+  const value = createRepairVerificationImpact({
+    repairId: "aggregate-repair",
+    findingId: "site-6d9c91c2",
+    rootReport: aggregateRoot,
+    findingSource: source("mobile", "label"),
+    findingScope: {
+      rootAffected: false,
+      sources: [source("mobile", "label"), source("desktop", "label")],
+      routes: [
+        { auditId: "remove-audit", path: "/remove" },
+        { auditId: "word-audit", path: "/word" },
+      ],
+    },
+    auditedReports: [
+      { status: "complete", path: "/remove", report: removeRoute },
+      { status: "complete", path: "/word", report: wordRoute },
+    ],
+  });
+
+  assert.deepEqual(value.targets.map((target) => [target.auditId, target.path, target.required]), [
+    ["remove-audit", "/remove", true],
+    ["word-audit", "/word", true],
+  ]);
+  assert.equal(value.targets.some((target) => target.auditId === "aggregate-root"), false);
+  assert.deepEqual(
+    value.previewRows.filter((row) => row.proofKind === "provider-rule").map((row) => [
+      row.findingId,
+      row.path,
+      row.strategy,
+    ]),
+    [
+      ["site-6d9c91c2", "/remove", "mobile"],
+      ["site-6d9c91c2", "/word", "desktop"],
+    ],
+  );
+});
+
 test("accepts at most three exact server-issued candidate IDs and rejects paths or arbitrary IDs", () => {
   const selected = impact(["audit:pricing-audit"]);
   assert.equal(selected.previewRows.some((row) => row.path === "/pricing"), true);

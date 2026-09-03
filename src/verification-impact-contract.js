@@ -435,17 +435,24 @@ export function createRepairVerificationImpact({
   const browserFinding = findingSource.provider === "Frontmend browser review";
   const retainedAreas = retainedFocusAreas(focusAreas, findingSource);
   const reports = normalizeAuditedReports(rootReport, auditedReports);
+  const scopedRoutes = Array.isArray(findingScope?.routes) ? findingScope.routes : [];
+  const rootAffected = findingScope?.rootAffected !== false;
   const targets = [];
   for (const entry of reports) {
+    const scopedRoute = scopedRoutes.find((route) =>
+      (route?.auditId && route.auditId === entry.auditId)
+      || (!route?.auditId && route?.path === entry.path));
+    if (!entry.root && scopedRoutes.length && !scopedRoute) continue;
     const evidence = browserFinding
       ? { evaluated: entry.root ? [findingSource] : [], failed: entry.root ? [findingSource] : [] }
       : reportRuleEvidence(
           entry.report,
           findingSource,
-          entry.root ? [findingSource, ...(findingScope?.sources ?? [])] : [],
+          entry.root && rootAffected ? [findingSource, ...(findingScope?.sources ?? [])] : [],
         );
+    if (entry.root && !rootAffected && !evidence.evaluated.length) continue;
     if (!entry.root && !evidence.evaluated.length) continue;
-    const required = entry.root || evidence.failed.length > 0;
+    const required = (entry.root && rootAffected) || evidence.failed.length > 0;
     targets.push({
       id: targetId(entry.auditId),
       auditId: bounded(entry.auditId, 80),
@@ -454,7 +461,7 @@ export function createRepairVerificationImpact({
       root: entry.root === true,
       required,
       reason: required
-        ? entry.root
+        ? entry.root && rootAffected
           ? "Root route retained by the selected repair."
           : "The exact retained rule failed on this completed exploration route."
         : "The exact retained rule was evaluated on this completed exploration route.",

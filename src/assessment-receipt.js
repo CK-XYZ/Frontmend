@@ -103,6 +103,18 @@ export function createAssessmentReceipt({
   const diagnosticByFinding = new Map(diagnostics.map((item) => [item.findingId, item]));
   const priorities = state.priorities.slice(0, MAX_PRIORITIES).map((priority) => {
     const diagnostic = diagnosticByFinding.get(priority.findingId) ?? null;
+    const occurrences = (priority.evidenceRecords?.provider?.findings ?? [])
+      .flatMap((finding) => finding.occurrences ?? [])
+      .slice(0, 8)
+      .map((occurrence) => ({
+        occurrenceId: occurrence.occurrenceId ? text(occurrence.occurrenceId, 80) : null,
+        auditId: occurrence.auditId ? text(occurrence.auditId, 160) : null,
+        path: text(occurrence.path || "/", 256),
+        viewport: text(occurrence.viewport ?? occurrence.strategy ?? "document", 40),
+        selector: occurrence.selector ? text(occurrence.selector, 200) : null,
+        evidence: text(occurrence.evidence, 600),
+        evidenceIds: (occurrence.evidenceIds ?? []).slice(0, 4).map((item) => text(item, 240)),
+      }));
     return {
       rank: priority.rank,
       findingId: text(priority.findingId, 160),
@@ -133,6 +145,7 @@ export function createAssessmentReceipt({
         recordedAt: Number.isFinite(record.recordedAt) ? record.recordedAt : null,
       })),
       evidenceRecords: priority.evidenceRecords,
+      occurrences,
       diagnosticMissionId: diagnostic?.id ?? null,
       evidenceChain: diagnostic
         ? diagnostic.evidenceChain ?? diagnosticEvidenceChain(diagnostic)
@@ -174,6 +187,9 @@ export function createAssessmentReceipt({
       priorityCount: priorities.length,
       categoryScores: { ...state.categoryScores },
       siteScope: state.siteScope,
+      rankingStatus: state.rankingStatus,
+      scopeVersion: state.scopeVersion,
+      pendingRoutes: state.pendingRoutes,
     },
     browserReview: browserReview
       ? {
@@ -264,6 +280,7 @@ export function assessmentReceiptMarkdown(receipt) {
     `- Focus: ${receipt.mission?.focusAreas?.length ? receipt.mission.focusAreas.map((area) => markdownText(area, 40)).join(", ") : "all supported areas"}`,
     `- Requested by: ${markdownText(receipt.mission?.requestedBy, 40)}`,
     `- Assessment complete: yes`,
+    `- Priority ranking: ${markdownText(receipt.assessment?.rankingStatus ?? "final", 40)} (scope v${receipt.assessment?.scopeVersion ?? 2})`,
     `- Matching findings: ${Number.isFinite(receipt.assessment?.matchingFindingCount) ? receipt.assessment.matchingFindingCount : "—"}`,
     `- Ranked priorities: ${receipt.priorities?.length ?? 0}`,
   );
@@ -353,6 +370,18 @@ export function assessmentReceiptMarkdown(receipt) {
       `- Occurrences: ${priority.occurrenceCount}`,
       `- Measured evidence: ${markdownText(priority.evidence, 600)}`,
     );
+    if (priority.occurrences?.length) {
+      lines.push(
+        "",
+        "### Retained occurrences",
+        "",
+        "| Route | Viewport | Selector | Evidence ID |",
+        "| --- | --- | --- | --- |",
+        ...priority.occurrences.map((occurrence) =>
+          `| ${markdownText(occurrence.path, 256)} | ${markdownText(occurrence.viewport, 40)} | ${markdownText(occurrence.selector ?? "not retained", 200)} | ${markdownText(occurrence.evidenceIds?.join(", ") || occurrence.occurrenceId || "not retained", 300)} |`,
+        ),
+      );
+    }
     if (priority.evidenceChain?.stages?.length) {
       lines.push(
         "",

@@ -952,6 +952,54 @@ test("Durable Object mission workspace reads carry the current authoritative che
   }
 });
 
+test("completed Durable Object route children expose an empty browser-review workspace without inventing a child mission", async () => {
+  const auditId = "route-child-audit";
+  const state = {
+    id: auditId,
+    missionRevision: 4,
+    url: "https://example.com/remove",
+    source: "exploration",
+    mission: null,
+    exploration: {
+      rootAuditId: "root-audit",
+      parentAuditId: "root-audit",
+      observedPath: "/remove",
+      depth: 1,
+      trail: [{ auditId: "root-audit", path: "/" }],
+    },
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/remove",
+      finalUrl: "https://example.com/remove",
+      findings: [],
+    },
+  };
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => key === "state" ? state : undefined,
+      put: async () => {},
+    },
+  }, {});
+
+  const read = await job.fetch(new Request("https://frontmend.internal/browser-review"));
+  const readPayload = await read.json();
+  assert.equal(read.status, 200);
+  assert.equal(readPayload.data.auditId, auditId);
+  assert.equal(readPayload.data.review, null);
+  assert.equal(readPayload.data.missionCheckpoint.missionRevision, 4);
+
+  const open = await job.fetch(new Request("https://frontmend.internal/browser-review", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ source: "agent", expectedMissionRevision: 4 }),
+  }));
+  assert.equal(open.status, 400);
+  assert.equal((await open.json()).error.code, "BROWSER_REVIEW_NOT_REQUIRED");
+});
+
 test("Durable Object keeps an idempotent activity ledger outside mission authority", async () => {
   const auditId = "activity-ledger-audit";
   const state = {
@@ -1266,7 +1314,7 @@ test("Durable Object freezes repair intent without creating or approving a repai
     intent: "assess",
     focusAreas: ["seo"],
     maxPriorities: 3,
-    requestedBy: "agent",
+    requestedBy: "human",
     requestedAt: 10,
     repairPreparation: null,
   };
@@ -1276,7 +1324,7 @@ test("Durable Object freezes repair intent without creating or approving a repai
       id: auditId,
       attempt: 1,
       url: "https://example.com/",
-      source: "agent",
+      source: "human",
       mission,
       status: "complete",
       phase: "complete",
@@ -1329,7 +1377,7 @@ test("Durable Object freezes repair intent without creating or approving a repai
   assert.equal(firstPayload.data.mission.intent, "prepare-fix");
   assert.equal(firstPayload.data.audit.missionRevision, 2);
   assert.equal(firstPayload.data.missionCheckpoint.missionRevision, 2);
-  assert.equal(firstPayload.data.missionState.nextAction.tool, "open_browser_review");
+  assert.equal(firstPayload.data.missionState.nextAction.tool, "stage_site_repair");
   assert.equal(values.has("repairs"), false);
   assert.deepEqual(values.get("repairPolicy"), policy);
 
@@ -1349,6 +1397,67 @@ test("Durable Object freezes repair intent without creating or approving a repai
   const conflictPayload = await conflict.json();
   assert.equal(conflictPayload.error.code, "REPAIR_INTENT_CONFLICT");
   assert.equal(values.has("repairs"), false);
+});
+
+test("Durable Object rejects repair selection while agent browser evidence is still provisional", async () => {
+  const auditId = "provisional-agent-audit";
+  const state = {
+    id: auditId,
+    missionRevision: 1,
+    url: "https://example.com/",
+    source: "agent",
+    mission: {
+      schemaVersion: 2,
+      intent: "assess",
+      focusAreas: ["accessibility", "seo"],
+      maxPriorities: 3,
+      scope: "page",
+      routeLimit: 3,
+      requestedBy: "agent",
+      requestedAt: 10,
+      repairPreparation: null,
+    },
+    status: "complete",
+    phase: "complete",
+    progress: 100,
+    report: {
+      auditId,
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      findings: [{
+        id: "document-description",
+        title: "The document has no description",
+        severity: "medium",
+        focusAreas: ["seo"],
+        source: { provider: "Frontmend document audit", auditId: "description", strategy: "document" },
+      }],
+    },
+  };
+  const values = new Map([["state", state]]);
+  const job = new FrontmendAuditJob({
+    storage: {
+      get: async (key) => values.get(key),
+      put: async (key, value) => values.set(key, structuredClone(value)),
+    },
+  }, {});
+
+  const response = await job.fetch(new Request("https://frontmend.internal/mission/prepare-repair", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      findingId: "document-description",
+      source: "agent",
+      expectedMissionRevision: 1,
+    }),
+  }));
+  const payload = await response.json();
+
+  assert.equal(response.status, 409);
+  assert.equal(payload.error.code, "ASSESSMENT_INCOMPLETE");
+  assert.equal(payload.error.details.rankingStatus, "provisional");
+  assert.equal(payload.error.details.nextAction.tool, "open_browser_review");
+  assert.equal(values.get("state").missionRevision, 1);
+  assert.equal(values.get("state").mission.repairPreparation, null);
 });
 
 test("Durable Object adopts a person-started audit without restarting or duplicating it", async () => {
@@ -2211,6 +2320,14 @@ test("local development persists related-route lineage into snapshots and report
   assert.equal(completed.report.exploration.rootAuditId, parentId);
   assert.deepEqual(completed.report.exploration.trail, [{ auditId: parentId, path: "/" }]);
 
+  const browserWorkspace = await callLocalRuntime(middleware, {
+    url: `/api/audits/${queued.id}/browser-review`,
+  });
+  const browserPayload = JSON.parse(browserWorkspace.body).data;
+  assert.equal(browserWorkspace.status, 200);
+  assert.equal(browserPayload.auditId, queued.id);
+  assert.equal(browserPayload.review, null);
+
   const report = await callLocalRuntime(middleware, { url: `/api/audits/${queued.id}/report` });
   assert.match(report.body, /## Route journey/);
   assert.match(report.body, new RegExp(`Parent audit: ${parentId}`));
@@ -2318,7 +2435,7 @@ test("local development shares the bounded repair-intent transition without cons
     headers: writeHeaders,
     body: JSON.stringify({
       url: "https://example.com/",
-      source: "agent",
+      source: "human",
       mission: { focusAreas: ["seo", "accessibility"] },
     }),
   });
@@ -2459,6 +2576,63 @@ test("local development shares the bounded repair-intent transition without cons
   assert.equal(repairs.repairs.length, 1);
   assert.equal(repairs.missionCheckpoint.auditId, auditId);
   assert.deepEqual(policyAfter, policyBefore);
+});
+
+test("local runtime rejects repair selection while agent browser evidence is still provisional", async () => {
+  const middleware = createLocalAuditRuntime({
+    fetchImpl: async (input) => {
+      const url = new URL(input);
+      if (url.hostname === "pagespeedonline.googleapis.com") {
+        return Response.json({ error: { message: "rate limited" } }, { status: 429 });
+      }
+      return new Response(
+        '<!doctype html><html lang="en"><head><title>Provisional</title><meta name="viewport" content="width=device-width"></head><body><main><h1>Provisional</h1></main></body></html>',
+        { headers: { "content-type": "text/html; charset=utf-8" } },
+      );
+    },
+  });
+  const writeHeaders = { host: "localhost:3434", origin: "http://localhost:3434" };
+  const started = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: "/api/audits",
+    headers: writeHeaders,
+    body: JSON.stringify({
+      url: "https://example.com/",
+      source: "agent",
+      mission: { focusAreas: ["accessibility", "seo"] },
+    }),
+  });
+  const auditId = JSON.parse(started.body).data.id;
+  let completed;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    completed = JSON.parse((await callLocalRuntime(middleware, {
+      url: `/api/audits/${auditId}`,
+    })).body).data;
+    if (completed.status === "complete") break;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  const findingId = completed.report.findings[0].id;
+  const response = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/mission/prepare-repair`,
+    headers: writeHeaders,
+    body: JSON.stringify({
+      findingId,
+      source: "agent",
+      expectedMissionRevision: completed.missionCheckpoint.missionRevision,
+    }),
+  });
+  const payload = JSON.parse(response.body);
+
+  assert.equal(response.status, 409);
+  assert.equal(payload.error.code, "ASSESSMENT_INCOMPLETE");
+  assert.equal(payload.error.details.rankingStatus, "provisional");
+  assert.equal(payload.error.details.nextAction.tool, "open_browser_review");
+  const retained = JSON.parse((await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}`,
+  })).body).data;
+  assert.equal(retained.mission.repairPreparation, null);
+  assert.equal(retained.missionCheckpoint.missionRevision, completed.missionCheckpoint.missionRevision);
 });
 
 test("local development retries a failed audit as a fresh stable attempt", async () => {

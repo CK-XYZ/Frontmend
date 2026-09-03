@@ -299,22 +299,42 @@ async function declareEvaluationCapabilities(service, auditId, sequence) {
   }, sequence);
 }
 
-async function recordAssessmentReview(service, opened, auditId, sequence, conflict = true) {
+async function recordAssessmentReview(
+  service,
+  opened,
+  auditId,
+  sequence,
+  confirmProviderFindings = false,
+) {
   let task = opened.nextAction.browserTask;
   let last = opened;
   while (task) {
-    const providerConflict = conflict && task.trigger?.ruleId === "color-contrast";
+    const providerConfirmation = confirmProviderFindings && task.kind === "provider-confirmation";
     last = await callContextualTool(service, "record_browser_review_check", {
       auditId,
       reviewId: opened.browserReview.id,
       checkId: task.id,
-      outcome: "passed",
-      summary: providerConflict
-        ? "The retained control appeared readable in the deterministic rendered observation."
+      outcome: providerConfirmation ? "issue" : "passed",
+      summary: providerConfirmation
+        ? "The retained provider symptom was reproduced in the deterministic rendered observation."
         : "The retained rendered check completed without an observed issue.",
-      observations: [providerConflict
-        ? "The foreground and background were visually distinct at the retained selector."
+      observations: [providerConfirmation
+        ? "The exact retained element reproduced the assigned symptom at the requested route and viewport."
         : "The rendered page exposed the expected bounded structure."],
+      ...(providerConfirmation
+        ? {
+            findings: [{
+              title: task.label,
+              severity: ["high", "medium", "low"].includes(task.severity)
+                ? task.severity
+                : "medium",
+              focusArea: task.focusArea,
+              evidence: "The exact retained element reproduced the assigned provider symptom.",
+              suggestedRepair: "Trace the retained symptom to repository ownership before proposing a repair.",
+              element: task.trigger?.selector ?? "retained rendered target",
+            }],
+          }
+        : {}),
     }, sequence);
     task = last.nextAction?.tool === "record_browser_review_check"
       ? last.nextAction.browserTask
@@ -444,7 +464,22 @@ async function runMainScenario(adapter, controller) {
       : null;
   }
 
-  const confirmedResults = await callContextualTool(service, "get_site_audit_results", { auditId }, sequence);
+  let confirmedResults = await callContextualTool(service, "get_site_audit_results", { auditId }, sequence);
+  while (confirmedResults.missionState.nextAction?.tool === "open_browser_review") {
+    const extendedReview = await callContextualTool(
+      service,
+      "open_browser_review",
+      { auditId },
+      sequence,
+    );
+    await recordAssessmentReview(service, extendedReview, auditId, sequence, true);
+    confirmedResults = await callContextualTool(
+      service,
+      "get_site_audit_results",
+      { auditId },
+      sequence,
+    );
+  }
   const contrastPriority = confirmedResults.priorities.find((priority) => priority.findingId === "mobile-color-contrast");
   assert.equal(contrastPriority.relationship, "diagnosis-required");
   assert.equal(contrastPriority.unresolvedRequirement !== null, true);

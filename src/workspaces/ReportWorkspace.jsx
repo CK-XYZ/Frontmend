@@ -864,6 +864,15 @@ function evidenceRelationshipLabel(value) {
 
 function MissionPriorities({ state, selectedFindingId, onSelect, detailId }) {
   const titleId = useId();
+  const rankingLabel = state.rankingStatus === "provisional"
+    ? state.pendingRoutes > 0
+      ? `${state.pendingRoutes} route${state.pendingRoutes === 1 ? "" : "s"} pending`
+      : "Finalising"
+    : state.assessmentComplete
+      ? "Final"
+      : state.status === "blocked"
+        ? "Blocked"
+        : "Active";
   return (
     <section className="mission-priorities" aria-labelledby={titleId}>
       <header>
@@ -875,7 +884,7 @@ function MissionPriorities({ state, selectedFindingId, onSelect, detailId }) {
               : "No matching failed rules"}
           </h3>
         </div>
-        <span>{state.assessmentComplete ? "Complete" : state.status === "blocked" ? "Blocked" : "Active"}</span>
+        <span>{rankingLabel}</span>
       </header>
       {state.priorities.length ? (
         <ol>
@@ -920,7 +929,8 @@ function MissionPriorities({ state, selectedFindingId, onSelect, detailId }) {
         </p>
       )}
       <small className="mission-priorities-boundary">
-        Ranked by the retained mission. The complete bounded evidence queue remains below.
+        {state.priorityRanking?.reason ?? "Ranked by the retained mission."} The complete bounded
+        evidence queue remains below.
       </small>
     </section>
   );
@@ -1623,8 +1633,15 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const [siteExplorations, setSiteExplorations] = useState(() => auditService.getSiteExplorations(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
   const [agentCapabilities, setAgentCapabilities] = useState(() => auditService.getAgentCapabilities(report.auditId));
-  const [workspaceReadError, setWorkspaceReadError] = useState("");
-  const [workspaceUnavailable, setWorkspaceUnavailable] = useState([]);
+  const restoredWorkspacePartial = audit.missionWorkspace?.status === "partial";
+  const [workspaceReadError, setWorkspaceReadError] = useState(
+    restoredWorkspacePartial
+      ? "The persisted audit evidence was restored, but not every mission record could be read coherently."
+      : "",
+  );
+  const [workspaceUnavailable, setWorkspaceUnavailable] = useState(
+    restoredWorkspacePartial ? [...(audit.missionWorkspace?.unavailable ?? [])] : [],
+  );
   const [isRefreshingWorkspace, setIsRefreshingWorkspace] = useState(false);
   const [workspaceRefreshAttempt, setWorkspaceRefreshAttempt] = useState(0);
   const mission = retainedAuditMission(audit);
@@ -1636,7 +1653,10 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     browserReview,
     explorations: siteExplorations,
   });
-  const findings = useMemo(() => assessmentFindings(report, browserReview), [report, browserReview]);
+  const findings = useMemo(
+    () => assessmentFindings(report, browserReview, siteExplorations),
+    [report, browserReview, siteExplorations],
+  );
   const missionPriorityFindings = missionState.priorities
     .map((priority) => findings.find((finding) => finding.id === priority.findingId))
     .filter(Boolean);
@@ -1687,11 +1707,19 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const preparedFindings = preparedFindingIds.map((id) => findings.find((finding) => finding.id === id)).filter(Boolean);
   const selectedRepairPrepared = preparedFindingIds.includes(selectedFinding?.id);
   const selectedDiagnosticReady = selectedRepairPrepared
-    ? preparedFindings.every((finding) => !findingRequiresDiagnosticMission(finding)
-      || diagnosticMissions.find((item) => item.findingId === finding.id)?.state?.state === "ready-for-repair")
+    ? mission.repairPreparation?.requestedBy === "agent"
+      ? preparedFindings.every((finding) =>
+          diagnosticMissions.find((item) => item.findingId === finding.id)?.state?.state === "ready-for-repair")
+      : preparedFindings.every((finding) => !findingRequiresDiagnosticMission(finding)
+        || diagnosticMissions.find((item) => item.findingId === finding.id)?.state?.state === "ready-for-repair")
     : selectedFinding
       ? !findingRequiresDiagnosticMission(selectedFinding) || selectedDiagnosticMission?.state?.state === "ready-for-repair"
       : false;
+  const agentRepositoryTracePending = Boolean(
+    selectedRepairPrepared
+    && mission.repairPreparation?.requestedBy === "agent"
+    && !selectedDiagnosticReady,
+  );
   const repairReadyPriorities = missionState.priorities.filter((priority) => {
     const finding = findings.find((item) => item.id === priority.findingId);
     if (!finding) return false;
@@ -1750,7 +1778,11 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         setWorkspaceReadError("");
       } catch (cause) {
         if (!active) return;
-        setWorkspaceUnavailable([]);
+        setWorkspaceUnavailable(
+          cause instanceof AuditError && Array.isArray(cause.details?.requirements)
+            ? cause.details.requirements.map((requirement) => requirement.artifact).filter(Boolean)
+            : [],
+        );
         setWorkspaceReadError(
           cause instanceof AuditError
             ? cause.message
@@ -1933,7 +1965,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         <div className="mission-workspace-read-warning" role="alert">
           <Warning size={19} weight="fill" aria-hidden="true" />
           <div>
-            <strong>Mission details temporarily unavailable</strong>
+            <strong>{restoredWorkspacePartial ? "Evidence restored · mission actions paused" : "Mission details temporarily unavailable"}</strong>
             <p>
               {workspaceReadError}
               {workspaceUnavailable.length
@@ -1947,7 +1979,9 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                 : ""}
             </p>
             <small>
-              The last coherent mission remains visible. Frontmend retries automatically and never replays an action.
+              {restoredWorkspacePartial
+                ? "This persisted report remains readable in a fail-closed mode. Frontmend retries automatically; no mission action is replayed or allowed until every record is coherent."
+                : "The last coherent mission remains visible. Frontmend retries automatically and never replays an action."}
             </small>
           </div>
           <button type="button" onClick={retryMissionWorkspace} disabled={isRefreshingWorkspace}>
@@ -2211,7 +2245,11 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                     <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
                     <p>{selectedFinding.summary}</p>
                     <EvidenceCapsuleCard capsule={selectedEvidenceCapsule} />
-                    {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
+                    {selectedFinding && (
+                      selectedDiagnosticMission
+                      || findingRequiresDiagnosticMission(selectedFinding)
+                      || (selectedRepairPrepared && mission.repairPreparation?.requestedBy === "agent")
+                    ) ? (
                       <LazyWorkspace
                         load={loadDiagnosisWorkspace}
                         label="repository diagnosis workspace"
@@ -2320,16 +2358,26 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
           <section className="case-file-section case-file-next-step" id="case-next-step" aria-labelledby="case-next-step-title">
             <CaseSectionMarker number="05" label="Next step" />
             <h2 id="case-next-step-title">
-              {selectedFinding ? "Prepare a fix" : "No repair action is required"}
+              {selectedFinding
+                ? !missionState.assessmentComplete
+                  ? "Finish the evidence first"
+                  : agentRepositoryTracePending
+                    ? "Map the repair to source"
+                    : "Prepare a fix"
+                : "No repair action is required"}
             </h2>
             <p className="case-file-lede">
               {selectedFinding
-                ? selectedDiagnosticReady || selectedRepairPrepared
-                  ? "Frontmend can record a bounded repair proposal for review. Preparation is not approval, implementation, deployment, or proof that the issue is resolved."
-                  : "Repair controls unlock only after the retained symptom has supported browser and repository diagnosis. No proposal, code change, or deployment has been authorised."
+                ? !missionState.assessmentComplete
+                  ? `${missionState.priorityRanking?.reason ?? "The retained assessment is still collecting evidence."} Repair selection stays locked until the ranking is final.`
+                  : agentRepositoryTracePending
+                    ? "Repair intent is recorded, but the coding agent must now contribute the exact browser reproduction, repository-relative source locations, and checks it actually obtained. No generic patch is staged from guessed ownership."
+                    : selectedDiagnosticReady || selectedRepairPrepared
+                      ? "Frontmend can record a bounded repair proposal for review. Preparation is not approval, implementation, deployment, or proof that the issue is resolved."
+                      : "Repair controls unlock only after the retained symptom has supported browser and repository diagnosis. No proposal, code change, or deployment has been authorised."
                 : "The retained assessment has no ranked repair target. You can still export the evidence or continue with an optional rendered review."}
             </p>
-            {selectedFinding && (selectedDiagnosticReady || selectedRepairPrepared) ? (
+            {selectedFinding && missionState.assessmentComplete && (selectedDiagnosticReady || selectedRepairPrepared) ? (
               <PrepareRepairIntent
                 auditId={report.auditId}
                 priority={selectedPriority}

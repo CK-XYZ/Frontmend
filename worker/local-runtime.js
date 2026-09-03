@@ -59,6 +59,7 @@ import {
   browserReviewSnapshot,
   createBrowserReviewMission,
   createBrowserVerificationReview,
+  extendBrowserReviewMission,
   isIdenticalBrowserReviewContribution,
   recordBrowserReviewCheck,
   withdrawBrowserReview,
@@ -918,7 +919,11 @@ export function createLocalAuditRuntime(options = {}) {
         } catch (error) {
           return sendError(response, error, 400);
         }
-        const retainedFindings = assessmentFindings(baseline.report, baseline.browserReview);
+        const retainedFindings = assessmentFindings(
+          baseline.report,
+          baseline.browserReview,
+          baseline.explorations ?? [],
+        );
         const findings = requestedFindingIds.map((id) => retainedFindings.find((item) => item.id === id));
         if (findings.some((finding) => !finding)) {
           return sendError(response, new AuditError("FINDING_NOT_FOUND", "Every repair-package finding must belong to this completed audit."), 404);
@@ -942,13 +947,33 @@ export function createLocalAuditRuntime(options = {}) {
           });
         }
         try {
+          const currentMission = retainedMission ?? createAuditMission(
+            {},
+            baseline.source === "agent" ? "agent" : "human",
+            Number.isInteger(baseline.createdAt) ? baseline.createdAt : Date.now(),
+          );
+          const currentMissionState = deriveAuditMissionState({
+            report: baseline.report,
+            mission: currentMission,
+            diagnosticMissions: baseline.diagnosticMissions ?? [],
+            repairs: baseline.repairs ?? [],
+            browserReview: baseline.browserReview ?? null,
+            explorations: baseline.explorations ?? [],
+          });
+          if (!currentMissionState.assessmentComplete) {
+            throw new AuditError(
+              "ASSESSMENT_INCOMPLETE",
+              "Finish the retained browser, route, and diagnostic evidence before selecting a repair package.",
+              true,
+              {
+                rankingStatus: currentMissionState.rankingStatus,
+                nextAction: currentMissionState.nextAction,
+              },
+            );
+          }
           assertLocalRevision(baseline, input.expectedMissionRevision);
           baseline.mission = prepareRepairIntent(
-            retainedMission ?? createAuditMission(
-              {},
-              baseline.source === "agent" ? "agent" : "human",
-              Number.isInteger(baseline.createdAt) ? baseline.createdAt : Date.now(),
-            ),
+            currentMission,
             requestedFindingIds,
             input.source,
           );
@@ -969,7 +994,11 @@ export function createLocalAuditRuntime(options = {}) {
             }),
           });
         } catch (error) {
-          return sendError(response, error, error?.code === "REPAIR_INTENT_CONFLICT" ? 409 : 400);
+          return sendError(
+            response,
+            error,
+            ["REPAIR_INTENT_CONFLICT", "ASSESSMENT_INCOMPLETE"].includes(error?.code) ? 409 : 400,
+          );
         }
       }
 
@@ -1030,7 +1059,11 @@ export function createLocalAuditRuntime(options = {}) {
           const input = await readBody(request);
           const extra = Object.keys(input ?? {}).find((key) => !["findingId", "expectedMissionRevision"].includes(key));
           if (extra) return sendError(response, new AuditError("INVALID_DIAGNOSTIC_EVIDENCE", `Unknown diagnostic field: ${extra}.`));
-          const finding = assessmentFindings(baseline.report, baseline.browserReview).find((item) => item.id === input?.findingId);
+          const finding = assessmentFindings(
+            baseline.report,
+            baseline.browserReview,
+            baseline.explorations ?? [],
+          ).find((item) => item.id === input?.findingId);
           if (!finding) return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
           const existing = baseline.diagnosticMissions.find((mission) => mission.findingId === finding.id);
           if (existing) return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, diagnosticMissionSnapshot(existing)) });
@@ -1049,7 +1082,10 @@ export function createLocalAuditRuntime(options = {}) {
           const mission = createDiagnosticMission({
             auditId,
             finding,
-            relationship: priority?.relationship ?? null,
+            relationship: baseline.mission?.repairPreparation?.requestedBy === "agent"
+              && baseline.mission.repairPreparation.findingIds.includes(finding.id)
+              ? "repair-trace-required"
+              : priority?.relationship ?? null,
           });
           baseline.diagnosticMissions.push(mission);
           advanceLocalRevision(baseline);
@@ -1101,7 +1137,7 @@ export function createLocalAuditRuntime(options = {}) {
         const verificationReplay = baseline.verification?.browserReplay?.required === true
           || (baseline.verification?.browserReplays?.length ?? 0) > 0
           || (baseline.verification?.browserGuardrails?.length ?? 0) > 0;
-        if (baseline.status !== "complete" || !baseline.report || (!baseline.mission && !verificationReplay)) {
+        if (baseline.status !== "complete" || !baseline.report) {
           return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the measurement before opening its browser review."), 409);
         }
         if (!rawReviewId && request.method === "GET") {
@@ -1120,8 +1156,42 @@ export function createLocalAuditRuntime(options = {}) {
             (key) => !["source", "focusAreas", "expectedMissionRevision"].includes(key),
           );
           if (extra) return sendError(response, new AuditError("INVALID_BROWSER_REVIEW", `Unknown browser review field: ${extra}.`));
-          if (baseline.browserReview) return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, browserReviewSnapshot(baseline.browserReview)) });
+          if (baseline.browserReview) {
+            const current = browserReviewSnapshot(baseline.browserReview);
+            const explorationFindings = assessmentFindings(
+              baseline.report,
+              null,
+              baseline.explorations ?? [],
+            ).filter((finding) => finding.aggregateEvidence);
+            const extended = baseline.mission && explorationFindings.length
+              ? extendBrowserReviewMission({
+                  review: current,
+                  report: { ...baseline.report, findings: explorationFindings },
+                  mission: baseline.mission,
+                  target: baseline.report.finalUrl ?? baseline.report.url ?? baseline.url,
+                })
+              : current;
+            if (extended.requestedChecks.length > current.requestedChecks.length) {
+              assertLocalRevision(baseline, input?.expectedMissionRevision);
+              baseline.browserReview = extended;
+              advanceLocalRevision(baseline);
+              return sendJson(response, 201, {
+                ok: true,
+                data: checkpointedLocal(baseline, baseline.browserReview),
+              });
+            }
+            return sendJson(response, 200, {
+              ok: true,
+              data: checkpointedLocal(baseline, current),
+            });
+          }
           try {
+            if (!baseline.mission && !verificationReplay) {
+              throw new AuditError(
+                "BROWSER_REVIEW_NOT_REQUIRED",
+                "This related audit has no standalone browser-review mission. Continue from its root audit workspace.",
+              );
+            }
             assertLocalRevision(baseline, input?.expectedMissionRevision);
             baseline.browserReview = verificationReplay
               ? createBrowserVerificationReview({
@@ -1247,7 +1317,11 @@ export function createLocalAuditRuntime(options = {}) {
         } catch (error) {
           return sendError(response, error, 400);
         }
-        const retainedFindings = assessmentFindings(baseline.report, baseline.browserReview);
+        const retainedFindings = assessmentFindings(
+          baseline.report,
+          baseline.browserReview,
+          baseline.explorations ?? [],
+        );
         const findings = requestedFindingIds.map((id) => retainedFindings.find((item) => item.id === id));
         if (findings.some((finding) => !finding)) {
           return sendError(response, new AuditError("FINDING_NOT_FOUND", "Every repair-package finding must belong to this completed audit."), 404);
@@ -1407,7 +1481,11 @@ export function createLocalAuditRuntime(options = {}) {
           } catch (error) {
             return sendError(response, error, 400);
           }
-          const retainedFindings = assessmentFindings(baseline.report, baseline.browserReview);
+          const retainedFindings = assessmentFindings(
+            baseline.report,
+            baseline.browserReview,
+            baseline.explorations ?? [],
+          );
           const findings = requestedFindingIds.map((id) => retainedFindings.find((item) => item.id === id));
           if (findings.some((finding) => !finding)) {
             return sendError(response, new AuditError("FINDING_NOT_FOUND", "Every repair-package finding must belong to this completed audit."), 404);
@@ -1453,12 +1531,18 @@ export function createLocalAuditRuntime(options = {}) {
           const packageDiagnosticMissions = [];
           for (const finding of findings) {
             const priority = priorities.find((item) => item.findingId === finding.id);
-            const diagnosticRequired = findingRequiresDiagnosticMission(finding) || priority?.diagnosticMissionRequired;
+            const diagnosticRequired = findingRequiresDiagnosticMission(finding)
+              || priority?.diagnosticMissionRequired
+              || baseline.mission?.repairPreparation?.requestedBy === "agent";
             const diagnosticMission = (baseline.diagnosticMissions ?? []).find((mission) => mission.findingId === finding.id) ?? null;
-            if (diagnosticRequired && (source === "agent" || findings.length > 1) && diagnosticMission?.state?.state !== "ready-for-repair") {
+            if (
+              diagnosticRequired
+              && (source === "agent" || findings.length > 1 || baseline.mission?.repairPreparation?.requestedBy === "agent")
+              && diagnosticMission?.state?.state !== "ready-for-repair"
+            ) {
               return sendError(response, new AuditError(
                 "DIAGNOSTIC_MISSION_REQUIRED",
-                "Every diagnosis-required finding in this package must have repair-ready runtime and repository evidence before staging.",
+                "Every agent-prepared finding must have repair-ready browser and repository trace evidence before staging.",
               ), 409);
             }
             if (diagnosticMission?.state?.state === "ready-for-repair") packageDiagnosticMissions.push(diagnosticMissionForRepair(diagnosticMission));
