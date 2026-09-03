@@ -101,3 +101,41 @@ ChromeSight captured fresh mobile (390 × 844), tablet (768 × 1024), desktop (1
 The bounded Chrome DevTools evidence session covered clean restoration, repeated responsive captures, disclosure interaction, and the final comparison: 531 responses, zero HTTP errors, zero failed loads, zero console/runtime errors, and zero dropped events. Full tests passed (365/365), contract tests passed (160/160), lint and TypeScript checks passed, production build passed, `git diff --check` passed, and the Wrangler deployment dry run passed. No server was started, and nothing was deployed.
 
 final result: passed
+
+## 4 September 2026 — landing evidence-card scale refinement
+
+- Source visual truth: `C:\Users\calvi\AppData\Local\Temp\codex-clipboard-92b9733a-f6f6-4db2-b760-704f2bb1ece4.png`, 2113 × 1252 pixels, supplied by the product owner as the current landing reference.
+- Pre-change implementation: `https://frontmend.dev/`, captured through ChromeSight at 2184 × 1214 CSS pixels and device scale factor 1; capture SHA-256 `ee973249c9d6ec6c5c3985bfbf333aee258012fe35755d747322cc71b34a0925`.
+- Revised implementation screenshot: unavailable. The project contract forbids Codex from starting a local development or preview server, and the CSS change has not been deployed.
+- State: landing hero at the top of the page, default composer state, no hover or keyboard focus treatment active.
+
+### Full-view comparison
+
+The pre-change live capture confirms the imbalance named in review: the hero copy occupies about 719px while the whole evidence stack occupies about 513px, and the first specimen face is only about 329px wide. The selected reference calls for a stronger right-side evidence run. The source revision changes only the desktop hero track ratio and the label-to-specimen ratio, targeting roughly 400px specimen faces while preserving the URL form, copy hierarchy, continuous thread, and existing tablet/mobile single-column behavior.
+
+### Focused-region comparison
+
+ChromeSight inspected `.hero-inner`, `.hero-copy`, `.specimen-stack`, `.specimen-visual`, and `.specimen-visual > *` on the current deployed page before the edit. A post-edit focused capture cannot be produced until the revised source is served. The absence of that capture blocks visual comparison of card scale, label wrapping, right-edge clearance, and the five-card stack height.
+
+### Required fidelity surfaces
+
+- Fonts and typography: no font, type size, weight, line-height, or copy changed; post-edit wrapping still needs rendered confirmation.
+- Spacing and layout rhythm: desktop column and specimen ratios changed; this is the intended refinement and the only visual surface requiring recheck.
+- Colours and visual tokens: unchanged.
+- Image quality and asset fidelity: existing Frontmend logo and mineral-terrain assets are unchanged.
+- Copy and content: unchanged.
+
+### Comparison history
+
+1. Pre-change live evidence — P2: the five specimen faces read as thumbnails beside a much heavier copy/form column.
+2. Source fix — changed the wide hero split from `1.4fr / 1fr` to `1.25fr / 1.1fr`, the specimen split from `0.56fr / 1fr` to `0.44fr / 1fr`, and made the same proportional correction at the 1180px breakpoint.
+3. Static verification — production build passed; landing accessibility/public-discovery tests passed 15/15; Wrangler dry run and `git diff --check` passed. The complete suite remains at 422/425 because three unrelated in-progress v8/activity-ledger assertions already fail.
+4. Post-fix visual evidence — blocked until the user starts the local server or separately authorises deployment of the revised CSS.
+
+### Implementation checklist
+
+- Capture the revised hero at the same 2184 × 1214 viewport in ChromeSight.
+- Confirm all five cards remain inside the safe right edge and no label gains an awkward wrap.
+- Compare the focused specimen stack to the supplied reference before resuming the Remotion opener.
+
+final result: blocked

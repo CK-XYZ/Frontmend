@@ -3,6 +3,7 @@ import { AuditError } from "./url-policy.js";
 export const ACTIVITY_LEDGER_LIMIT = 20;
 export const ACTIVITY_ACTOR_CLASSES = Object.freeze(["person-ui", "webmcp-agent", "system"]);
 const TERMINAL_STATUSES = Object.freeze(["succeeded", "failed"]);
+const OPERATION_KINDS = Object.freeze(["read", "mutation"]);
 export const ACTIVITY_TOOL_TITLES = Object.freeze({
   start_site_audit: "Start site audit",
   check_site_audit_progress: "Check site audit progress",
@@ -46,10 +47,15 @@ const ALLOWED_FIELDS = new Set([
   "title",
   "status",
   "actorClass",
+  "operationKind",
   ...IDENTIFIER_FIELDS,
   "errorCode",
   "missionRevisionBefore",
   "missionRevisionAfter",
+  "activeToolCountBefore",
+  "activeToolCountAfter",
+  "outputCharacters",
+  "nextTool",
   "startedAt",
   "completedAt",
 ]);
@@ -76,6 +82,14 @@ function timestamp(value, field) {
   return Math.round(value);
 }
 
+function optionalCount(value, field, maximum) {
+  if (value == null) return null;
+  if (!Number.isInteger(value) || value < 0 || value > maximum) {
+    throw new AuditError("INVALID_ACTIVITY_LEDGER", `${field} must be an integer between 0 and ${maximum}.`);
+  }
+  return value;
+}
+
 export function createActivityLedgerRecord(input, expectedAuditId = undefined) {
   if (!input || typeof input !== "object" || Array.isArray(input)) {
     throw new AuditError("INVALID_ACTIVITY_LEDGER", "The activity ledger record must be an object.");
@@ -92,6 +106,10 @@ export function createActivityLedgerRecord(input, expectedAuditId = undefined) {
   if (!ACTIVITY_ACTOR_CLASSES.includes(input.actorClass)) {
     throw new AuditError("INVALID_ACTIVITY_LEDGER", "actorClass must be person-ui, webmcp-agent, or system.");
   }
+  const operationKind = input.operationKind == null ? null : input.operationKind;
+  if (operationKind !== null && !OPERATION_KINDS.includes(operationKind)) {
+    throw new AuditError("INVALID_ACTIVITY_LEDGER", "operationKind must be read or mutation.");
+  }
   const before = revision(input.missionRevisionBefore, "missionRevisionBefore");
   const after = revision(input.missionRevisionAfter, "missionRevisionAfter");
   if (after < before) {
@@ -107,12 +125,17 @@ export function createActivityLedgerRecord(input, expectedAuditId = undefined) {
   if (!title) {
     throw new AuditError("INVALID_ACTIVITY_LEDGER", "tool must name a current Frontmend semantic action.");
   }
+  const nextTool = boundedString(input.nextTool, "nextTool", 80, true);
+  if (nextTool && !ACTIVITY_TOOL_TITLES[nextTool]) {
+    throw new AuditError("INVALID_ACTIVITY_LEDGER", "nextTool must name a current Frontmend semantic action.");
+  }
   const record = {
     id: boundedString(input.id, "id", 120),
     tool,
     title,
     status: input.status,
     actorClass: input.actorClass,
+    ...(Object.hasOwn(input, "operationKind") ? { operationKind } : {}),
     auditId,
     repairId: boundedString(input.repairId, "repairId", 80, true),
     diagnosticMissionId: boundedString(input.diagnosticMissionId, "diagnosticMissionId", 160, true),
@@ -121,6 +144,16 @@ export function createActivityLedgerRecord(input, expectedAuditId = undefined) {
     errorCode: boundedString(input.errorCode, "errorCode", 80, true),
     missionRevisionBefore: before,
     missionRevisionAfter: after,
+    ...(Object.hasOwn(input, "activeToolCountBefore")
+      ? { activeToolCountBefore: optionalCount(input.activeToolCountBefore, "activeToolCountBefore", 100) }
+      : {}),
+    ...(Object.hasOwn(input, "activeToolCountAfter")
+      ? { activeToolCountAfter: optionalCount(input.activeToolCountAfter, "activeToolCountAfter", 100) }
+      : {}),
+    ...(Object.hasOwn(input, "outputCharacters")
+      ? { outputCharacters: optionalCount(input.outputCharacters, "outputCharacters", 1_000_000) }
+      : {}),
+    ...(Object.hasOwn(input, "nextTool") ? { nextTool } : {}),
     startedAt,
     completedAt,
   };
@@ -155,6 +188,8 @@ export const activityLedgerBoundary = Object.freeze({
   included: [
     "semantic tool name and status",
     "mission revision before and after",
+    "read or mutation class, contextual tool counts, and bounded output size",
+    "next semantic tool when one is returned",
     "bounded audit and workflow identifiers",
     "error code, actor class, and timestamps",
   ],

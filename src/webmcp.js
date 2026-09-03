@@ -42,6 +42,7 @@ import {
   FRONTMEND_TOOL_COUNT,
   FRONTMEND_TOOL_LIBRARY_VERSION,
 } from "./protocol-contract.js";
+import { serializedCharacterCount } from "./webmcp-budget-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 const expectedMissionRevisionProperty = {
@@ -197,6 +198,69 @@ function safeCheckpoint(service, auditId, result) {
   }
 }
 
+function compactAction(action, reasonMaximum = 180) {
+  if (!action?.tool) return null;
+  return {
+    tool: action.tool,
+    input: action.input && typeof action.input === "object" && !Array.isArray(action.input)
+      ? JSON.parse(JSON.stringify(action.input))
+      : {},
+    ...(typeof action.reason === "string" && action.reason
+      ? { reason: action.reason.slice(0, reasonMaximum) }
+      : {}),
+  };
+}
+
+function compactAgentRun(agentRun) {
+  if (!agentRun || typeof agentRun !== "object") return null;
+  return {
+    schemaVersion: Number.isInteger(agentRun.schemaVersion) ? agentRun.schemaVersion : 1,
+    mode: agentRun.mode ?? "complete",
+    continueAutomatically: agentRun.continueAutomatically === true,
+    ...(Number.isFinite(agentRun.retryAfterMs) ? { retryAfterMs: agentRun.retryAfterMs } : {}),
+  };
+}
+
+function compactCheckpoint(checkpoint) {
+  if (!checkpoint || typeof checkpoint !== "object") return null;
+  return {
+    missionRevision: Number.isInteger(checkpoint.missionRevision) ? checkpoint.missionRevision : 0,
+    status: checkpoint.status ?? "unknown",
+    nextActor: checkpoint.nextActor ?? null,
+  };
+}
+
+function compactCompletionCriteria(criteria) {
+  return (Array.isArray(criteria) ? criteria : [])
+    .slice(0, 2)
+    .map((item) => String(item).slice(0, 180));
+}
+
+function compactCapabilityNegotiation(value) {
+  if (!value || typeof value !== "object") return null;
+  return {
+    status: value.status ?? "not-required",
+    requiredCapabilities: [...(value.requiredCapabilities ?? [])],
+    missingCapabilities: [...(value.missingCapabilities ?? [])],
+  };
+}
+
+function activeToolNames(service) {
+  try {
+    return contextualFrontmendToolNames(service);
+  } catch {
+    return [];
+  }
+}
+
+function toolsetRevision(service) {
+  const audit = service?.getActiveAudit?.();
+  const checkpoint = safeCheckpoint(service, audit?.id ?? null, null);
+  return Number.isInteger(checkpoint?.missionRevision)
+    ? checkpoint.missionRevision
+    : Number.isInteger(audit?.missionRevision) ? audit.missionRevision : 0;
+}
+
 function protocolEnvelope(service, result, input) {
   const auditId = activeAuditId(service, result, input);
   const checkpoint = safeCheckpoint(service, auditId, result);
@@ -204,16 +268,14 @@ function protocolEnvelope(service, result, input) {
   const missionRevision = Number.isInteger(checkpoint?.missionRevision)
     ? checkpoint.missionRevision
     : Number.isInteger(activeAudit?.missionRevision) ? activeAudit.missionRevision : 0;
-  const action = checkpoint?.action
-    ?? result?.data?.nextAction
-    ?? result?.data?.recommendedNextAction
-    ?? null;
-  let activeTools = [];
-  try {
-    activeTools = contextualFrontmendToolNames(service);
-  } catch {
-    activeTools = [];
-  }
+  const action = result?.error?.code === "TOOLSET_CHANGED"
+    ? result.error.details?.recovery ?? null
+    : checkpoint?.action
+      ?? result?.data?.nextAction
+      ?? result?.data?.recommendedNextAction
+      ?? null;
+  const activeTools = activeToolNames(service);
+  const next = compactAction(action);
   return {
     protocolVersion: FRONTMEND_PROTOCOL_VERSION,
     toolLibraryVersion: FRONTMEND_TOOL_LIBRARY_VERSION,
@@ -223,19 +285,17 @@ function protocolEnvelope(service, result, input) {
     workspacePath: result?.data?.workspacePath
       ?? (auditId ? `/audits/${encodeURIComponent(auditId)}` : "/"),
     activeToolCount: activeTools.length,
-    next: action?.tool
+    next: next?.tool
       ? {
-          tool: action.tool,
-          input: action.input && typeof action.input === "object" && !Array.isArray(action.input)
-            ? JSON.parse(JSON.stringify(action.input))
-            : {},
-          requiredCapability: checkpoint?.requiredCapability
-            ?? TOOL_CAPABILITIES[action.tool]
-            ?? null,
-          ...(typeof action.reason === "string" && action.reason ? { reason: action.reason } : {}),
+          ...next,
+          requiredCapability: result?.error?.code === "TOOLSET_CHANGED"
+            ? TOOL_CAPABILITIES[next.tool] ?? null
+            : checkpoint?.requiredCapability
+              ?? TOOL_CAPABILITIES[next.tool]
+              ?? null,
         }
       : null,
-    agentRun: checkpoint?.agentRun ?? result?.data?.agentRun ?? null,
+    agentRun: compactAgentRun(checkpoint?.agentRun ?? result?.data?.agentRun),
   };
 }
 
@@ -261,6 +321,25 @@ function compactPriority(priority) {
   };
 }
 
+function compactSummaryPriority(priority) {
+  return {
+    rank: priority.rank,
+    findingId: priority.findingId,
+    title: typeof priority.title === "string" ? priority.title.slice(0, 140) : "Untitled finding",
+    severity: priority.severity,
+    category: priority.category,
+    relationship: priority.relationship,
+    evidenceState: priority.evidenceState,
+    occurrenceCount: priority.occurrenceCount,
+    affectedStrategies: [...(priority.affectedStrategies ?? [])],
+    diagnosticMissionRequired: priority.diagnosticMissionRequired,
+    diagnosticBlocker: priority.diagnosticBlocker ?? null,
+    unresolvedRequirement: priority.unresolvedRequirement ?? null,
+    source: priority.source,
+    nextTool: priority.nextAction?.tool ?? null,
+  };
+}
+
 function compactBrowserReview(review) {
   if (!review) return null;
   return {
@@ -278,28 +357,61 @@ function compactBrowserReview(review) {
 
 function compactMissionState(missionState) {
   return {
-    ...missionState,
-    priorities: missionState.priorities.map(compactPriority),
+    status: missionState.status,
+    auditComplete: missionState.auditComplete,
+    measurementComplete: missionState.measurementComplete,
+    assessmentComplete: missionState.assessmentComplete,
+    assessmentStatus: missionState.assessmentStatus,
+    rankingStatus: missionState.rankingStatus,
+    checkpointStatus: missionState.checkpointStatus,
+    explorationStatus: missionState.explorationStatus,
+    matchingFindingCount: missionState.matchingFindingCount,
+    priorityCount: missionState.priorityCount,
+    siteScope: missionState.siteScope
+      ? {
+          requested: missionState.siteScope.requested === true,
+          status: missionState.siteScope.status,
+          pagesComplete: missionState.siteScope.pagesComplete ?? 0,
+          pagesRequested: missionState.siteScope.pagesRequested ?? 0,
+          routeCandidates: (missionState.siteScope.routeCandidates ?? []).map((candidate) => ({
+            id: candidate.id,
+            path: candidate.path,
+          })),
+        }
+      : null,
+    browserReview: missionState.browserReview
+      ? {
+          required: missionState.browserReview.required === true,
+          status: missionState.browserReview.status,
+        }
+      : null,
+    repairReadiness: missionState.repairReadiness
+      ? {
+          status: missionState.repairReadiness.status,
+          blocker: missionState.repairReadiness.blocker ?? null,
+        }
+      : null,
+    nextAction: compactAction(missionState.nextAction),
   };
 }
 
 function compactAuditReport(report) {
   return {
     auditId: report.auditId,
-    url: report.url,
-    finalUrl: report.finalUrl,
     completedAt: report.completedAt,
     score: report.score,
-    checks: report.checks,
     findingCount: report.findingCount,
-    engine: report.engine,
+    engine: report.engine
+      ? {
+          mode: report.engine.mode,
+          provider: report.engine.provider,
+          fallback: report.engine.fallback === true,
+        }
+      : null,
     viewports: (report.viewports ?? []).map((viewport) => ({
       id: viewport.id,
       strategy: viewport.strategy,
-      label: viewport.label,
       score: viewport.score,
-      scores: viewport.scores,
-      metrics: viewport.metrics,
       evidenceMode: viewport.evidenceMode,
     })),
   };
@@ -374,6 +486,65 @@ async function safely(operation) {
   }
 }
 
+function cancelledExecutionError(phase) {
+  return new AuditError(
+    "TOOL_EXECUTION_CANCELLED",
+    phase === "before-dispatch"
+      ? "The host cancelled this tool before Frontmend dispatched it. No operation was started."
+      : "The host cancelled this read before Frontmend returned evidence. No mission state was changed by the read.",
+    true,
+    { phase },
+  );
+}
+
+function assertNotAborted(signal) {
+  if (signal?.aborted) throw cancelledExecutionError("before-dispatch");
+}
+
+function awaitAbortableRead(operation, signal) {
+  if (!signal || typeof signal.addEventListener !== "function") return operation;
+  if (signal.aborted) return Promise.reject(cancelledExecutionError("before-dispatch"));
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    const complete = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      signal.removeEventListener("abort", onAbort);
+      callback(value);
+    };
+    const onAbort = () => complete(reject, cancelledExecutionError("read-in-flight"));
+    signal.addEventListener("abort", onAbort, { once: true });
+    Promise.resolve(operation).then(
+      (value) => complete(resolve, value),
+      (error) => complete(reject, error),
+    );
+  });
+}
+
+function assertCurrentContextualTool(service, toolName, registration) {
+  if (registration?.enforceContextualAvailability !== true) return;
+  const currentNames = activeToolNames(service);
+  if (currentNames.includes(toolName)) return;
+  const audit = service?.getActiveAudit?.() ?? null;
+  const currentRevision = toolsetRevision(service);
+  throw new AuditError(
+    "TOOLSET_CHANGED",
+    "This contextual tool is no longer active. Read the current mission summary and continue from its returned toolset.",
+    true,
+    {
+      registeredToolsetRevision: Number.isInteger(registration.toolsetRevision)
+        ? registration.toolsetRevision
+        : 0,
+      currentToolsetRevision: currentRevision,
+      recovery: {
+        tool: "get_mission_summary",
+        input: audit?.id ? { auditId: audit.id } : {},
+        reason: "Refresh the contextual toolset before retrying an action.",
+      },
+    },
+  );
+}
+
 function tool(definition) {
   return {
     name: definition.name,
@@ -381,7 +552,13 @@ function tool(definition) {
     description: definition.description,
     inputSchema: definition.inputSchema,
     annotations: definition.annotations,
-    execute: (input) => safely(() => definition.run(input)),
+    execute: (input, options = {}) => safely(async () => {
+      assertNotAborted(options?.signal);
+      const operation = definition.run(input, { signal: options?.signal });
+      return definition.annotations?.readOnlyHint === true
+        ? await awaitAbortableRead(operation, options?.signal)
+        : await operation;
+    }),
   };
 }
 
@@ -598,7 +775,7 @@ export function createFrontmendTools(service) {
       name: "start_site_audit",
       title: "Start site audit",
       description:
-        "Start a durable Frontmend assessment for a public HTTP or HTTPS website. Use intent assess for natural audit requests, preserve any requested accessibility, SEO, performance, security, or reliability focus, and use prepare-fix only when the person explicitly asked to prepare a repair. Resolve the target URL from their request or current repository deployment configuration; ask only when it cannot be determined safely. After starting, navigate to the stable workspace, check progress, then continue the public evidence mission until assessmentComplete is true or its named blocker cannot be resolved. Repository diagnosis is a later repair phase and is never required merely to finalise this audit.",
+        "Start a durable audit of a public HTTP(S) site. Preserve the person's requested focus, priority limit, and page or bounded-site scope. Default to assess; use prepare-fix only after an explicit repair request. Poll the returned audit, then follow its contextual next action until assessmentComplete or a named blocker. Repository diagnosis belongs only to a later selected-repair phase.",
       inputSchema: {
         type: "object",
         properties: {
@@ -684,10 +861,13 @@ export function createFrontmendTools(service) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, untrustedContentHint: false },
-      async run(input) {
+      async run(input, { signal } = {}) {
         const value = objectInput(input);
         noExtra(value, ["auditId"]);
-        const audit = await service.getAudit(auditIdForTool(service, value.auditId));
+        const audit = await service.getAudit(
+          auditIdForTool(service, value.auditId),
+          { signal },
+        );
         return {
           auditId: audit.id,
           attempt: Number.isFinite(audit.attempt) ? audit.attempt : 1,
@@ -793,8 +973,14 @@ export function createFrontmendTools(service) {
             phaseLabel: audit.phaseLabel,
             progress: audit.progress,
             workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
-            missionCheckpoint: checkpoint,
-            mission: audit.mission ? auditMissionSnapshot(audit.mission) : null,
+            missionCheckpoint: compactCheckpoint(checkpoint),
+            mission: audit.mission
+              ? {
+                  intent: audit.mission.intent,
+                  focusAreas: [...(audit.mission.focusAreas ?? [])],
+                  scope: audit.mission.scope,
+                }
+              : null,
             assessment: {
               measurementComplete: false,
               assessmentComplete: false,
@@ -802,13 +988,16 @@ export function createFrontmendTools(service) {
               blocker: null,
             },
             topPriorities: [],
-            completionCriteria: checkpoint?.completionCriteria ?? ["Retain a completed public evidence report."],
+            completionCriteria: compactCompletionCriteria(
+              checkpoint?.completionCriteria ?? ["Retain a completed public evidence report."],
+            ),
             requiredCapability: checkpoint?.requiredCapability ?? "progress-reading",
-            nextAction: checkpoint?.action ?? {
+            nextAction: compactAction(checkpoint?.action ?? {
               tool: "check_site_audit_progress",
               input: { auditId: audit.id },
               reason: "The bounded measurement job is still active.",
-            },
+            }),
+            agentRun: compactAgentRun(checkpoint?.agentRun),
           };
         }
         const activeCorrectionPacket = projection.repairs
@@ -822,7 +1011,7 @@ export function createFrontmendTools(service) {
           checkpointStatus: missionState.checkpointStatus,
           explorationStatus: missionState.explorationStatus,
           workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
-          missionCheckpoint: checkpoint,
+          missionCheckpoint: compactCheckpoint(checkpoint),
           mission: {
             intent: projection.mission.intent,
             requestedBy: projection.mission.requestedBy,
@@ -842,18 +1031,19 @@ export function createFrontmendTools(service) {
               pagesRequested: missionState.siteScope?.pagesRequested ?? 0,
             },
           },
-          topPriorities: missionState.priorities.slice(0, 3).map(compactPriority),
-          completionCriteria: checkpoint?.completionCriteria ?? [],
+          topPriorities: missionState.priorities.slice(0, 3).map(compactSummaryPriority),
+          completionCriteria: compactCompletionCriteria(checkpoint?.completionCriteria),
           requiredCapability: checkpoint?.requiredCapability
             ?? TOOL_CAPABILITIES[missionState.nextAction?.tool]
             ?? null,
           requiredCapabilities: checkpoint?.requiredCapabilities ?? [],
-          agentCapabilities: checkpoint?.agentCapabilities ?? null,
-          capabilityNegotiation: checkpoint?.capabilityNegotiation ?? null,
+          capabilityNegotiation: compactCapabilityNegotiation(checkpoint?.capabilityNegotiation),
           candidateCorrectionPacket: activeCorrectionPacket,
-          nextAction: checkpoint?.action ?? createExecutableMissionAction(missionState.nextAction, audit),
-          agentRun: checkpoint?.agentRun ?? null,
-          authorityBoundary: checkpoint?.authorityBoundary ?? null,
+          nextAction: compactAction(
+            checkpoint?.action ?? createExecutableMissionAction(missionState.nextAction, audit),
+          ),
+          agentRun: compactAgentRun(checkpoint?.agentRun),
+          authorityBoundary: "People retain repair approval, deployment authorisation, and production attestation.",
         };
       },
     }),
@@ -907,7 +1097,7 @@ export function createFrontmendTools(service) {
       name: "get_site_audit_results",
       title: "Get site audit results",
       description:
-        "Return a compact completed measurement and persisted assessment mission with bounded priorities, evidence state, assessmentComplete, and an exact next tool/input. Use detailLevel full only when raw retained report evidence is necessary; routine continuation should use this compact default or get_mission_summary, then get_evidence_chain for one priority. Optional focus/max values are a labelled read-only projection and never rewrite mission intent. Do not stop at measurement completion while assessmentComplete is false and the named public-evidence action is available. Once true, the ranking and assessment receipt are final even when repairReadiness says repository diagnosis has not started.",
+        "Read a completed audit. The compact default returns bounded priorities, evidence state, assessmentComplete, and the exact next action. Use full only for retained provider or browser detail; use get_evidence_chain for one priority. Optional focus and maximum values create a read-only projection. Measurement completion is not assessment completion.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -957,14 +1147,21 @@ export function createFrontmendTools(service) {
         const checkpoint = service?.getMissionCheckpoint?.(auditId) ?? report.missionCheckpoint ?? null;
         const projectedPriorities = detailLevel === "full"
           ? missionState.priorities
-          : missionState.priorities.map(compactPriority);
+          : missionState.priorities.map(compactSummaryPriority);
         return {
           ...(detailLevel === "full" ? report : compactAuditReport(report)),
           measurementStatus: "complete",
           assessmentStatus: missionState.assessmentStatus,
           checkpointStatus: missionState.checkpointStatus,
           explorationStatus: missionState.explorationStatus,
-          mission: persistedMission,
+          mission: detailLevel === "full"
+            ? persistedMission
+            : {
+                intent: persistedMission.intent,
+                focusAreas: [...persistedMission.focusAreas],
+                maxPriorities: persistedMission.maxPriorities,
+                scope: persistedMission.scope,
+              },
           requestedFocusAreas: missionState.requestedFocusAreas,
           focusSummary: {
             matchingFindingCount: missionState.matchingFindingCount,
@@ -977,7 +1174,7 @@ export function createFrontmendTools(service) {
           priorities: projectedPriorities,
           browserReview: detailLevel === "full" ? browserReview : compactBrowserReview(browserReview),
           missionState: detailLevel === "full" ? missionState : compactMissionState(missionState),
-          missionCheckpoint: checkpoint,
+          missionCheckpoint: detailLevel === "full" ? checkpoint : compactCheckpoint(checkpoint),
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
             changedPersistedMission: false,
@@ -985,10 +1182,17 @@ export function createFrontmendTools(service) {
             maxPriorities: projectionMission.maxPriorities,
             detailLevel,
           },
-          recommendedNextAction: checkpoint?.action ?? createExecutableMissionAction(
-            missionState.nextAction,
-            { id: auditId, missionRevision: remembered?.missionRevision },
-          ),
+          recommendedNextAction: detailLevel === "full"
+            ? checkpoint?.action ?? createExecutableMissionAction(
+                missionState.nextAction,
+                { id: auditId, missionRevision: remembered?.missionRevision },
+              )
+            : compactAction(
+                checkpoint?.action ?? createExecutableMissionAction(
+                  missionState.nextAction,
+                  { id: auditId, missionRevision: remembered?.missionRevision },
+                ),
+              ),
         };
       },
     }),
@@ -1143,7 +1347,7 @@ export function createFrontmendTools(service) {
       name: "open_browser_review",
       title: "Open agent browser review",
       description:
-        "Open the exact rendered-browser contribution required by an agent-started accessibility or SEO assessment, adopt an eligible person-started assessment without restarting its audit, or open the fresh replay required to verify a retained browser finding after deployment. Frontmend returns one non-destructive browser check at a time so the agent inspects the rendered target instead of repeating provider output. Adoption retains the original person attribution and audit ID. This creates no site interaction by itself, accepts no findings, and does not inspect source or claim the page passed.",
+        "Open the next exact rendered-browser check for assessment or fresh verification. An eligible person-started audit may be adopted without changing its attribution or ID. Frontmend returns one non-destructive task at a time; this call does not navigate, inspect source, accept findings, or claim the page passed.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -1154,7 +1358,7 @@ export function createFrontmendTools(service) {
             maxItems: 2,
             uniqueItems: true,
             items: { type: "string", enum: ["accessibility", "seo"] },
-            description: "Optional rendered-review scope when adopting a broad person-started assessment. A focused assessment retains its existing accessibility or SEO scope.",
+            description: "Optional accessibility or SEO scope when adopting a broad person-started assessment.",
           },
           expectedMissionRevision: expectedMissionRevisionProperty,
         },
@@ -1192,7 +1396,7 @@ export function createFrontmendTools(service) {
       name: "record_browser_review_check",
       title: "Record browser review check",
       description:
-        "Record the current exact browser-review check after using real browser controls on the retained target. Supply bounded observed facts; the assessment search-discovery task may also contribute up to eight relative same-origin paths, which Frontmend revalidates server-side before minting route candidates. Assessment issues require structured findings, while verification replay compares the retained finding and must not create a new one. Use blocked with an exact reason when the browser, safe interaction, authentication, capability, or retained target prevents honest inspection. Frontmend keeps provider and browser provenance separate and never treats this contribution as repository or deployment proof.",
+        "Record the current browser task using bounded direct observations. Search discovery may include up to eight observed same-origin paths for server revalidation. Assessment issues require structured findings; verification replay cannot create findings. Use an exact blocker when inspection cannot run honestly. Browser evidence remains separate from repository, deployment, and production proof.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1215,7 +1419,7 @@ export function createFrontmendTools(service) {
             maxItems: 8,
             uniqueItems: true,
             items: { type: "string", pattern: "^/(?!/)[^?#]{0,255}$" },
-            description: "Optional relative same-origin paths directly observed during the assessment search-discovery task. The server revalidates them before they can become route candidates.",
+            description: "Optional same-origin paths observed during search discovery; the server revalidates them.",
           },
           findings: {
             type: "array",
@@ -1449,7 +1653,7 @@ export function createFrontmendTools(service) {
       name: "open_diagnostic_mission",
       title: "Open diagnostic mission",
       description:
-        "Open an idempotent repository-diagnosis mission only for a finding already selected through prepare_site_repair. The mission keeps final audit evidence separate from the repository-relative source ownership and planned checks that the coding agent must contribute before a proposal. Continue with submit_runtime_diagnosis only from evidence you actually obtain; if browser/repository access is unavailable or the runtime conflicts, use record_diagnostic_blocker instead of inventing a cause. This tool does not finalise the audit, diagnose by itself, read repository source, stage a repair, or change the target site.",
+        "Open an idempotent repository diagnosis for a finding selected through prepare_site_repair. Submit only observed reproduction, repository-relative ownership, and planned checks; otherwise record an exact blocker. Audit evidence stays final and separately attributed. This call does not inspect source, diagnose by itself, stage a repair, or change the target.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2141,7 +2345,7 @@ export function createFrontmendTools(service) {
             type: "string",
             minLength: 1,
             maxLength: 2048,
-            description: "Origin only, such as http://localhost:5173 or https://preview.example.com. Credentials, paths, queries, fragments, private LAN hosts, and unsafe schemes are rejected.",
+            description: "Origin only, such as localhost or a public HTTPS preview. Paths, credentials, queries, fragments, private LAN hosts, and unsafe schemes are rejected.",
           },
         },
         required: ["repairId", "candidateOrigin"],
@@ -2178,7 +2382,7 @@ export function createFrontmendTools(service) {
       name: "record_candidate_review_check",
       title: "Record candidate browser check",
       description:
-        "Record the current exact candidate-browser task after using your own browser controls on the returned target URL. Results are sequential, attributed, and bounded. Use issue when the retained symptom remains or a retained guardrail regresses; the first issue ends this candidate iteration and returns a revision-bound correction packet for repository implementation. Use blocked with an exact supported reason when inspection cannot be completed. Candidate checks cannot create findings or contribute production evidence.",
+        "Record the current candidate-browser task from direct observations. Results are sequential and bounded. Use issue when the symptom remains or a guardrail regresses; the first issue ends this iteration and returns a revision-bound correction packet. Use an exact blocker when inspection cannot finish. Candidate checks cannot create findings or production evidence.",
       inputSchema: {
         type: "object",
         properties: {
@@ -2410,21 +2614,32 @@ export function createFrontmendTools(service) {
     return {
       ...definition,
       inputSchema,
-      async execute(input) {
+      async execute(input, options = {}) {
         let activityId = null;
         const auditIdBefore = activeAuditId(service, null, input);
         const checkpointBefore = safeCheckpoint(service, auditIdBefore, null);
+        const activeToolCountBefore = activeToolNames(service).length;
         try {
           activityId = service.beginAgentActivity?.({
             tool: definition.name,
             title: definition.title,
             auditId: auditIdBefore,
             missionRevisionBefore: checkpointBefore?.missionRevision ?? 0,
+            operationKind: definition.annotations?.readOnlyHint === true ? "read" : "mutation",
+            activeToolCountBefore,
           }) ?? null;
         } catch {
           activityId = null;
         }
-        const result = await execute(input);
+        let result;
+        try {
+          assertCurrentContextualTool(service, definition.name, options?.frontmendRegistration);
+          result = await execute(input, options);
+        } catch (error) {
+          result = await safely(() => { throw error; });
+        }
+        const protocol = protocolEnvelope(service, result, input);
+        const response = { ...result, protocol };
         if (activityId) {
           const data = result?.data;
           try {
@@ -2448,15 +2663,15 @@ export function createFrontmendTools(service) {
               missionRevisionAfter: checkpointAfter?.missionRevision
                 ?? checkpointBefore?.missionRevision
                 ?? 0,
+              activeToolCountAfter: protocol.activeToolCount,
+              outputCharacters: serializedCharacterCount(response),
+              nextTool: protocol.next?.tool ?? null,
             });
           } catch {
             // Activity telemetry never changes the semantic tool result.
           }
         }
-        return {
-          ...result,
-          protocol: protocolEnvelope(service, result, input),
-        };
+        return response;
       },
     };
   });
@@ -2478,6 +2693,7 @@ export function registerFrontmendTools({ service, target, onStatus, toolNames })
     supported: Boolean(modelContext),
     totalTools: allTools.length,
     activeTools: tools.length,
+    toolsetRevision: toolsetRevision(service),
   };
   if (!modelContext) {
     onStatus?.({ ...statusBase, status: "unsupported", toolNames: [], errors: [] });
@@ -2489,6 +2705,10 @@ export function registerFrontmendTools({ service, target, onStatus, toolNames })
   const controller = new AbortController();
   const registered = [];
   const errors = [];
+  const registration = Object.freeze({
+    enforceContextualAvailability: true,
+    toolsetRevision: statusBase.toolsetRevision,
+  });
   onStatus?.({ ...statusBase, status: "registering", toolNames: [], errors: [] });
 
   // Defer the first registration by one microtask so React Strict Mode can run
@@ -2499,7 +2719,13 @@ export function registerFrontmendTools({ service, target, onStatus, toolNames })
     for (const definition of tools) {
       if (controller.signal.aborted) return;
       try {
-        await modelContext.registerTool(definition, { signal: controller.signal });
+        const registeredDefinition = {
+          ...definition,
+          execute(input, options = {}) {
+            return definition.execute(input, { ...options, frontmendRegistration: registration });
+          },
+        };
+        await modelContext.registerTool(registeredDefinition, { signal: controller.signal });
         if (controller.signal.aborted) return;
         registered.push(definition.name);
       } catch (error) {

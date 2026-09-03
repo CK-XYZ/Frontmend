@@ -220,6 +220,31 @@ summary:focus-visible,
  * A bar and not the landing's pill island: that island is a scroll response,
  * and this page does not scroll.
  */
+/*
+ * Ground for a live audit.
+ *
+ * DESIGN.md section 1 left this surface flat warm white and noted the restore
+ * ground was one selector away from covering it. The error field is the wrong
+ * borrowing - that art is for a dead address - but the observation held: a card
+ * floating on an unbroken white page had nothing to sit on.
+ *
+ * So this is measurement paper rather than a picture: a hairline grid at a
+ * quarter strength, in the workspace's own line token, behind the card and
+ * nothing else. It carries no meaning and no state, which is the point - the
+ * evidence stays the only thing on this screen saying anything.
+ */
+.app-shell.progress::before {
+  position: absolute;
+  z-index: -1;
+  inset: 0;
+  background-image:
+    repeating-linear-gradient(to right, var(--line-strong) 0 1px, transparent 1px 28px),
+    repeating-linear-gradient(to bottom, var(--line-strong) 0 1px, transparent 1px 28px);
+  opacity: 0.25;
+  content: "";
+  pointer-events: none;
+}
+
 .app-shell.restore .site-header {
   border-bottom: 1px solid rgb(245 243 241 / 13%);
   background-color: rgb(0 8 34 / 55%);
@@ -788,38 +813,84 @@ summary:focus-visible,
 }
 
 .progress-hero h1 {
-  /* An audit phase is a status line, not a hero claim. */
+  /*
+   * An audit phase is a status line, not a hero claim - and at 44px it was
+   * being set as one, leaving the band mostly empty around six words that
+   * change every half minute.
+   */
   color: var(--fm-bone);
   font-family: var(--fm-display);
-  font-size: clamp(28px, 3.4vw, 44px);
+  font-size: clamp(25px, 2.9vw, 36px);
   font-weight: 500;
-  letter-spacing: -0.035em;
-  line-height: 1.04;
+  letter-spacing: -0.03em;
+  line-height: 1.06;
   text-wrap: balance;
 }
 
 .progress-hero .audit-url {
-  margin: 15px 0 30px;
+  margin: 12px 0 26px;
   color: var(--fm-bone-muted);
   font-family: var(--fm-mono);
   font-size: 13px;
 }
 
 .progress-hero .progress-track {
-  background: rgb(245 243 241 / 16%);
+  height: 8px;
+  background: rgb(245 243 241 / 14%);
+  box-shadow: inset 0 0 0 1px rgb(197 213 255 / 12%);
 }
 
+/*
+ * The bar advances on an eased estimate that ticks a few times a second, so the
+ * transition has to outlast a tick or the fill steps instead of travelling. The
+ * cap at the leading edge marks where measurement has actually reached.
+ */
 .progress-hero .progress-track span {
-  background: var(--fm-lime);
+  position: relative;
+  background: linear-gradient(90deg, rgb(220 239 59 / 62%), var(--fm-lime));
+  box-shadow: 0 0 18px rgb(220 239 59 / 34%);
+  transition: width 300ms linear;
+}
+
+.progress-hero .progress-stages {
+  position: relative;
+  margin-top: 28px;
+}
+
+/* Centre of the first mark to centre of the last, behind them. */
+.progress-hero .progress-stages::before {
+  position: absolute;
+  top: 16px;
+  right: 16.67%;
+  left: 16.67%;
+  height: 1px;
+  background: var(--fm-cobalt-line);
+  content: "";
 }
 
 .progress-hero .progress-stages li {
+  position: relative;
+  flex-direction: column;
+  gap: 10px;
   color: rgb(197 213 255 / 62%);
+  font-size: 11px;
+  letter-spacing: 0.03em;
 }
 
+/*
+ * Opaque, so the thread passes behind the mark rather than through it, then
+ * lifted by an inset wash so an upcoming stage still reads as an empty slot
+ * instead of a filled one. A solid navy block was heavier than the stage it
+ * was standing in for.
+ */
 .progress-hero .progress-stages li > span {
+  width: 33px;
+  height: 33px;
   border-color: var(--fm-cobalt-line);
-  background: rgb(245 243 241 / 6%);
+  border-radius: 12px;
+  background: var(--fm-cobalt-deep);
+  box-shadow: inset 0 0 0 999px rgb(245 243 241 / 5%);
+  color: rgb(197 213 255 / 52%);
 }
 
 .progress-hero .progress-stages li.active {
@@ -828,7 +899,8 @@ summary:focus-visible,
 
 .progress-hero .progress-stages li.active > span {
   border-color: var(--fm-lime);
-  background: rgb(220 239 59 / 16%);
+  background: var(--fm-cobalt-deep);
+  box-shadow: inset 0 0 0 999px rgb(220 239 59 / 16%);
   color: var(--fm-lime);
 }
 
@@ -858,19 +930,156 @@ summary:focus-visible,
   padding: clamp(22px, 3vw, 30px) clamp(22px, 3.4vw, 34px) clamp(24px, 3vw, 32px);
 }
 
-/*
- * The summary is the card's lower band, not a tile floating inside it: its own
- * border and fill made a card-in-a-card against the hero's hard edge. Scoped
- * through the shell to outrank `.progress-card .audit-mission-summary`, which
- * centres and caps it further down this file.
+/* --------------------------------------- the live evidence sources
+ *
+ * The card's lower band, and the only part of this screen with anything new to
+ * say between checkpoints. It is a list under a hairline, not a tile: its own
+ * border and fill would make a card-in-a-card against the hero's hard edge.
  */
-.app-shell.progress .progress-evidence .audit-mission-summary {
-  width: 100%;
+.evidence-streams-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line);
+}
+
+.evidence-streams-head h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: -0.005em;
+}
+
+.evidence-streams-head p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.evidence-stream-list {
   margin: 0;
   padding: 0;
-  border: 0;
-  border-radius: 0;
-  background: none;
+  list-style: none;
+}
+
+.evidence-stream {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 15px 2px;
+  border-bottom: 1px solid #eceade;
+}
+
+.evidence-stream:last-child {
+  border-bottom: 0;
+}
+
+.evidence-stream-mark {
+  display: grid;
+  place-items: center;
+  color: #b3b8ae;
+}
+
+.evidence-stream-label {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.evidence-stream-label strong {
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.evidence-stream-label small {
+  color: var(--muted);
+  font-size: 11.5px;
+}
+
+.evidence-stream-state {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 650;
+  letter-spacing: 0.05em;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.evidence-stream-state small {
+  color: #9aa19c;
+  font-family: var(--fm-mono);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.evidence-stream.running .evidence-stream-mark {
+  color: #6f9234;
+}
+
+.evidence-stream.running .evidence-stream-state {
+  color: #6f9234;
+}
+
+.evidence-stream.complete .evidence-stream-mark {
+  color: #6f9234;
+}
+
+.evidence-stream.unavailable .evidence-stream-mark,
+.evidence-stream.unavailable .evidence-stream-state {
+  color: #a2610f;
+}
+
+.evidence-streams-note {
+  margin: 14px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.evidence-streams-mission {
+  display: grid;
+  gap: 7px;
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.evidence-streams-mission p {
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  align-items: start;
+  gap: 9px;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.evidence-streams-mission svg {
+  margin-top: 2px;
+}
+
+.evidence-streams-scope {
+  color: var(--ink);
+  font-weight: 600;
+}
+
+.evidence-streams-scope > span::first-letter {
+  text-transform: uppercase;
 }
 
 .audit-url {
@@ -894,7 +1103,7 @@ summary:focus-visible,
   height: 100%;
   border-radius: inherit;
   background: #9fd044;
-  transition: width 140ms linear;
+  transition: width 300ms linear;
 }
 
 .progress-stages {
@@ -8175,6 +8384,58 @@ summary:focus-visible,
   cursor: pointer;
 }
 
+.agent-activity-discovery {
+  display: grid;
+  gap: 3px;
+  margin-top: 18px;
+  padding: 14px;
+  border: 1px solid #dfe7cc;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #f8faef, #f1f5e5);
+}
+
+.agent-activity-discovery > span {
+  color: var(--lime-dark);
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.agent-activity-discovery > strong {
+  font-size: 12px;
+}
+
+.agent-activity-discovery > small {
+  color: var(--muted);
+  font-size: 9px;
+}
+
+.agent-activity-discovery details {
+  margin-top: 7px;
+}
+
+.agent-activity-discovery summary {
+  color: #596653;
+  font-size: 9px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.agent-activity-discovery summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
+
+.agent-activity-discovery code {
+  display: block;
+  overflow-wrap: anywhere;
+  margin-top: 7px;
+  color: #66705f;
+  font-size: 8px;
+  line-height: 1.65;
+}
+
 /*
  * The privacy boundary, marked as one. It carries the same ShieldCheck the loop
  * dialog's authority line uses, so a guarantee looks like a guarantee wherever
@@ -8263,6 +8524,24 @@ summary:focus-visible,
   margin-top: 7px;
   color: var(--muted);
   font-size: 8px;
+}
+
+.agent-activity-list .agent-activity-result {
+  margin-top: 3px;
+  color: #697269;
+}
+
+.agent-activity-list .agent-activity-next {
+  display: flex;
+  align-items: baseline;
+  gap: 4px;
+  margin-top: 4px;
+  color: #53624d;
+}
+
+.agent-activity-list .agent-activity-next code {
+  margin: 0;
+  color: #53624d;
 }
 
 .agent-activity-list time {

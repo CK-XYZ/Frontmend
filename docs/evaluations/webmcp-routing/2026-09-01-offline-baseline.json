@@ -8,7 +8,7 @@
   "host": "frontmend-offline-evaluator",
   "modelVersion": "routing-contract-v1",
   "protocolVersion": 1,
-  "toolLibraryVersion": 7,
+  "toolLibraryVersion": 8,
   "toolCount": 28,
   "caseCount": 28,
   "passedCount": 28,

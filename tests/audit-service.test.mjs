@@ -33,6 +33,20 @@ test("rejects local, private, credentialed, and non-web targets", () => {
   }
 });
 
+test("HTTP progress reads forward the WebMCP host cancellation signal", async () => {
+  const controller = new AbortController();
+  let receivedSignal = null;
+  const transport = createHttpAuditTransport({
+    fetchImpl: async (_url, init) => {
+      receivedSignal = init.signal;
+      return Response.json({ ok: true, data: { id: AUDIT_ID, status: "running" } });
+    },
+  });
+  const result = await transport.get(AUDIT_ID, { signal: controller.signal });
+  assert.equal(result.id, AUDIT_ID);
+  assert.equal(receivedSignal, controller.signal);
+});
+
 test("keeps the human-selected finding as the active no-ID evidence capsule", async () => {
   const findings = [
     {

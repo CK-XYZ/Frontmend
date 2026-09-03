@@ -592,6 +592,10 @@ test("agent tools use the same audit service as the human interface", async () =
     ],
   );
   assert.equal(activities.every((activity) => !("input" in activity)), true);
+  assert.equal(activities.every((activity) => ["read", "mutation"].includes(activity.operationKind)), true);
+  assert.equal(activities.every((activity) => activity.outputCharacters > 0), true);
+  assert.equal(activities.every((activity) => Number.isInteger(activity.activeToolCountAfter)), true);
+  assert.equal(activities[0].nextTool, "open_browser_review");
 });
 
 test("assessment receipt tool returns one portable completion artifact without broadening authority", async () => {
@@ -2688,6 +2692,7 @@ test("registration publishes only the requested contextual tool subset", async (
   assert.equal(snapshots.at(-1).status, "ready");
   assert.equal(snapshots.at(-1).activeTools, 1);
   assert.equal(snapshots.at(-1).totalTools, FRONTMEND_TOOL_COUNT);
+  assert.equal(snapshots.at(-1).toolsetRevision, 0);
   dispose();
 });
 
@@ -2790,4 +2795,114 @@ test("registration surfaces structured browser errors as useful text", async () 
     "check_site_audit_progress: Tool name is already registered.",
   ]);
   dispose();
+});
+
+test("a stale registered tool fails closed with an exact contextual recovery", async () => {
+  let audit = null;
+  let startCalls = 0;
+  const registered = new Map();
+  const service = {
+    getActiveAudit: () => audit,
+    getMissionCheckpoint: (auditId) => auditId
+      ? { auditId, missionRevision: audit?.missionRevision ?? 1 }
+      : null,
+    startAudit: async () => {
+      startCalls += 1;
+      return { id: "unexpected", status: "queued" };
+    },
+  };
+  const target = {
+    modelContext: {
+      async registerTool(definition) {
+        registered.set(definition.name, definition);
+      },
+    },
+  };
+  const dispose = registerFrontmendTools({
+    service,
+    target,
+    toolNames: ["start_site_audit", "get_mission_summary"],
+  });
+  await dispose.ready;
+  audit = {
+    id: "audit-running",
+    status: "running",
+    missionRevision: 3,
+    progress: 30,
+  };
+
+  const result = await registered.get("start_site_audit").execute({ url: "https://example.com/" });
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, "TOOLSET_CHANGED");
+  assert.equal(result.error.details.registeredToolsetRevision, 0);
+  assert.equal(result.error.details.currentToolsetRevision, 3);
+  assert.deepEqual(result.protocol.next, {
+    tool: "get_mission_summary",
+    input: { auditId: "audit-running" },
+    requiredCapability: "mission-reading",
+    reason: "Refresh the contextual toolset before retrying an action.",
+  });
+  assert.equal(startCalls, 0);
+  dispose();
+});
+
+test("honours host cancellation for reads without implying a durable write rollback", async () => {
+  let resolveRead;
+  let receivedReadSignal = null;
+  const readService = {
+    getActiveAudit: () => ({ id: "audit-running", status: "running", missionRevision: 2 }),
+    getMissionCheckpoint: () => ({ auditId: "audit-running", missionRevision: 2 }),
+    getAudit: (_auditId, options) => {
+      receivedReadSignal = options?.signal ?? null;
+      return new Promise((resolve) => { resolveRead = resolve; });
+    },
+  };
+  const readTool = findTool(createFrontmendTools(readService), "check_site_audit_progress");
+  const readController = new AbortController();
+  const pendingRead = readTool.execute({}, { signal: readController.signal });
+  await Promise.resolve();
+  assert.equal(typeof resolveRead, "function");
+  assert.equal(receivedReadSignal, readController.signal);
+  readController.abort();
+  const cancelledRead = await pendingRead;
+  assert.equal(cancelledRead.ok, false);
+  assert.equal(cancelledRead.error.code, "TOOL_EXECUTION_CANCELLED");
+  assert.equal(cancelledRead.error.details.phase, "read-in-flight");
+  resolveRead?.({ id: "audit-running", status: "running" });
+
+  let resolveMutation;
+  let mutationStarted = false;
+  const mutationService = {
+    getActiveAudit: () => null,
+    startAudit: () => {
+      mutationStarted = true;
+      return new Promise((resolve) => { resolveMutation = resolve; });
+    },
+  };
+  const mutationTool = findTool(createFrontmendTools(mutationService), "start_site_audit");
+  const mutationController = new AbortController();
+  const pendingMutation = mutationTool.execute(
+    { url: "https://example.com/" },
+    { signal: mutationController.signal },
+  );
+  assert.equal(mutationStarted, true);
+  mutationController.abort();
+  resolveMutation({ id: "audit-created", status: "queued", mission: null });
+  const completedMutation = await pendingMutation;
+  assert.equal(completedMutation.ok, true);
+  assert.equal(completedMutation.data.id, "audit-created");
+
+  let preAbortedCalls = 0;
+  const preAborted = new AbortController();
+  preAborted.abort();
+  const rejectedMutation = await findTool(createFrontmendTools({
+    getActiveAudit: () => null,
+    startAudit: async () => {
+      preAbortedCalls += 1;
+      return { id: "should-not-start" };
+    },
+  }), "start_site_audit").execute({ url: "https://example.com/" }, { signal: preAborted.signal });
+  assert.equal(rejectedMutation.ok, false);
+  assert.equal(rejectedMutation.error.details.phase, "before-dispatch");
+  assert.equal(preAbortedCalls, 0);
 });

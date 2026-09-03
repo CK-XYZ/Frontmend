@@ -10,6 +10,10 @@ import {
   FRONTMEND_TOOL_LIBRARY_VERSION,
 } from "../src/protocol-contract.js";
 import { createFrontmendTools } from "../src/webmcp.js";
+import {
+  WEBMCP_BUDGETS,
+  serializedCharacterCount,
+} from "../src/webmcp-budget-contract.js";
 
 function findTool(tools, name) {
   const retained = tools.find((item) => item.name === name);
@@ -119,6 +123,10 @@ test("returns compact mission and one-finding evidence queries with a protocol e
   assert.equal(summary.data.topPriorities.length, 1);
   assert.equal("report" in summary.data, false);
   assert.equal("findings" in summary.data, false);
+  assert.ok(
+    serializedCharacterCount(summary) <= WEBMCP_BUDGETS.routineResultCharacters,
+    `mission summary used ${serializedCharacterCount(summary)} characters`,
+  );
   assert.deepEqual(summary.protocol, {
     protocolVersion: FRONTMEND_PROTOCOL_VERSION,
     toolLibraryVersion: FRONTMEND_TOOL_LIBRARY_VERSION,
@@ -135,6 +143,13 @@ test("returns compact mission and one-finding evidence queries with a protocol e
     agentRun: checkpoint.agentRun,
   });
   assert.ok(summary.protocol.activeToolCount < FRONTMEND_TOOL_COUNT);
+
+  const results = await findTool(tools, "get_site_audit_results").execute({});
+  assert.equal(results.ok, true);
+  assert.ok(
+    serializedCharacterCount(results) <= WEBMCP_BUDGETS.routineResultCharacters,
+    `compact results used ${serializedCharacterCount(results)} characters`,
+  );
 
   const evidence = await findTool(tools, "get_evidence_chain").execute({ findingId: finding.id });
   assert.equal(evidence.ok, true);

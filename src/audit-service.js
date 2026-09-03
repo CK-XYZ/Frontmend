@@ -43,6 +43,10 @@ async function responsePayload(response) {
   return payload.data;
 }
 
+function withAbortSignal(init, options) {
+  return options?.signal ? { ...init, signal: options.signal } : init;
+}
+
 export function createHttpAuditTransport(options = {}) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch?.bind(globalThis);
   const baseUrl = options.baseUrl ?? "";
@@ -152,11 +156,11 @@ export function createHttpAuditTransport(options = {}) {
       );
     },
 
-    async get(auditId) {
+    async get(auditId, options = {}) {
       return responsePayload(
-        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}`, {
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}`, withAbortSignal({
           headers: { accept: "application/json" },
-        }),
+        }, options)),
       );
     },
 
@@ -775,12 +779,12 @@ export function createAuditService(options = {}) {
     return value;
   };
 
-  const readAudit = async (auditId) => {
+  const readAudit = async (auditId, options = {}) => {
     if (typeof auditId !== "string" || !auditId) {
       throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
     }
     const expectedGeneration = generation;
-    const audit = assertResponseIdentity(await transport.get(auditId), "id", auditId);
+    const audit = assertResponseIdentity(await transport.get(auditId, options), "id", auditId);
     return remember(audit, expectedGeneration);
   };
 
@@ -1282,8 +1286,8 @@ export function createAuditService(options = {}) {
       );
     },
 
-    async getAudit(auditId) {
-      return readAudit(auditId);
+    async getAudit(auditId, options = {}) {
+      return readAudit(auditId, options);
     },
 
     async restoreAuditWorkspace(auditId) {
@@ -2122,7 +2126,13 @@ export function createAuditService(options = {}) {
       });
     },
 
-    beginAgentActivity({ tool, auditId = null, missionRevisionBefore = null }) {
+    beginAgentActivity({
+      tool,
+      auditId = null,
+      missionRevisionBefore = null,
+      operationKind = null,
+      activeToolCountBefore = null,
+    }) {
       activitySequence += 1;
       const semanticTool = String(tool ?? "").slice(0, 80);
       const semanticTitle = ACTIVITY_TOOL_TITLES[semanticTool];
@@ -2144,6 +2154,7 @@ export function createAuditService(options = {}) {
         title: semanticTitle,
         status: "running",
         actorClass: "webmcp-agent",
+        operationKind: ["read", "mutation"].includes(operationKind) ? operationKind : null,
         auditId: retainedAuditId,
         repairId: null,
         diagnosticMissionId: null,
@@ -2152,6 +2163,12 @@ export function createAuditService(options = {}) {
         errorCode: null,
         missionRevisionBefore: retainedRevision,
         missionRevisionAfter: retainedRevision,
+        activeToolCountBefore: Number.isInteger(activeToolCountBefore)
+          ? Math.max(0, Math.min(100, activeToolCountBefore))
+          : null,
+        activeToolCountAfter: null,
+        outputCharacters: null,
+        nextTool: null,
         startedAt: now(),
         completedAt: null,
       };
@@ -2190,6 +2207,15 @@ export function createAuditService(options = {}) {
           status,
           errorCode: typeof result?.errorCode === "string" ? result.errorCode.slice(0, 80) : null,
           missionRevisionAfter,
+          activeToolCountAfter: Number.isInteger(result?.activeToolCountAfter)
+            ? Math.max(0, Math.min(100, result.activeToolCountAfter))
+            : null,
+          outputCharacters: Number.isInteger(result?.outputCharacters)
+            ? Math.max(0, Math.min(1_000_000, result.outputCharacters))
+            : null,
+          nextTool: typeof result?.nextTool === "string" && ACTIVITY_TOOL_TITLES[result.nextTool]
+            ? result.nextTool
+            : null,
           completedAt: now(),
         }, ...pendingAgentActivities].slice(0, 20);
         emit();
@@ -2211,6 +2237,15 @@ export function createAuditService(options = {}) {
           : null,
         errorCode: typeof result?.errorCode === "string" ? result.errorCode.slice(0, 80) : null,
         missionRevisionAfter: Math.max(retained.missionRevisionBefore, missionRevisionAfter),
+        activeToolCountAfter: Number.isInteger(result?.activeToolCountAfter)
+          ? Math.max(0, Math.min(100, result.activeToolCountAfter))
+          : null,
+        outputCharacters: Number.isInteger(result?.outputCharacters)
+          ? Math.max(0, Math.min(1_000_000, result.outputCharacters))
+          : null,
+        nextTool: typeof result?.nextTool === "string" && ACTIVITY_TOOL_TITLES[result.nextTool]
+          ? result.nextTool
+          : null,
         completedAt: now(),
       }, auditId);
       agentActivitiesByAudit.set(

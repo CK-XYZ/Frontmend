@@ -8,6 +8,9 @@ const lazyWorkspace = readFileSync(new URL("../src/ui/LazyWorkspace.jsx", import
 const report = readFileSync(new URL("../src/workspaces/ReportWorkspace.jsx", import.meta.url), "utf8");
 const inspector = readFileSync(new URL("../src/workspaces/WebMcpCapabilitySheet.jsx", import.meta.url), "utf8");
 const missionSummary = readFileSync(new URL("../src/ui/AuditMissionSummary.jsx", import.meta.url), "utf8");
+const auditProgress = readFileSync(new URL("../src/ui/use-audit-progress.js", import.meta.url), "utf8");
+const evidenceStreams = readFileSync(new URL("../src/ui/AuditEvidenceStreams.jsx", import.meta.url), "utf8");
+const provider = readFileSync(new URL("../worker/pagespeed-provider.js", import.meta.url), "utf8");
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const landingStyles = readFileSync(new URL("../src/landing.css", import.meta.url), "utf8");
 
@@ -24,7 +27,7 @@ test("connects URL errors and audit progress to assistive technology", () => {
   assert.match(app, /aria-invalid=\{Boolean\(error\)\}/);
   assert.match(app, /aria-describedby="site-url-message"/);
   assert.match(app, /role=\{error \? "alert" : "status"\}/);
-  assert.match(app, /aria-valuetext=\{`\$\{audit\.progress\}% complete — \$\{audit\.phaseLabel\}`\}/);
+  assert.match(app, /aria-valuetext=\{`\$\{progress\}% complete — \$\{audit\.phaseLabel\}`\}/);
   assert.match(app, /aria-label="Live audit progress"/);
   assert.match(app, /aria-current=\{active \? "step" : undefined\}/);
   assert.match(app, /"Completed" : active \? "Current" : "Upcoming"/);
@@ -79,7 +82,41 @@ test("uses concise visible progress without discarding the detailed status", () 
   assert.match(app, /inspect: "Inspecting live evidence"/);
   assert.match(app, /<h1 id="progress-title">\{visiblePhaseLabel\}<\/h1>/);
   assert.match(app, /Your audit keeps running if you leave/);
-  assert.match(app, /aria-valuetext=\{`\$\{audit\.progress\}% complete — \$\{audit\.phaseLabel\}`\}/);
+  assert.match(app, /aria-valuetext=\{`\$\{progress\}% complete — \$\{audit\.phaseLabel\}`\}/);
+});
+
+/*
+ * The bar and the readout beside it have to agree. A screen reader that hears
+ * the last server checkpoint while the bar shows the eased estimate is being
+ * told a different story than a sighted visitor, so `aria-valuenow`,
+ * `aria-valuetext` and the fill all read the same value - and the phase label,
+ * which is the authoritative statement, travels with it.
+ */
+test("keeps the eased progress estimate honest and identical for every visitor", () => {
+  assert.match(app, /const \{ progress, elapsedMs, hasElapsed \} = useAuditProgress\(audit\)/);
+  assert.match(app, /aria-valuenow=\{progress\}/);
+  assert.match(app, /style=\{\{ width: `\$\{progress\}%` \}\}/);
+  assert.match(app, /hasElapsed \? ` · \$\{formatElapsed\(elapsedMs\)\} elapsed` : null/);
+  // Never past the next reported checkpoint, and never backwards.
+  assert.match(auditProgress, /Math\.min\(eased, ceiling - 0\.4\)/);
+  assert.match(auditProgress, /Math\.max\(current\.progress,/);
+  assert.match(auditProgress, /skewRef\.current = serverNow - Date\.now\(\)/);
+});
+
+/*
+ * A stream that has not reported is not a stream that failed. The band may
+ * assume both sources were requested - the run issues both before it does
+ * anything else - and may assume nothing about how either one ended.
+ */
+test("reports evidence sources from the run rather than inferring them", () => {
+  assert.match(evidenceStreams, /const reported = Array\.isArray\(audit\?\.streams\) \? audit\.streams : null/);
+  assert.match(evidenceStreams, /unavailable: \{ label: "Unavailable"/);
+  assert.doesNotMatch(evidenceStreams, /progress\s*[><]=?\s*\d+/);
+  assert.match(provider, /tracker\.settle\("lighthouse", outcome\.status === "fulfilled" \? "complete" : "unavailable"\)/);
+  assert.match(provider, /tracker\.settle\("document", outcome\.status === "fulfilled" \? "complete" : "unavailable"\)/);
+  // A running source reports no duration rather than a frozen one.
+  assert.match(provider, /A running stream reports no duration/);
+  assert.match(provider, /stream\.completedAt === null$/m);
 });
 
 test("describes diagnosis against retained evidence without inventing a measured provider issue", () => {

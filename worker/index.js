@@ -311,6 +311,16 @@ function auditSnapshot(state, missionCheckpoint = state.missionCheckpoint ?? nul
     phase: state.phase,
     phaseLabel: state.phaseLabel,
     progress: state.progress,
+    /*
+     * The run's own clock, and the clock it is read against. A percentage
+     * pinned to real provider events cannot move while a provider is still
+     * out, so the surface needs one quantity that always can. Sending the
+     * server's `now` alongside `startedAt` keeps that readout exact instead of
+     * guessing at the difference between two machines' clocks.
+     */
+    startedAt: Number.isInteger(state.startedAt) ? state.startedAt : null,
+    now: Date.now(),
+    streams: Array.isArray(state.streams) ? state.streams : null,
     exploration: state.exploration ?? state.report?.exploration ?? null,
     siteExploration: state.siteExploration ?? state.report?.siteExploration ?? null,
     report: state.status === "complete" ? state.report : null,

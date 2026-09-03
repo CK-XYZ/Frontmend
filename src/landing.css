@@ -121,7 +121,7 @@
   padding-inline: 12px;
   border-color: rgba(245, 243, 241, 0.16);
   /*
-   * The colour reset matters: the expanded Agent log is a white pill with
+   * The colour reset matters: the expanded WebMCP trace is a white pill with
    * dark type, and without this it keeps that dark type on the island's dark
    * surface and disappears.
    */
@@ -166,7 +166,7 @@
 }
 
 /*
- * The Agent log control.
+ * The WebMCP trace control.
  *
  * The one glass object in the expanded header: a bright white pill with dark
  * type, floating on the cobalt field. This extends the scoped glass exception
@@ -496,7 +496,13 @@
   margin: 0 auto;
   padding: clamp(112px, 14vh, 152px) var(--fm-gutter) clamp(72px, 9vh, 104px);
   gap: clamp(28px, 3vw, 52px);
-  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr);
+  /*
+   * Keep the evidence run visually equal to the composer rather than letting
+   * its specimen faces collapse into thumbnails on wide displays. The copy
+   * still owns the larger column, but the split now gives the cards enough
+   * width to carry their illustrative detail at first glance.
+   */
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1.1fr);
   align-items: center;
 }
 
@@ -910,7 +916,7 @@
   display: grid;
   align-items: start;
   gap: clamp(10px, 1.2vw, 20px);
-  grid-template-columns: minmax(0, 0.56fr) minmax(0, 1fr);
+  grid-template-columns: minmax(0, 0.44fr) minmax(0, 1fr);
 }
 
 /* Handoff node where the thread meets each specimen. */
@@ -2688,11 +2694,11 @@
 
 @media (max-width: 1180px) {
   .hero-inner {
-    grid-template-columns: minmax(0, 1fr) minmax(0, 0.86fr);
+    grid-template-columns: minmax(0, 1fr) minmax(0, 0.94fr);
   }
 
   .specimen {
-    grid-template-columns: minmax(0, 0.52fr) minmax(0, 1fr);
+    grid-template-columns: minmax(0, 0.45fr) minmax(0, 1fr);
   }
 
   .specimen-stack {

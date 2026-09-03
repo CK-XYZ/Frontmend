@@ -1163,28 +1163,124 @@ export async function runDocumentAudit({
     cancellation.cleanup();
   }
 }
+/*
+ * The number a person actually watches.
+ *
+ * Two evidence sources run at once and they do not take the same time: the live
+ * document lands in about a second, the two Lighthouse strategies take tens of
+ * seconds. A single percentage had nothing truthful to say across that gap, so
+ * the bar parked on one value for most of the run and read as a stall.
+ *
+ * Two things change that, and neither invents a step. The ladder below is
+ * pinned to events that genuinely happen - a request issued, a source settled -
+ * so the value still only moves when the run does. Alongside it the run reports
+ * its *streams*: which source was asked for, which has landed, which failed,
+ * and how long the settled ones took. That is the honest substance the surface
+ * shows while Lighthouse is still out, instead of a frozen percentage.
+ */
+const AUDIT_PROGRESS_LADDER = Object.freeze({
+  requested: 6,
+  lighthouseRunning: 12,
+  documentRunning: 16,
+  documentSettled: 34,
+  lighthouseStructuring: 74,
+  lighthouseSettled: 86,
+  reconciling: 92,
+});
+
+const AUDIT_STREAM_DEFINITIONS = Object.freeze([
+  Object.freeze({
+    id: "lighthouse",
+    label: "Lighthouse mobile and desktop",
+    detail: "PageSpeed Insights",
+  }),
+  Object.freeze({
+    id: "document",
+    label: "Live HTML document",
+    detail: "Response headers, metadata, routes",
+  }),
+]);
+
+function auditStreamTracker(clock) {
+  const streams = new Map(
+    AUDIT_STREAM_DEFINITIONS.map((definition) => [
+      definition.id,
+      { ...definition, status: "pending", startedAt: null, completedAt: null },
+    ]),
+  );
+  return {
+    start(id) {
+      const stream = streams.get(id);
+      if (!stream || stream.status !== "pending") return;
+      stream.status = "running";
+      stream.startedAt = clock();
+    },
+    settle(id, status) {
+      const stream = streams.get(id);
+      if (!stream || ["complete", "unavailable"].includes(stream.status)) return;
+      stream.status = status;
+      stream.completedAt = clock();
+    },
+    snapshot() {
+      return [...streams.values()].map((stream) => ({
+        ...stream,
+        /*
+         * A running stream reports no duration. Its elapsed time would be
+         * frozen at whichever emit last happened - during the Lighthouse wait
+         * that is minutes stale - and a stale number is worse than none.
+         */
+        durationMs:
+          stream.startedAt === null || stream.completedAt === null
+            ? null
+            : Math.max(0, stream.completedAt - stream.startedAt),
+      }));
+    },
+  };
+}
 
 export async function runFrontmendAudit(options) {
   await assertPublicResolvedDestination(options.url, options.resolveHostname);
   throwIfCancelled(options.signal);
+  const clock = measurementClock(options);
+  const tracker = auditStreamTracker(clock);
   let lastProgress = 0;
-  const emitProgress = async (state) => {
-    const progress = Math.max(0, Math.min(99, Math.round(state.progress ?? 0)));
-    if (progress < lastProgress) return;
-    lastProgress = progress;
-    await options.onProgress?.({ ...state, progress });
-  };
-  await emitProgress({
+  let lastPhase = {
     phase: "capture",
-    phaseLabel: "Running Lighthouse and live document evidence",
-    progress: 18,
-  });
+    phaseLabel: "Requesting Lighthouse and live document evidence",
+  };
+  /*
+   * Every call emits, including one that reports behind the run. The value and
+   * the headline stay monotone - a late provider does not drag the phase
+   * backwards - but its stream transition still has to reach the surface, and
+   * the previous version dropped the whole event to hold the number in order.
+   */
+  const emitProgress = async (state = {}) => {
+    const requested = Math.max(0, Math.min(99, Math.round(state.progress ?? lastProgress)));
+    if (requested >= lastProgress && state.phase) {
+      lastPhase = {
+        phase: state.phase,
+        phaseLabel: state.phaseLabel ?? lastPhase.phaseLabel,
+      };
+    }
+    lastProgress = Math.max(lastProgress, requested);
+    await options.onProgress?.({
+      ...lastPhase,
+      progress: lastProgress,
+      streams: tracker.snapshot(),
+    });
+  };
   const viewportProvider = options.providers?.viewport ?? runPageSpeedAudit;
   const documentProvider = options.providers?.document ?? runDocumentAudit;
   const providerOptions = { ...options };
   delete providerOptions.providers;
   delete providerOptions.measureNow;
-  const clock = measurementClock(options);
+  tracker.start("lighthouse");
+  tracker.start("document");
+  await emitProgress({
+    phase: "capture",
+    phaseLabel: "Requesting Lighthouse and live document evidence",
+    progress: AUDIT_PROGRESS_LADDER.requested,
+  });
   const [lighthouseOutcome, documentOutcome] = await Promise.all([
     runEvidenceProvider("viewport", viewportProvider, {
       ...providerOptions,
@@ -1193,17 +1289,35 @@ export async function runFrontmendAudit(options) {
         phaseLabel: state.phase === "capture"
           ? "Running mobile and desktop Lighthouse with live document inspection"
           : "Structuring Lighthouse and live document evidence",
-        progress: state.phase === "capture" ? 22 : 76,
+        progress: state.phase === "capture"
+          ? AUDIT_PROGRESS_LADDER.lighthouseRunning
+          : AUDIT_PROGRESS_LADDER.lighthouseStructuring,
       }),
-    }, clock),
+    }, clock).then(async (outcome) => {
+      tracker.settle("lighthouse", outcome.status === "fulfilled" ? "complete" : "unavailable");
+      await emitProgress({
+        phase: "inspect",
+        phaseLabel: "Structuring Lighthouse and live document evidence",
+        progress: AUDIT_PROGRESS_LADDER.lighthouseSettled,
+      });
+      return outcome;
+    }),
     runEvidenceProvider("document", documentProvider, {
       ...providerOptions,
       onProgress: async (state) => emitProgress({
         ...state,
         phaseLabel: "Inspecting live HTML, response headers, metadata, and routes",
-        progress: 42,
+        progress: AUDIT_PROGRESS_LADDER.documentRunning,
       }),
-    }, clock),
+    }, clock).then(async (outcome) => {
+      tracker.settle("document", outcome.status === "fulfilled" ? "complete" : "unavailable");
+      await emitProgress({
+        phase: "inspect",
+        phaseLabel: "Live document evidence retained · Lighthouse still measuring",
+        progress: AUDIT_PROGRESS_LADDER.documentSettled,
+      });
+      return outcome;
+    }),
   ]);
   const lighthouseError = lighthouseOutcome.status === "rejected" ? lighthouseOutcome.reason : null;
   const documentError = documentOutcome.status === "rejected" ? documentOutcome.reason : null;
@@ -1234,7 +1348,7 @@ export async function runFrontmendAudit(options) {
   await emitProgress({
     phase: "inspect",
     phaseLabel: "Reconciling independent audit evidence",
-    progress: 88,
+    progress: AUDIT_PROGRESS_LADDER.reconciling,
   });
   return {
     ...mergeAuditEvidence({ lighthouse, document, lighthouseError, documentError }),

@@ -29,7 +29,8 @@ import {
 } from "./ui/EvidenceSpecimens.jsx";
 import { AUDIT_FOCUS_AREAS, createAuditMission } from "./audit-mission-contract.js";
 import { ThinkingOrb } from "./ui/ThinkingOrb.jsx";
-import { AuditMissionSummary } from "./ui/AuditMissionSummary.jsx";
+import { AuditEvidenceStreams } from "./ui/AuditEvidenceStreams.jsx";
+import { formatElapsed, useAuditProgress } from "./ui/use-audit-progress.js";
 import { humanMissionMutationFailure } from "./ui/human-mission-recovery.js";
 import { LazyWorkspace } from "./ui/LazyWorkspace.jsx";
 import { useDialogFocus } from "./ui/use-dialog-focus.js";
@@ -38,7 +39,10 @@ import {
   contextualFrontmendToolNames,
   registerFrontmendTools,
 } from "./webmcp.js";
-import { FRONTMEND_TOOL_COUNT } from "./protocol-contract.js";
+import {
+  FRONTMEND_TOOL_COUNT,
+  FRONTMEND_TOOL_LIBRARY_VERSION,
+} from "./protocol-contract.js";
 
 const HERO_SPECIMENS = [
   {
@@ -425,7 +429,7 @@ function WebMcpStatus({ status, expanded, restoring, restoreFailed, onClick, but
   );
 }
 
-function AgentActivityDrawer({ activities, onClose }) {
+function AgentActivityDrawer({ activities, registration, onClose }) {
   const dialogRef = useDialogFocus(onClose);
   return (
     <div className="agent-activity-backdrop" role="presentation" onMouseDown={onClose}>
@@ -440,23 +444,33 @@ function AgentActivityDrawer({ activities, onClose }) {
         aria-describedby="agent-activity-boundary"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        {/*
-         * The panel is titled with the name of the control that opens it. It
-         * used to read "WebMCP activity" under a "Browser agent" kicker, while
-         * the header button said "Agent log" and the close button said "agent
-         * activity" - four names for one feature, and the visitor arrived at a
-         * panel that did not admit to being the thing they clicked.
-         *
-         * No kicker. A small uppercase label pairing a protocol name with a
-         * scope is decoration, and everything it would have said - where the
-         * entries come from, how far back they go - the boundary note below
-         * says in a sentence.
-         */}
+        {/* The trigger, dialog title, and close label deliberately share one name. */}
         <div className="agent-activity-heading">
-          <h2 id="agent-activity-title">Agent log</h2>
-          <button type="button" aria-label="Close agent log" onClick={onClose}>
+          <h2 id="agent-activity-title">WebMCP trace</h2>
+          <button type="button" aria-label="Close WebMCP trace" onClick={onClose}>
             <X size={18} weight="bold" />
           </button>
+        </div>
+        <div className="agent-activity-discovery" aria-live="polite">
+          <span>Discovery now</span>
+          <strong>
+            {registration.status === "ready"
+              ? `${registration.toolNames.length} contextual tools active`
+              : registration.status === "registering"
+                ? "Synchronising the contextual toolset"
+                : registration.supported
+                  ? "Contextual registration needs attention"
+                  : "Human mode · WebMCP unavailable"}
+          </strong>
+          <small>
+            Tool library v{FRONTMEND_TOOL_LIBRARY_VERSION} · toolset revision {registration.toolsetRevision ?? 0} · {FRONTMEND_TOOL_COUNT} total contracts
+          </small>
+          {registration.toolNames.length ? (
+            <details>
+              <summary>Inspect discovered tools</summary>
+              <code>{registration.toolNames.join(" · ")}</code>
+            </details>
+          ) : null}
         </div>
         <p className="agent-activity-boundary" id="agent-activity-boundary">
           <ShieldCheck size={15} weight="duotone" aria-hidden="true" />
@@ -490,6 +504,21 @@ function AgentActivityDrawer({ activities, onClose }) {
                       ? ` · revision ${activity.missionRevisionBefore}→${activity.missionRevisionAfter}`
                       : ""}
                   </small>
+                  <small className="agent-activity-result">
+                    {activity.operationKind ? `${activity.operationKind} · ` : ""}
+                    {Number.isFinite(activity.completedAt)
+                      ? `${Math.max(0, activity.completedAt - activity.startedAt).toLocaleString()} ms`
+                      : "in progress"}
+                    {Number.isInteger(activity.outputCharacters)
+                      ? ` · ${activity.outputCharacters.toLocaleString()} chars`
+                      : ""}
+                    {Number.isInteger(activity.activeToolCountBefore) && Number.isInteger(activity.activeToolCountAfter)
+                      ? ` · tools ${activity.activeToolCountBefore}→${activity.activeToolCountAfter}`
+                      : ""}
+                  </small>
+                  {activity.nextTool ? (
+                    <small className="agent-activity-next">Next · <code>{activity.nextTool}</code></small>
+                  ) : null}
                 </div>
                 <time dateTime={new Date(activity.startedAt).toISOString()}>
                   {new Date(activity.startedAt).toLocaleTimeString([], {
@@ -1680,6 +1709,13 @@ function AuditProgress({
     inspect: "Inspecting live evidence",
     verify: "Verifying retained evidence",
   }[audit.phase] ?? audit.phaseLabel;
+  /*
+   * The bar eases between the run's real checkpoints instead of parking on the
+   * last one; the elapsed clock is the readout that can always move, because it
+   * measures something that is always happening. See use-audit-progress.js for
+   * why neither of those is theatre.
+   */
+  const { progress, elapsedMs, hasElapsed } = useAuditProgress(audit);
 
   if (["failed", "cancelled"].includes(audit.status)) {
     const cancelled = audit.status === "cancelled";
@@ -1741,7 +1777,8 @@ function AuditProgress({
            */}
           <ThinkingOrb />
           <p className="kicker" role="status" aria-live="polite" aria-atomic="true">
-            Live audit · attempt {audit.attempt ?? 1} · {audit.progress}%
+            Live audit · attempt {audit.attempt ?? 1}
+            {hasElapsed ? ` · ${formatElapsed(elapsedMs)} elapsed` : null}
           </p>
           <h1 id="progress-title">{visiblePhaseLabel}</h1>
           <p className="audit-url">{audit.url}</p>
@@ -1750,11 +1787,11 @@ function AuditProgress({
           role="progressbar"
           aria-valuemin="0"
           aria-valuemax="100"
-          aria-valuenow={audit.progress}
-          aria-valuetext={`${audit.progress}% complete — ${audit.phaseLabel}`}
+          aria-valuenow={progress}
+          aria-valuetext={`${progress}% complete — ${audit.phaseLabel}`}
           aria-label="Live audit progress"
           >
-            <span style={{ width: `${audit.progress}%` }} />
+            <span style={{ width: `${progress}%` }} />
           </div>
           <ol className="progress-stages">
             {stages.map((stage, index) => {
@@ -1786,7 +1823,7 @@ function AuditProgress({
           </p>
         </div>
         <div className="progress-evidence">
-          <AuditMissionSummary audit={audit} />
+          <AuditEvidenceStreams audit={audit} />
         {pollError ? (
           <div className="audit-poll-warning" role="alert" aria-busy={isRefreshingStatus}>
             <Warning size={20} weight="duotone" aria-hidden="true" />
@@ -1949,6 +1986,9 @@ export function App() {
     status: "unsupported",
     toolNames: [],
     errors: [],
+    activeTools: 0,
+    totalTools: FRONTMEND_TOOL_COUNT,
+    toolsetRevision: 0,
   });
   const inputRef = useRef(null);
   const mainContentRef = useRef(null);
@@ -2287,7 +2327,7 @@ export function App() {
               onClick={() => setShowAgentActivity(true)}
             >
               <Robot size={16} weight="bold" aria-hidden="true" />
-              Agent log
+              WebMCP trace
               {agentActivities.length ? <span>{agentActivities.length}</span> : null}
             </button>
           ) : null}
@@ -2410,6 +2450,7 @@ export function App() {
       {showAgentActivity ? (
         <AgentActivityDrawer
           activities={agentActivities}
+          registration={webMcp}
           onClose={() => setShowAgentActivity(false)}
         />
       ) : null}
