@@ -16,8 +16,8 @@ const STAGES = Object.freeze([
 ]);
 
 const HUMAN_ONLY = Object.freeze([
-  "Choose the website and what the audit should focus on.",
-  "Approve a repair or grant limited authority for low-risk work.",
+  "Choose the website and audit focus.",
+  "Approve a repair or limited delegation.",
   "Deploy the reviewed change and accept any remaining risk.",
 ]);
 
@@ -92,7 +92,7 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
         : audit?.status === "cancelled"
           ? "The previous audit was cancelled before it produced complete evidence."
           : "No audit is running yet.",
-      mustReturn: ["A checked public website URL", "A saved audit with a trackable job ID"],
+      mustReturn: ["A validated website address", "A saved audit you can return to"],
       unlocks: ["Live checks for mobile, desktop, and page structure"],
       requiredCapability: "A public website URL",
       action: checkpointAction ?? { tool: "start_site_audit", input: {} },

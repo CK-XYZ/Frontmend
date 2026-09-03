@@ -42,6 +42,10 @@ test("answers all five mission questions for landing and complete Human mode", (
   assert.match(value.questions.whatHappensNow.title, /public website/i);
   assert.match(value.questions.whyNow, /no audit is running/i);
   assert.equal(value.questions.whatMustReturn.length, 2);
+  assert.deepEqual(value.questions.whatMustReturn, [
+    "A validated website address",
+    "A saved audit you can return to",
+  ]);
   assert.equal(value.questions.whatItUnlocks.length, 1);
   assert.equal(value.questions.whatRemainsHumanOnly.length, 3);
   assert.equal(value.humanFallback.complete, true);

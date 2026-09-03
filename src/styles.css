@@ -7815,28 +7815,6 @@ summary:focus-visible,
 }
 
 /*
- * The current stage and available agent actions are a quiet orientation line,
- * after the plain-language WebMCP explanation.
- */
-.inspector-state {
-  display: flex;
-  margin: 9px 0 0;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 10px;
-  color: var(--muted);
-  font-family: var(--fm-mono);
-  font-size: 12px;
-  line-height: 1.4;
-}
-
-.inspector-state > span + span::before {
-  content: "·";
-  margin-right: 10px;
-  color: var(--line-strong);
-}
-
-/*
  * Registration state, in the same language as the site header's readout: a
  * three-bar signal glyph rather than a status pip, and mono because it is a
  * technical state. Lime on paper must be --lime-dark; --lime itself is a
@@ -7904,7 +7882,7 @@ summary:focus-visible,
  * element stops where the element stops rather than spanning the sheet.
  */
 .inspector-intro {
-  padding: 15px 28px 16px;
+  padding: 15px 28px 17px;
   border-bottom: 1px solid var(--line);
   background: #fbfbf6;
 }
@@ -7937,17 +7915,8 @@ summary:focus-visible,
   color: var(--ink);
 }
 
-.inspector-label {
-  margin: 0;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 740;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
 .inspector-now h3 {
-  margin: 9px 0 0;
+  margin: 0;
   color: var(--ink);
   font-size: 19px;
   font-weight: 640;
@@ -7957,7 +7926,7 @@ summary:focus-visible,
 
 /* The one focal block: what is happening right now, and why. */
 .inspector-now {
-  padding: 18px 28px 20px;
+  padding: 20px 28px 21px;
   border-bottom: 1px solid var(--line);
 }
 
@@ -7996,7 +7965,7 @@ summary:focus-visible,
   background: rgba(185, 237, 80, 0.07);
 }
 
-.inspector-authority > .is-human .inspector-label {
+.inspector-authority > .is-human .inspector-authority-title {
   color: var(--lime-dark);
 }
 
@@ -8004,20 +7973,13 @@ summary:focus-visible,
   border-top-color: rgba(95, 120, 50, 0.2);
 }
 
-.inspector-sublabel {
-  margin: 16px 0 0;
-  color: var(--muted);
-  font-size: 11px;
+.inspector-authority-title {
+  margin: 0;
+  color: var(--ink);
+  font-size: 14px;
   font-weight: 650;
-  letter-spacing: 0.02em;
-}
-
-.inspector-sublabel:first-of-type {
-  margin-top: 12px;
-}
-
-.inspector-sublabel + .inspector-record {
-  margin-top: 4px;
+  letter-spacing: -0.01em;
+  line-height: 1.35;
 }
 
 .inspector-prose {
@@ -8056,13 +8018,14 @@ summary:focus-visible,
 }
 
 .inspector-example {
-  margin-top: 15px;
-  padding-top: 12px;
-  border-top: 1px solid var(--line);
+  display: flex;
+  margin-top: 14px;
+  align-items: baseline;
+  gap: 9px;
 }
 
 .inspector-example span {
-  display: block;
+  flex: 0 0 auto;
   color: var(--muted);
   font-size: 10px;
   font-weight: 740;
@@ -8071,18 +8034,19 @@ summary:focus-visible,
 }
 
 .inspector-example code {
-  display: block;
-  margin-top: 6px;
+  display: inline;
+  min-width: 0;
   color: #47514b;
   font-family: var(--fm-mono);
   font-size: 12px;
   line-height: 1.55;
+  overflow-wrap: anywhere;
 }
 
 /* --------------------------------------------------------- record rows */
 
 .inspector-record {
-  margin: 10px 0 0;
+  margin: 7px 0 0;
   padding: 0;
   list-style: none;
 }
