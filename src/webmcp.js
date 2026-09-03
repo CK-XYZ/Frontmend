@@ -27,9 +27,17 @@ import {
 import { repairVerificationReceiptMarkdown } from "./verification-impact-contract.js";
 import { observedRouteRecords } from "./route-contract.js";
 import {
+  candidateCorrectionPacket,
+  candidateReviewSnapshot,
+} from "./candidate-review-contract.js";
+import {
   REVISION_BOUND_MISSION_TOOLS,
   createExecutableMissionAction,
 } from "./mission-checkpoint-contract.js";
+import {
+  AGENT_CAPABILITY_FIELDS,
+  toolAllowedByAgentCapabilities,
+} from "./agent-capability-contract.js";
 import {
   FRONTMEND_PROTOCOL_VERSION,
   FRONTMEND_TOOL_COUNT,
@@ -120,10 +128,12 @@ function coherentResultsForTool(service, auditId) {
 
 const TOOL_CAPABILITIES = Object.freeze({
   start_site_audit: "public-url-selection",
+  declare_agent_capabilities: "agent-capability-declaration",
   check_site_audit_progress: "progress-reading",
   get_mission_summary: "mission-reading",
   get_site_audit_results: "full-evidence-reading",
   get_evidence_chain: "evidence-reading",
+  get_active_evidence_capsule: "active-evidence-reading",
   open_browser_review: "rendered-browser-inspection",
   record_browser_review_check: "rendered-browser-inspection",
   open_diagnostic_mission: "repository-diagnosis",
@@ -133,6 +143,9 @@ const TOOL_CAPABILITIES = Object.freeze({
   stage_site_repair: "repository-repair-planning",
   revise_site_repair: "repository-repair-planning",
   record_repository_implementation: "repository-implementation",
+  open_candidate_review: "candidate-browser-review",
+  record_candidate_review_check: "candidate-browser-review",
+  get_candidate_review: "candidate-review-reading",
   start_repair_verification: "fresh-public-verification",
 });
 
@@ -413,6 +426,10 @@ export function contextualFrontmendToolNames(service) {
     && verificationGuardrails.every((guardrail) => guardrail.status === "complete");
   const browserReviewComplete = !missionState?.browserReview?.required || missionState.browserReview.status === "complete";
 
+  if (missionState?.priorities?.length && typeof service?.getActiveEvidenceCapsule === "function") {
+    available.add("get_active_evidence_capsule");
+  }
+
   if (audit.report?.verification && verificationReplayComplete) available.add("get_verification_receipt");
   if (repairs.some((repair) => repair.aggregateVerification?.receiptAvailable)) {
     available.add("get_verification_receipt");
@@ -513,6 +530,25 @@ export function contextualFrontmendToolNames(service) {
   ) {
     available.add("record_repository_implementation");
   }
+  const candidateReadyRepairs = repairs.filter((repair) =>
+    repair.status === "approved"
+    && !Number.isFinite(repair.deploymentAttestedAt)
+    && repair.implementationReceipt?.agentReported === true
+    && (repair.implementationReceipt.checks?.length ?? 0) > 0
+    && repair.implementationReceipt.checks.every((check) => check?.status === "passed"));
+  const candidateRepairsWithNextTask = candidateReadyRepairs.filter((repair) =>
+    repair.candidateReview?.id
+    && !repair.candidateReview.results?.some((result) => result?.outcome === "issue")
+    && repair.candidateReview.state?.nextCheck);
+  if (candidateReadyRepairs.some((repair) => !repair.candidateReview?.id)) {
+    available.add("open_candidate_review");
+  }
+  if (repairs.some((repair) => repair.candidateReview?.id)) {
+    available.add("get_candidate_review");
+  }
+  if (candidateRepairsWithNextTask.length) {
+    available.add("record_candidate_review_check");
+  }
   if (
     repairs.some(
       (repair) =>
@@ -528,6 +564,27 @@ export function contextualFrontmendToolNames(service) {
   // authoritative when it executes.
   if (missionState?.nextAction?.tool) {
     available.add(missionState.nextAction.tool);
+  }
+
+  if (typeof service?.getAgentCapabilities === "function") {
+    const declaration = service.getAgentCapabilities(audit.id);
+    available.add("declare_agent_capabilities");
+    for (const name of [...available]) {
+      const candidateRepair = name === "record_candidate_review_check"
+        ? candidateRepairsWithNextTask[0]
+        : null;
+      if (
+        name !== "declare_agent_capabilities"
+        && !toolAllowedByAgentCapabilities(name, declaration, {
+          browserReview,
+          candidateReview: candidateRepair?.candidateReview ?? null,
+          diagnosticMissions,
+          input: missionState?.nextAction?.tool === name ? missionState.nextAction.input : {},
+        })
+      ) {
+        available.delete(name);
+      }
+    }
   }
 
   return createFrontmendTools(service)
@@ -684,7 +741,7 @@ export function createFrontmendTools(service) {
       name: "get_mission_summary",
       title: "Get mission summary",
       description:
-        "Return the small stable Frontmend control-plane view: audit identity and status, protocol and mission revisions, retained intent, assessment truth, up to three priorities, completion criteria, blocker, capability requirement, and exact next action. Use this for routine continuation and stale-tool recovery; request the full results only when detailed measurement is actually needed.",
+        "Return the small stable Frontmend control-plane view: audit identity and status, protocol and mission revisions, retained intent, assessment truth, up to three priorities, completion criteria, blocker, capability requirement, exact next action, and any active revision-bound candidate correction packet. Use this for routine continuation and stale-tool recovery; request the full results only when detailed measurement is actually needed.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -754,6 +811,9 @@ export function createFrontmendTools(service) {
             },
           };
         }
+        const activeCorrectionPacket = projection.repairs
+          .map((repair) => candidateCorrectionPacket(repair))
+          .find(Boolean) ?? null;
         return {
           auditId: audit.id,
           status: audit.status,
@@ -787,8 +847,58 @@ export function createFrontmendTools(service) {
           requiredCapability: checkpoint?.requiredCapability
             ?? TOOL_CAPABILITIES[missionState.nextAction?.tool]
             ?? null,
+          requiredCapabilities: checkpoint?.requiredCapabilities ?? [],
+          agentCapabilities: checkpoint?.agentCapabilities ?? null,
+          capabilityNegotiation: checkpoint?.capabilityNegotiation ?? null,
+          candidateCorrectionPacket: activeCorrectionPacket,
           nextAction: checkpoint?.action ?? createExecutableMissionAction(missionState.nextAction, audit),
           agentRun: checkpoint?.agentRun ?? null,
+          authorityBoundary: checkpoint?.authorityBoundary ?? null,
+        };
+      },
+    }),
+    tool({
+      name: "declare_agent_capabilities",
+      title: "Declare agent capabilities",
+      description:
+        "Declare whether this agent currently has visual browser access, responsive emulation, runtime diagnostics, repository access, and terminal execution. Every value is agent-declared and explicitly not verified. Deployment is deliberately not a declarable capability: it stays human-owned. Frontmend uses the declaration only to compile feasible mission tasks; it never grants repair approval, credentials, deployment authority, or proof that a task ran.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, maxLength: 80, description: "Optional audit ID; defaults to the visible audit." },
+          capabilities: {
+            type: "object",
+            properties: Object.fromEntries(
+              Object.values(AGENT_CAPABILITY_FIELDS).map((field) => [field, {
+                type: "boolean",
+                description: "Explicit agent self-report for this capability. This value is not independently verified.",
+              }]),
+            ),
+            required: Object.values(AGENT_CAPABILITY_FIELDS),
+            additionalProperties: false,
+          },
+        },
+        required: ["capabilities"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: false },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "capabilities", "expectedMissionRevision"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const result = await service.declareAgentCapabilities(
+          auditId,
+          value.capabilities,
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
+        const checkpoint = result.missionCheckpoint ?? service.getMissionCheckpoint(auditId);
+        return {
+          auditId,
+          workspacePath: `/audits/${encodeURIComponent(auditId)}`,
+          agentCapabilities: result.agentCapabilities,
+          capabilityNegotiation: checkpoint?.capabilityNegotiation ?? null,
+          missionCheckpoint: checkpoint,
+          nextAction: checkpoint?.action ?? null,
           authorityBoundary: checkpoint?.authorityBoundary ?? null,
         };
       },
@@ -844,6 +954,7 @@ export function createFrontmendTools(service) {
         });
         const overridden = value.focusAreas !== undefined || value.maxPriorities !== undefined;
         const detailLevel = value.detailLevel === "full" ? "full" : "summary";
+        const checkpoint = service?.getMissionCheckpoint?.(auditId) ?? report.missionCheckpoint ?? null;
         const projectedPriorities = detailLevel === "full"
           ? missionState.priorities
           : missionState.priorities.map(compactPriority);
@@ -866,7 +977,7 @@ export function createFrontmendTools(service) {
           priorities: projectedPriorities,
           browserReview: detailLevel === "full" ? browserReview : compactBrowserReview(browserReview),
           missionState: detailLevel === "full" ? missionState : compactMissionState(missionState),
-          missionCheckpoint: service?.getMissionCheckpoint?.(auditId) ?? report.missionCheckpoint,
+          missionCheckpoint: checkpoint,
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
             changedPersistedMission: false,
@@ -874,15 +985,32 @@ export function createFrontmendTools(service) {
             maxPriorities: projectionMission.maxPriorities,
             detailLevel,
           },
-          recommendedNextAction: createExecutableMissionAction(
+          recommendedNextAction: checkpoint?.action ?? createExecutableMissionAction(
             missionState.nextAction,
-            {
-              id: auditId,
-              missionRevision: service?.getMissionCheckpoint?.(auditId)?.missionRevision
-                ?? report.missionCheckpoint?.missionRevision
-                ?? remembered?.missionRevision,
-            },
+            { id: auditId, missionRevision: remembered?.missionRevision },
           ),
+        };
+      },
+    }),
+    tool({
+      name: "get_active_evidence_capsule",
+      title: "Get active evidence capsule",
+      description:
+        "Return the compact revision-bound evidence capsule for the finding currently selected in the visible Frontmend workspace. No audit or finding ID is needed. The capsule includes the retained Lighthouse screenshot when available, viewport, route, selector or landmark, measured or attributed evidence with source, exact observation task, evidence timestamp, and audit revision. Re-read after any mission revision.",
+      inputSchema: emptySchema,
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, []);
+        const capsule = service.getActiveEvidenceCapsule();
+        const checkpoint = service.getMissionCheckpoint(capsule.auditId);
+        return {
+          auditId: capsule.auditId,
+          workspacePath: `/audits/${encodeURIComponent(capsule.auditId)}`,
+          activeSelection: true,
+          capsule,
+          missionCheckpoint: checkpoint,
+          nextAction: checkpoint?.action ?? null,
         };
       },
     }),
@@ -1955,6 +2083,18 @@ export function createFrontmendTools(service) {
               reportedAt: receipt.reportedAt,
               sourceChangedByFrontmend: false,
             })),
+            candidateReview: repair.candidateReview
+              ? candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory)
+              : null,
+            candidateCorrectionPacket: candidateCorrectionPacket(repair),
+            candidateReviewHistory: (repair.candidateReviewHistory ?? []).slice(-3).map((review) => ({
+              id: review.id,
+              repairRevision: review.repairRevision,
+              implementationReceiptRevision: review.implementationReceiptRevision,
+              candidateOrigin: review.candidateOrigin,
+              status: candidateReviewSnapshot(review).status,
+              updatedAt: review.updatedAt,
+            })),
             deploymentAttestedAt: repair.deploymentAttestedAt,
             changeRequest: repair.changeRequest
               ? {
@@ -1977,6 +2117,170 @@ export function createFrontmendTools(service) {
             })),
             mission: repair.mission ?? repairMissionState(repair),
           })),
+        };
+      },
+    }),
+    tool({
+      name: "open_candidate_review",
+      title: "Open candidate browser review",
+      description:
+        "Open an optional pre-deployment browser preflight after an approved repair has a latest repository implementation receipt whose checks all passed. Supply only a localhost or public HTTPS origin; Frontmend maps retained server-issued routes onto it and returns the first exact task. The tool never fetches, navigates, audits, inspects source, deploys, or claims production resolution. Use your own visual browser controls, then record each task sequentially.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, maxLength: 80, description: "Optional baseline audit ID; defaults to the visible audit." },
+          repairId: { type: "string", minLength: 1, maxLength: 80, description: "Approved repair with a passing latest implementation receipt." },
+          candidateOrigin: {
+            type: "string",
+            minLength: 1,
+            maxLength: 2048,
+            description: "Origin only, such as http://localhost:5173 or https://preview.example.com. Credentials, paths, queries, fragments, private LAN hosts, and unsafe schemes are rejected.",
+          },
+        },
+        required: ["repairId", "candidateOrigin"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "repairId", "candidateOrigin", "expectedMissionRevision"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const repair = await service.openCandidateReview(
+          auditId,
+          requiredString(value.repairId, "repairId", 80),
+          requiredString(value.candidateOrigin, "candidateOrigin", 2_048),
+          "agent",
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
+        const review = candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory);
+        return {
+          auditId,
+          repairId: repair.id,
+          reviewId: review.id,
+          status: review.status,
+          review,
+          nextTask: review.nextTask,
+          browserTargetUrl: review.browserTargetUrl,
+          requiredCapabilities: review.requiredCapabilities,
+          evidenceBoundary: review.evidenceBoundary,
+          missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
+        };
+      },
+    }),
+    tool({
+      name: "record_candidate_review_check",
+      title: "Record candidate browser check",
+      description:
+        "Record the current exact candidate-browser task after using your own browser controls on the returned target URL. Results are sequential, attributed, and bounded. Use issue when the retained symptom remains or a retained guardrail regresses; the first issue ends this candidate iteration and returns a revision-bound correction packet for repository implementation. Use blocked with an exact supported reason when inspection cannot be completed. Candidate checks cannot create findings or contribute production evidence.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, maxLength: 80, description: "Optional baseline audit ID; defaults to the visible audit." },
+          repairId: { type: "string", minLength: 1, maxLength: 80 },
+          reviewId: { type: "string", minLength: 1, maxLength: 160 },
+          checkId: { type: "string", minLength: 1, maxLength: 80, description: "Exact current check ID returned by Frontmend." },
+          outcome: { type: "string", enum: BROWSER_REVIEW_OUTCOMES },
+          summary: { type: "string", minLength: 1, maxLength: 300 },
+          observations: {
+            type: "array",
+            minItems: 1,
+            maxItems: 4,
+            uniqueItems: true,
+            items: { type: "string", minLength: 1, maxLength: 400 },
+            description: "One to four direct candidate-browser observations. Omit only for a blocked result.",
+          },
+          blockerReason: { type: "string", enum: BROWSER_REVIEW_BLOCKER_REASONS },
+        },
+        required: ["repairId", "reviewId", "checkId", "outcome", "summary"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: false, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "repairId", "reviewId", "checkId", "outcome", "summary", "observations", "blockerReason", "expectedMissionRevision"]);
+        if (!BROWSER_REVIEW_OUTCOMES.includes(value.outcome)) {
+          throw new AuditError("INVALID_INPUT", "outcome must be passed, issue, or blocked.");
+        }
+        if (value.outcome !== "blocked" && (!Array.isArray(value.observations) || !value.observations.length)) {
+          throw new AuditError("INVALID_INPUT", "observations must contain direct browser facts for passed or issue outcomes.");
+        }
+        const auditId = auditIdForTool(service, value.auditId);
+        const checkId = requiredString(value.checkId, "checkId", 80);
+        const repair = await service.recordCandidateReviewCheck(
+          auditId,
+          requiredString(value.repairId, "repairId", 80),
+          requiredString(value.reviewId, "reviewId", 160),
+          {
+            checkId,
+            outcome: value.outcome,
+            summary: requiredString(value.summary, "summary", 300),
+            observations: value.observations,
+            blockerReason: value.blockerReason,
+          },
+          "agent",
+          expectedMissionRevisionForTool(service, auditId, value.expectedMissionRevision),
+        );
+        const review = candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory);
+        const correctionPacket = candidateCorrectionPacket(repair);
+        return {
+          auditId,
+          repairId: repair.id,
+          reviewId: review.id,
+          acceptedResult: review.results.find((result) => result.checkId === checkId) ?? null,
+          status: review.status,
+          reviewSummary: review.state,
+          nextTask: review.nextTask,
+          browserTargetUrl: review.browserTargetUrl,
+          requiredCapabilities: review.requiredCapabilities,
+          evidenceBoundary: review.evidenceBoundary,
+          correctionPacket,
+          nextAction: review.nextAction,
+          missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
+        };
+      },
+    }),
+    tool({
+      name: "get_candidate_review",
+      title: "Get candidate browser review",
+      description:
+        "Read the current optional candidate-browser preflight for a repair, including attributed bounded results, up to three previous iterations, and the next exact action. This is a read-only candidate evidence view and never claims deployment or production resolution.",
+      inputSchema: {
+        type: "object",
+        properties: {
+          auditId: { type: "string", minLength: 1, maxLength: 80, description: "Optional baseline audit ID; defaults to the visible audit." },
+          repairId: { type: "string", minLength: 1, maxLength: 80 },
+        },
+        required: ["repairId"],
+        additionalProperties: false,
+      },
+      annotations: { readOnlyHint: true, untrustedContentHint: true },
+      async run(input) {
+        const value = objectInput(input);
+        noExtra(value, ["auditId", "repairId"]);
+        const auditId = auditIdForTool(service, value.auditId);
+        const repair = await service.loadCandidateReview(
+          auditId,
+          requiredString(value.repairId, "repairId", 80),
+        );
+        if (!repair.candidateReview?.id) {
+          throw new AuditError("CANDIDATE_REVIEW_NOT_FOUND", "That repair does not have a candidate browser review.");
+        }
+        const review = candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory);
+        const correctionPacket = candidateCorrectionPacket(repair);
+        return {
+          auditId,
+          repairId: repair.id,
+          reviewId: review.id,
+          status: review.status,
+          results: review.results,
+          historySummary: review.historySummary,
+          nextTask: review.nextTask,
+          browserTargetUrl: review.browserTargetUrl,
+          requiredCapabilities: review.requiredCapabilities,
+          evidenceBoundary: review.evidenceBoundary,
+          correctionPacket,
+          nextAction: review.nextAction,
+          missionCheckpoint: repair.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
         };
       },
     }),
@@ -2036,7 +2340,7 @@ export function createFrontmendTools(service) {
         );
         const mission = repair.mission ?? repairMissionState(repair);
         const nextAction = mission.implementationEvidence === "checks-passed"
-          ? "The agent-reported checks passed. The site owner may review the receipt, deploy externally, and attest that handoff in the visible UI."
+          ? "The agent-reported checks passed. Candidate browser review is now available as a recommended preflight; the site owner may still deploy externally at any time and production remains unverified until the existing public verification flow completes."
           : mission.implementationEvidence === "checks-failed"
             ? "One or more agent-reported checks failed. Correct the implementation and record a new receipt, or leave the failure visible for the site owner to assess before deployment."
             : "One or more repository checks were not run. Run them and record a new receipt, or leave the incomplete evidence visible for the site owner to assess before deployment.";

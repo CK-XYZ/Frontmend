@@ -1,10 +1,16 @@
 import { AuditError } from "./url-policy.js";
 import { deriveAuditMissionState } from "./audit-mission-contract.js";
+import {
+  agentCapabilityMatch,
+  agentCapabilitySnapshot,
+  requiredAgentCapabilitiesForAction,
+} from "./agent-capability-contract.js";
 
 const CAPABILITY_BY_TOOL = Object.freeze({
   start_site_audit: "public-url",
   check_site_audit_progress: "progress",
   cancel_site_audit: "human-or-agent-cancellation",
+  declare_agent_capabilities: "agent-capability-declaration",
   open_browser_review: "browser",
   record_browser_review_check: "browser",
   open_diagnostic_mission: "repository",
@@ -19,12 +25,16 @@ const CAPABILITY_BY_TOOL = Object.freeze({
   revise_site_repair: "repository",
   get_repair_workspace: "read-repair",
   record_repository_implementation: "repository",
+  open_candidate_review: "browser",
+  record_candidate_review_check: "browser",
+  get_candidate_review: "read-repair",
   start_repair_verification: "verification",
   get_verification_receipt: "read-verification",
 });
 
 export const REVISION_BOUND_MISSION_TOOLS = Object.freeze([
   "cancel_site_audit",
+  "declare_agent_capabilities",
   "open_browser_review",
   "record_browser_review_check",
   "start_related_page_audit",
@@ -36,6 +46,8 @@ export const REVISION_BOUND_MISSION_TOOLS = Object.freeze([
   "stage_site_repair",
   "revise_site_repair",
   "record_repository_implementation",
+  "open_candidate_review",
+  "record_candidate_review_check",
   "start_repair_verification",
 ]);
 
@@ -100,7 +112,7 @@ function agentRunContract({ action, status, nextActor, missionIntent, assessment
   };
 }
 
-function completionCriteria(nextAction, browserReview) {
+function completionCriteria(nextAction, browserReview, candidateReview) {
   if (nextAction?.tool === "record_browser_review_check") {
     const task = browserReview?.state?.nextCheck;
     return [
@@ -108,7 +120,20 @@ function completionCriteria(nextAction, browserReview) {
       "Use passed, issue, or an honest blocker with bounded direct observations.",
     ];
   }
+  if (nextAction?.tool === "record_candidate_review_check") {
+    const task = candidateReview?.state?.nextCheck
+      ?? candidateReview?.nextTask
+      ?? candidateReview?.tasks?.find((item) => item.id === nextAction.input?.checkId);
+    return [
+      bounded(task?.assignment?.completionCriteria ?? "Return the current candidate-browser comparison."),
+      "Use passed, issue, or an honest blocker with bounded direct observations. An issue stops this candidate iteration and returns the mission to repository implementation.",
+    ];
+  }
   const byTool = {
+    declare_agent_capabilities: [
+      "Explicitly declare true or false for visual browser access, responsive emulation, runtime diagnostics, repository access, and terminal execution.",
+      "Treat the declaration as agent-reported capability, not verified access or human authorisation. Deployment stays human-owned and is never a declarable capability.",
+    ],
     check_site_audit_progress: ["Return a completed report or an actionable terminal error."],
     open_browser_review: ["Return the versioned current browser assignment."],
     open_diagnostic_mission: ["Return the bounded diagnosis mission and required investigations."],
@@ -118,6 +143,9 @@ function completionCriteria(nextAction, browserReview) {
     revise_site_repair: ["Return a new revision that answers the recorded change request."],
     get_repair_workspace: ["Return the authoritative repair state and next allowed action."],
     record_repository_implementation: ["Implement the approved repository plan, run the named checks, and return a bounded repository receipt."],
+    open_candidate_review: ["Return the first exact candidate-browser task without navigating, fetching, auditing, or deploying."],
+    record_candidate_review_check: ["Record only the current candidate task with attributed bounded observations."],
+    get_candidate_review: ["Return the current candidate preflight state without changing it."],
     start_repair_verification: ["Return a stable verification audit assignment for the reviewed scope."],
     get_verification_receipt: ["Return current reviewed-matrix progress or completed fresh proof with its source boundaries."],
     start_site_exploration: ["Return one durable exploration assignment for the server-issued retained routes."],
@@ -157,6 +185,7 @@ export function createMissionCheckpoint({
   diagnosticMissions = [],
   repairs = [],
   explorations = [],
+  agentCapabilities: suppliedAgentCapabilities = audit?.agentCapabilities ?? null,
 } = {}) {
   if (!audit?.id) {
     throw new AuditError("AUDIT_NOT_FOUND", "A retained audit is required to create its checkpoint.");
@@ -171,7 +200,7 @@ export function createMissionCheckpoint({
         explorations,
       })
     : null);
-  const nextAction = missionState
+  const missionNextAction = missionState
     ? missionState.nextAction ?? null
     : audit.status === "complete"
       ? { tool: "get_site_audit_results", input: {}, reason: "Read the completed retained evidence." }
@@ -179,7 +208,33 @@ export function createMissionCheckpoint({
         ? null
         : { tool: "check_site_audit_progress", input: {}, reason: "Measurement is still running." };
   const status = missionState?.status ?? (audit.status === "complete" ? "complete" : audit.status === "failed" || audit.status === "cancelled" ? "blocked" : "in-progress");
-  const nextActor = missionState?.nextActor ?? (nextAction ? "agent" : null);
+  const missionNextActor = missionState?.nextActor ?? (missionNextAction ? "agent" : null);
+  const candidateReview = repairs.find((repair) =>
+    repair?.id === missionNextAction?.input?.repairId
+    && repair?.candidateReview?.id)?.candidateReview ?? null;
+  const agentCapabilities = suppliedAgentCapabilities == null
+    ? null
+    : agentCapabilitySnapshot(suppliedAgentCapabilities);
+  const requiredCapabilities = missionNextActor === "agent"
+    ? requiredAgentCapabilitiesForAction(missionNextAction, {
+        browserReview,
+        candidateReview,
+        diagnosticMissions,
+      })
+    : [];
+  const capabilityMatch = agentCapabilityMatch(agentCapabilities, requiredCapabilities);
+  let nextAction = missionNextAction;
+  let nextActor = missionNextActor;
+  if (missionNextActor === "agent" && requiredCapabilities.length && !agentCapabilities) {
+    nextAction = {
+      tool: "declare_agent_capabilities",
+      input: {},
+      reason: "Frontmend needs an explicit agent capability declaration before it can compile the next mission task.",
+    };
+  } else if (missionNextActor === "agent" && requiredCapabilities.length && !capabilityMatch.eligible) {
+    nextAction = null;
+    nextActor = "person";
+  }
   const action = createExecutableMissionAction(nextAction, audit);
   const assessmentComplete = missionState?.assessmentComplete ?? audit.status === "complete";
   return {
@@ -202,9 +257,32 @@ export function createMissionCheckpoint({
     assessmentReceiptAvailable: missionState?.assessmentReceiptAvailable ?? false,
     status,
     nextActor,
-    requiredCapability: nextAction?.tool ? CAPABILITY_BY_TOOL[nextAction.tool] ?? "contextual-tool" : null,
+    requiredCapability: missionNextAction?.tool
+      ? CAPABILITY_BY_TOOL[missionNextAction.tool] ?? "contextual-tool"
+      : null,
+    requiredCapabilities,
+    agentCapabilities,
+    capabilityNegotiation: {
+      status: !requiredCapabilities.length
+        ? "not-required"
+        : !agentCapabilities
+          ? "declaration-required"
+          : capabilityMatch.eligible
+            ? "matched"
+            : "human-handoff-required",
+      provenance: agentCapabilities?.provenance ?? null,
+      verificationStatus: agentCapabilities?.verificationStatus ?? null,
+      requiredCapabilities,
+      matchedCapabilities: capabilityMatch.matchedCapabilities,
+      missingCapabilities: capabilityMatch.missingCapabilities,
+      agentTaskCompiled: !requiredCapabilities.length || capabilityMatch.eligible,
+      fallbackActor: requiredCapabilities.length && agentCapabilities && !capabilityMatch.eligible
+        ? "person"
+        : null,
+      claim: "Capability values are declared by the agent and are not verified access, deployment authority, or proof of task completion.",
+    },
     action,
-    completionCriteria: completionCriteria(nextAction, browserReview),
+    completionCriteria: completionCriteria(nextAction, browserReview, candidateReview),
     retainedEvidenceSummary: retainedEvidenceSummary({
       audit,
       missionState,

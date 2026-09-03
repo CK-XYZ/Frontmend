@@ -5,6 +5,12 @@ import {
   selectRepairVerificationTargets,
   verificationCandidateProjection,
 } from "./verification-impact-contract.js";
+import {
+  archiveCandidateReviewForNewImplementation,
+  candidateCorrectionPacket,
+  candidateReviewSnapshot,
+  candidateReviewStatus,
+} from "./candidate-review-contract.js";
 
 export const PATCH_TYPES = Object.freeze([
   "html",
@@ -531,8 +537,20 @@ export function createRepositoryFixBrief(
       acceptanceCriteria: [
         strategyAcceptance,
         "Repository tests and the production build must pass without weakening unrelated checks.",
+        "Replay the packaged finding against an optional candidate origin before deployment when browser access is available.",
         "A fresh Frontmend audit must observe the public deployment before resolution is claimed.",
       ],
+    },
+    candidateReview: {
+      recommended: true,
+      sequence: [
+        "record_repository_implementation",
+        "open_candidate_review",
+        "record_candidate_review_check",
+        "get_candidate_review",
+      ],
+      inputBoundary: "Supply an origin only. Frontmend maps retained server-issued paths onto it and never navigates or fetches the candidate.",
+      evidenceBoundary: "Candidate replay is recommended preflight only; a fresh public Frontmend verification is still required before resolution can be claimed.",
     },
     verificationCandidates: verificationCandidateProjection(verificationImpact),
     authority: {
@@ -684,6 +702,17 @@ function repairPackageItem(report, finding, diagnosticMissions) {
     severity: briefText(finding.severity, 20),
     category: briefText(finding.category, 80),
     source: boundedFindingSource(finding.source),
+    retainedSymptom: {
+      title: briefText(finding.title, 240),
+      category: briefText(finding.category, 80),
+      focusAreas: Array.isArray(finding.focusAreas)
+        ? [...new Set(finding.focusAreas.filter((area) => typeof area === "string"))].slice(0, 4)
+        : [],
+      viewport: briefText(finding.viewport, 100),
+      selector: briefText(finding.selector, 200) || "main landmark",
+      measured: briefText(finding.evidence, 600),
+      suggestedRepair: briefText(finding.repair, 600),
+    },
     evidence: browserFindingEvidenceSnapshot(finding),
     scope: repairFindingScope(report, finding),
     diagnosticMission: diagnosticMissionSnapshotForArtifact(diagnosticMission),
@@ -781,6 +810,8 @@ export function createRepairDraft({
     reviewedAt: null,
     implementationReceipt: null,
     implementationHistory: [],
+    candidateReview: null,
+    candidateReviewHistory: [],
     deploymentAttestedAt: null,
     approval: null,
     automation: null,
@@ -800,6 +831,7 @@ export function requestRepairChanges(repair, feedback, now = Date.now()) {
   if (repair.status === "changes-requested") {
     throw new AuditError("CHANGES_ALREADY_REQUESTED", "Changes have already been requested for this repair.");
   }
+  const archivedCandidate = archiveCandidateReviewForNewImplementation(repair);
   return {
     ...repair,
     status: "changes-requested",
@@ -810,6 +842,7 @@ export function requestRepairChanges(repair, feedback, now = Date.now()) {
     reviewedAt: null,
     implementationReceipt: null,
     implementationHistory: [],
+    ...archivedCandidate,
     deploymentAttestedAt: null,
     approval: null,
     automation: null,
@@ -903,6 +936,7 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     createdAt: repair.updatedAt ?? repair.createdAt,
     changeRequest: repair.changeRequest,
   };
+  const archivedCandidate = archiveCandidateReviewForNewImplementation(repair);
   return {
     ...repair,
     ...next,
@@ -915,6 +949,7 @@ export function reviseRepairDraft(repair, input = {}, source = "agent", now = Da
     reviewedAt: null,
     implementationReceipt: null,
     implementationHistory: [],
+    ...archivedCandidate,
     deploymentAttestedAt: null,
     approval: null,
     automation: null,
@@ -973,8 +1008,10 @@ export function recordRepositoryImplementation(repair, input = {}, now = Date.no
   const previousHistory = Array.isArray(repair.implementationHistory)
     ? repair.implementationHistory
     : [];
+  const archivedCandidate = archiveCandidateReviewForNewImplementation(repair);
   return {
     ...repair,
+    ...archivedCandidate,
     implementationReceipt: {
       revision: Number.isFinite(previousReceipt?.revision) ? previousReceipt.revision + 1 : 1,
       summary: boundedString(input.summary, "summary", 300),
@@ -1111,6 +1148,36 @@ export function repairMissionContinuation(repair) {
     };
   }
 
+  const candidate = repair?.candidateReview
+    ? candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory)
+    : null;
+  if (candidate?.status === "issues-found") {
+    return {
+      status: "action-available",
+      nextActor: "agent",
+      nextAction: {
+        tool: "record_repository_implementation",
+        input: { repairId: repair.id },
+        reason: "The candidate build still shows a retained symptom or regression. Use the revision-bound correction packet, change only the approved repository scope, rerun its checks, and record a newer implementation receipt.",
+      },
+    };
+  }
+  if (candidate?.status === "in-progress" && candidate.nextTask) {
+    return {
+      status: "in-progress",
+      nextActor: "agent",
+      nextAction: {
+        tool: "record_candidate_review_check",
+        input: {
+          repairId: repair.id,
+          reviewId: candidate.id,
+          checkId: candidate.nextTask.id,
+        },
+        reason: "Use visual browser controls on the exact candidate target and record only the current retained comparison.",
+      },
+    };
+  }
+
   if (implementationEvidenceState(repair) === "checks-passed") {
     return { status: "awaiting-external-deployment", nextActor: "person", nextAction: null };
   }
@@ -1138,6 +1205,8 @@ export function repairMissionState(repair) {
     implementationEvidence,
   );
   const deploymentAttested = approved && Number.isFinite(repair?.deploymentAttestedAt);
+  const candidateStatus = candidateReviewStatus(repair?.candidateReview);
+  const correctionPacket = candidateCorrectionPacket(repair);
   const steps = [
     { id: "measure", label: "Measure", owner: "Frontmend", status: "complete" },
     {
@@ -1157,14 +1226,39 @@ export function repairMissionState(repair) {
       id: "implement",
       label: "Implement",
       owner: "Coding agent",
-      detail: implementationEvidence === "checks-passed"
+      detail: correctionPacket
+        ? "Candidate correction required"
+        : implementationEvidence === "checks-passed"
         ? "Agent checks passed"
         : implementationEvidence === "checks-failed"
           ? "Agent checks failed"
           : implementationEvidence === "checks-incomplete"
             ? "Agent checks incomplete"
             : "Coding agent · optional receipt",
-      status: implemented ? "complete" : implementationNeedsAttention ? "attention" : approved ? "available" : "blocked",
+      status: correctionPacket
+        ? "attention"
+        : implemented ? "complete" : implementationNeedsAttention ? "attention" : approved ? "available" : "blocked",
+    },
+    {
+      id: "candidate",
+      label: "Candidate review",
+      owner: "Person or coding agent",
+      detail: candidateStatus === "checks-passed"
+        ? "Checks passed · production unverified"
+        : candidateStatus === "issues-found"
+          ? "Candidate issues found"
+          : candidateStatus === "blocked"
+            ? "Candidate browser blocked"
+            : candidateStatus === "in-progress"
+              ? "Candidate checks unfinished"
+              : "Optional preflight",
+      status: candidateStatus === "checks-passed"
+        ? "complete"
+        : ["issues-found", "blocked"].includes(candidateStatus)
+          ? "attention"
+          : candidateStatus === "in-progress"
+            ? "current"
+            : implemented && !deploymentAttested ? "available" : "blocked",
     },
     {
       id: "deploy",
@@ -1187,7 +1281,14 @@ export function repairMissionState(repair) {
       ? [{ id: "review_in_ui", actor: "person" }]
       : !deploymentAttested
         ? [
-          { id: "record_repository_implementation", actor: "agent", optional: true },
+          {
+            id: "record_repository_implementation",
+            actor: "agent",
+            ...(correctionPacket ? {} : { optional: true }),
+          },
+          ...(implemented
+            ? [{ id: candidateStatus === "not-started" ? "open_candidate_review" : "get_candidate_review", actor: "person-or-agent", optional: true }]
+            : []),
           { id: "export_reviewed_plan", actor: "person" },
           { id: "deploy_externally", actor: "site-owner" },
           { id: "attest_deployment_in_ui", actor: "site-owner" },
@@ -1204,6 +1305,8 @@ export function repairMissionState(repair) {
       : approved
         ? deploymentAttested
           ? "ready-for-verification"
+          : correctionPacket
+            ? "candidate-attention"
           : implementationNeedsAttention
             ? "implementation-attention"
             : "awaiting-external-deployment"
@@ -1212,6 +1315,11 @@ export function repairMissionState(repair) {
     nextActions,
     targetMutation: "external-only",
     implementationEvidence,
+    candidateReview: repair?.candidateReview
+      ? candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory)
+      : null,
+    candidateReviewStatus: candidateStatus,
+    candidateCorrectionPacket: correctionPacket,
     deploymentEvidence: deploymentAttested ? "site-owner-attestation" : "none",
     approvalEvidence: delegatedApproval
       ? "prior-human-auto-policy"
@@ -1927,6 +2035,50 @@ export function repairExportMarkdown({ report, repair }) {
           "> This receipt is agent-reported repository metadata. Frontmend did not inspect or change source, run these checks, or deploy the site.",
           "",
         ]
+      : []),
+    ...(repair.candidateReview
+      ? (() => {
+          const candidate = candidateReviewSnapshot(
+            repair.candidateReview,
+            repair.candidateReviewHistory,
+          );
+          const correction = candidateCorrectionPacket(repair);
+          return [
+            "## Candidate browser review",
+            "",
+            `- Candidate origin: ${receiptText(candidate.candidateOrigin, 2_048)}`,
+            `- Repair revision: ${artifactMetric(candidate.repairRevision)}`,
+            `- Implementation receipt revision: ${artifactMetric(candidate.implementationReceiptRevision)}`,
+            `- Status: ${receiptText(candidate.status, 40)}`,
+            `- Checks recorded: ${artifactMetric(candidate.state?.completedCheckCount)} of ${artifactMetric(candidate.state?.requestedCheckCount)}`,
+            `- Previous candidate iterations retained: ${candidate.historySummary.length}`,
+            "",
+            ...(candidate.results ?? []).map((result) =>
+              `- ${receiptText(result.checkId, 80)} — ${receiptText(result.outcome, 20)} — ${receiptText(result.summary, 300)} (${receiptText(result.source === "agent" ? "coding agent" : "person", 40)})`,
+            ),
+            "",
+            ...(correction
+              ? [
+                  "### Candidate correction packet",
+                  "",
+                  `- Bound to candidate review: ${receiptText(correction.revisionBinding.candidateReviewId, 160)}`,
+                  `- Approved files: ${correction.approvedRepositoryScope.files.length ? correction.approvedRepositoryScope.files.map((file) => `\`${receiptText(file, 200)}\``).join(", ") : "existing reviewed scope"}`,
+                  `- Required checks: ${correction.approvedRepositoryScope.checks.length ? correction.approvedRepositoryScope.checks.map((check) => receiptText(check, 120)).join("; ") : "existing reviewed checks"}`,
+                  ...correction.issues.flatMap((issue) => [
+                    `- ${receiptText(issue.label, 120)} at \`${receiptText(issue.target.path, 256)}\` · ${receiptText(issue.target.viewport, 20)} · \`${receiptText(issue.target.selectorOrLandmark, 200)}\``,
+                    `  - Retained baseline: ${receiptText(issue.retainedSymptom.evidence, 600)}`,
+                    `  - Candidate observation: ${receiptText(issue.candidateObservation.summary, 300)} (${receiptText(issue.candidateObservation.source, 20)})`,
+                    `  - Accept when: ${receiptText(issue.acceptanceCriteria, 600)}`,
+                  ]),
+                  "",
+                  "> The correction packet narrows the next coding iteration. It does not inspect source, create a new finding, prove deployment, or resolve the public claim.",
+                  "",
+                ]
+              : []),
+            "> Candidate-browser observations are optional pre-production evidence only. They are not a provider audit, deployment attestation, production verification, or resolution claim.",
+            "",
+          ];
+        })()
       : []),
     "> This artifact is a reviewed proposal. It does not claim the target site was changed or the finding was resolved.",
     "",

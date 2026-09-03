@@ -1,3 +1,5 @@
+import { requiredCapabilitiesForBrowserTask } from "./agent-capability-contract.js";
+
 const MAX_TASKS = 5;
 const MAX_OCCURRENCES = 8;
 const SEVERITY_RANK = Object.freeze({ high: 0, medium: 1, low: 2 });
@@ -224,7 +226,7 @@ function providerTask(group, path) {
   const retainedEvidence = occurrences.map((item) => item.evidence).find(Boolean) ?? "A provider rule requires rendered inspection.";
   const viewport = affectedViewports.includes("mobile") ? "mobile" : affectedViewports.includes("desktop") ? "desktop" : "desktop";
   const id = `investigate-${group.ruleId}-${affectedViewports.join("-")}`.slice(0, 80);
-  return {
+  const task = {
     schemaVersion: 1,
     id,
     kind: "provider-confirmation",
@@ -257,10 +259,14 @@ function providerTask(group, path) {
     usefulness: (selector ? 2 : 0) + Math.max(0, 2 - (SEVERITY_RANK[group.severity] ?? 2)),
     severity: group.severity,
   };
+  return {
+    ...task,
+    requiredCapabilities: requiredCapabilitiesForBrowserTask(task),
+  };
 }
 
 function genericTask(definition, path) {
-  return {
+  const task = {
     schemaVersion: 1,
     id: definition.id,
     kind: definition.id === "primary-journey" ? "safe-journey" : "coverage-gap",
@@ -289,6 +295,10 @@ function genericTask(definition, path) {
     boundary: taskBoundary(),
     usefulness: 0,
     severity: "low",
+  };
+  return {
+    ...task,
+    requiredCapabilities: requiredCapabilitiesForBrowserTask(task),
   };
 }
 

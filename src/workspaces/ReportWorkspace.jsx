@@ -29,6 +29,8 @@ import { assessmentFindings, deriveAuditMissionState } from "../audit-mission-co
 import { createSiteRouteCandidates } from "../site-exploration-contract.js";
 import { observedRouteRecords } from "../route-contract.js";
 import { findingRequiresDiagnosticMission } from "../diagnostic-contract.js";
+import { agentCapabilityRows } from "../agent-capability-contract.js";
+import { createEvidenceCapsules } from "../evidence-capsule-contract.js";
 import { createFreshAgentHandoff } from "../mission-handoff-contract.js";
 import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSummary.jsx";
 import { EvidenceOverview } from "../ui/EvidenceOverview.jsx";
@@ -734,6 +736,114 @@ function missionEvidenceLabel(value) {
     "unsupported-continuation": "No supported continuation",
   };
   return labels[value] ?? "Evidence retained";
+}
+
+function AgentCapabilityHandshake({ declaration, checkpoint, webMcp }) {
+  const rows = agentCapabilityRows(declaration);
+  const negotiation = checkpoint?.capabilityNegotiation ?? null;
+  const declarationReady = Boolean(declaration);
+  return (
+    <section className="agent-capability-handshake" aria-label="Agent capability handshake">
+      <header>
+        <div>
+          <p className="kicker">Division of labour</p>
+          <h3>{declarationReady ? "Agent capability handshake" : "Capability handshake pending"}</h3>
+        </div>
+        <span className={declarationReady ? "declared" : "pending"}>
+          {declarationReady ? "Agent-declared · not verified" : webMcp?.supported ? "Awaiting declaration" : "No agent connected"}
+        </span>
+      </header>
+      <ul>
+        {rows.map((row) => (
+          <li key={row.id} className={declarationReady && row.declared ? "available" : "unavailable"}>
+            <span aria-hidden="true">{declarationReady ? row.declared ? "✓" : "—" : "·"}</span>
+            <strong>{row.label}</strong>
+            <small>{declarationReady ? row.declared ? "Declared available" : "Declared unavailable" : "Not declared"}</small>
+          </li>
+        ))}
+      </ul>
+      <footer>
+        <p>
+          {negotiation?.status === "human-handoff-required"
+            ? "The next task needs a capability this agent did not declare, so Frontmend assigned no agent action and kept Human mode available."
+            : negotiation?.status === "matched"
+              ? "The next task matches this declaration and is compiled for the agent."
+              : declarationReady
+                ? "Frontmend will compare each future task with this declaration before assigning it."
+                : "A compatible agent calls declare_agent_capabilities once, with an explicit true or false for every capability."}
+        </p>
+        <small>
+          Self-report only · revision {checkpoint?.missionRevision ?? "—"} · never grants credentials, repair approval, or deployment authority
+        </small>
+      </footer>
+    </section>
+  );
+}
+
+function evidenceCapsuleTime(value) {
+  if (!Number.isFinite(value)) return "Timestamp unavailable";
+  return new Intl.DateTimeFormat(undefined, {
+    dateStyle: "medium",
+    timeStyle: "short",
+  }).format(new Date(value));
+}
+
+function EvidenceCapsuleCard({ capsule }) {
+  if (!capsule) return null;
+  const targetLabel = capsule.target.selector
+    ? `Selector · ${capsule.target.selector}`
+    : `Landmark · ${capsule.target.landmark}`;
+  return (
+    <section className="evidence-capsule" aria-label={`Evidence capsule for ${capsule.title}`}>
+      <header>
+        <div>
+          <p className="kicker">Evidence capsule</p>
+          <strong>Priority {capsule.priorityRank} · revision-bound</strong>
+        </div>
+        <span>Audit r{capsule.auditRevision}</span>
+      </header>
+      <div className="evidence-capsule-grid">
+        <figure className={capsule.screenshot.url ? "has-capture" : "no-capture"}>
+          {capsule.screenshot.url ? (
+            <img
+              src={capsule.screenshot.url}
+              alt={`${capsule.screenshot.viewport.label} Lighthouse evidence for ${capsule.title}`}
+            />
+          ) : (
+            <div>
+              <Browser size={26} weight="duotone" aria-hidden="true" />
+              <span>No provider screenshot captured</span>
+            </div>
+          )}
+          <figcaption>
+            <strong>{capsule.screenshot.viewport.label}</strong>
+            <span>{capsule.screenshot.source === "lighthouse-audit-capture" ? "Retained Lighthouse capture" : "Evidence remains text-only"}</span>
+          </figcaption>
+        </figure>
+        <div className="evidence-capsule-record">
+          <dl>
+            <div><dt>Route</dt><dd><code>{capsule.target.route}</code></dd></div>
+            <div><dt>Target</dt><dd><code title={targetLabel}>{targetLabel}</code></dd></div>
+            <div><dt>Source</dt><dd>{capsule.evidence.source.provider} · {capsule.evidence.source.strategy}</dd></div>
+            <div><dt>Observed</dt><dd>{evidenceCapsuleTime(capsule.timestamp)}</dd></div>
+          </dl>
+          <p>{capsule.evidence.observation}</p>
+        </div>
+      </div>
+      <div className="evidence-capsule-task">
+        <span>Exact observation task</span>
+        <strong>{capsule.observationTask.label}</strong>
+        <p>{capsule.observationTask.instructions}</p>
+        <small>
+          {capsule.observationTask.viewport} · {capsule.observationTask.requiredCapabilities.join(" + ")}
+        </small>
+      </div>
+      <footer>
+        <code>get_active_evidence_capsule</code>
+        <span>Reads this selected context without copying an audit or finding ID.</span>
+      </footer>
+    </section>
+  );
 }
 
 function evidenceRelationshipLabel(value) {
@@ -1512,6 +1622,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const [browserReview, setBrowserReview] = useState(() => auditService.getBrowserReview(report.auditId));
   const [siteExplorations, setSiteExplorations] = useState(() => auditService.getSiteExplorations(report.auditId));
   const [repairPolicy, setRepairPolicy] = useState(() => auditService.getRepairPolicy(report.auditId));
+  const [agentCapabilities, setAgentCapabilities] = useState(() => auditService.getAgentCapabilities(report.auditId));
   const [workspaceReadError, setWorkspaceReadError] = useState("");
   const [workspaceUnavailable, setWorkspaceUnavailable] = useState([]);
   const [isRefreshingWorkspace, setIsRefreshingWorkspace] = useState(false);
@@ -1560,6 +1671,16 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   const selectedPriority = missionState.priorities.find(
     (priority) => priority.findingId === selectedFinding?.id,
   ) ?? null;
+  const evidenceCapsules = useMemo(() => createEvidenceCapsules({
+    audit,
+    report,
+    missionState,
+    findings,
+    browserReview,
+  }), [audit, report, missionState, findings, browserReview]);
+  const selectedEvidenceCapsule = evidenceCapsules.find(
+    (capsule) => capsule.findingId === selectedFinding?.id,
+  ) ?? null;
   const preparedFindingId = mission.repairPreparation?.findingId ?? null;
   const preparedFindingIds = mission.repairPreparation?.findingIds ?? (preparedFindingId ? [preparedFindingId] : []);
   const preparedFinding = findings.find((finding) => finding.id === preparedFindingId) ?? null;
@@ -1602,6 +1723,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
         setBrowserReview(auditService.getBrowserReview(report.auditId));
         setSiteExplorations([...auditService.getSiteExplorations(report.auditId)]);
         setRepairPolicy(auditService.getRepairPolicy(report.auditId));
+        setAgentCapabilities(auditService.getAgentCapabilities(report.auditId));
       }
     };
     const unsubscribe = auditService.subscribe(refresh);
@@ -1653,6 +1775,11 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     }
   }, [displayedFindings, selectedFindingId]);
 
+  useEffect(() => {
+    if (!selectedPriority?.findingId) return;
+    auditService.setActiveEvidenceFinding(report.auditId, selectedPriority.findingId);
+  }, [report.auditId, selectedPriority?.findingId]);
+
   const rememberRepair = (repair) => {
     setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
     setRepairPolicy(auditService.getRepairPolicy(report.auditId));
@@ -1667,6 +1794,9 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     const finding = findings.find((item) => item.id === findingId);
     if (!finding) return;
     setSelectedFindingId(finding.id);
+    if (missionState.priorities.some((priority) => priority.findingId === finding.id)) {
+      auditService.setActiveEvidenceFinding(report.auditId, finding.id);
+    }
     if (finding.source?.strategy) setViewportId(finding.source.strategy);
   };
   const selectViewportFromKeyboard = (event, index) => {
@@ -1903,6 +2033,11 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                 missionState={missionState}
               />
             ) : null}
+            <AgentCapabilityHandshake
+              declaration={agentCapabilities}
+              checkpoint={missionCheckpoint}
+              webMcp={webMcp}
+            />
           </section>
 
           <section className="case-file-section" id="case-evidence" aria-label="Evidence">
@@ -2075,6 +2210,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                     </div>
                     <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
                     <p>{selectedFinding.summary}</p>
+                    <EvidenceCapsuleCard capsule={selectedEvidenceCapsule} />
                     {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
                       <LazyWorkspace
                         load={loadDiagnosisWorkspace}

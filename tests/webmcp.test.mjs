@@ -14,6 +14,19 @@ import {
 } from "../src/browser-review-contract.js";
 import { deriveAuditMissionState } from "../src/audit-mission-contract.js";
 import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
+import { createAgentCapabilityDeclaration } from "../src/agent-capability-contract.js";
+import {
+  openCandidateReview as openCandidateReviewContract,
+  recordCandidateReviewCheck as recordCandidateReviewCheckContract,
+} from "../src/candidate-review-contract.js";
+
+const ALL_AGENT_CAPABILITIES = createAgentCapabilityDeclaration({
+  visualBrowserAccess: true,
+  responsiveEmulation: true,
+  runtimeDiagnostics: true,
+  repositoryAccess: true,
+  terminalExecution: true,
+}, null, 10);
 
 function findTool(tools, name) {
   const tool = tools.find((item) => item.name === name);
@@ -26,7 +39,9 @@ const TOOL_NAMES = [
   "check_site_audit_progress",
   "cancel_site_audit",
   "get_mission_summary",
+  "declare_agent_capabilities",
   "get_site_audit_results",
+  "get_active_evidence_capsule",
   "get_evidence_chain",
   "open_browser_review",
   "record_browser_review_check",
@@ -43,11 +58,15 @@ const TOOL_NAMES = [
   "stage_site_repair",
   "revise_site_repair",
   "get_repair_workspace",
+  "open_candidate_review",
+  "record_candidate_review_check",
+  "get_candidate_review",
   "record_repository_implementation",
   "start_repair_verification",
 ];
 const CHECKPOINTED_MUTATION_TOOLS = [
   "cancel_site_audit",
+  "declare_agent_capabilities",
   "open_browser_review",
   "record_browser_review_check",
   "start_related_page_audit",
@@ -58,6 +77,8 @@ const CHECKPOINTED_MUTATION_TOOLS = [
   "prepare_site_repair",
   "stage_site_repair",
   "revise_site_repair",
+  "open_candidate_review",
+  "record_candidate_review_check",
   "record_repository_implementation",
   "start_repair_verification",
 ];
@@ -271,6 +292,7 @@ test("a newer direct workspace read publishes one coherent contextual tool state
           report,
           missionRevision: 2,
           missionCheckpoint: { auditId, missionRevision: 2 },
+          agentCapabilities: ALL_AGENT_CAPABILITIES,
         };
         return currentAudit;
       },
@@ -485,6 +507,7 @@ test("agent tools use the same audit service as the human interface", async () =
         report,
         missionRevision: 1,
         missionCheckpoint: checkpoint,
+        agentCapabilities: ALL_AGENT_CAPABILITIES,
       }),
       results: async () => report,
       checkpoint: async () => checkpoint,
@@ -1603,6 +1626,7 @@ test("repair preparation updates contextual tools without exposing person-only a
           phase: "complete",
           progress: 100,
           report: { auditId, findings: [finding] },
+          agentCapabilities: ALL_AGENT_CAPABILITIES,
         };
         return audit;
       },
@@ -1633,7 +1657,9 @@ test("repair preparation updates contextual tools without exposing person-only a
   await service.startAudit({ url: "example.com", source: "human", mission: { focusAreas: ["seo"] } });
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_mission_summary",
+    "declare_agent_capabilities",
     "get_site_audit_results",
+    "get_active_evidence_capsule",
     "get_evidence_chain",
     "open_browser_review",
     "get_repository_fix_brief",
@@ -1650,7 +1676,9 @@ test("repair preparation updates contextual tools without exposing person-only a
   assert.equal(prepared.data.authority.deployed, false);
   assert.deepEqual(contextualFrontmendToolNames(service), [
     "get_mission_summary",
+    "declare_agent_capabilities",
     "get_site_audit_results",
+    "get_active_evidence_capsule",
     "get_evidence_chain",
     "get_repository_fix_brief",
     "prepare_site_repair",
@@ -1861,6 +1889,109 @@ test("implementation receipt tool reports bounded repository evidence only", asy
   assert.match(failed.data.nextAction, /record a new receipt/i);
 });
 
+test("candidate review tools hand a coding agent exact browser tasks through the shared service", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  let missionRevision = 8;
+  let repair = {
+    id: repairId,
+    auditId,
+    revision: 2,
+    status: "approved",
+    findingId: "contrast",
+    findingTitle: "Text contrast is too low",
+    findingSource: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+    findingScope: { focusAreas: ["accessibility"] },
+    findingPackage: {
+      items: [{
+        findingId: "contrast",
+        title: "Text contrast is too low",
+        source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+        scope: { focusAreas: ["accessibility"] },
+        retainedSymptom: {
+          focusAreas: ["accessibility"],
+          selector: ".muted-copy",
+          measured: "The retained contrast measurement failed.",
+        },
+      }],
+    },
+    verificationImpact: {
+      matrix: { rows: [{ findingId: "contrast", proofKind: "provider-rule", path: "/settings" }] },
+      targets: [{ root: true, path: "/" }],
+    },
+    implementationReceipt: {
+      revision: 1,
+      agentReported: true,
+      checks: [{ name: "bun test", status: "passed" }],
+    },
+    implementationHistory: [],
+    candidateReview: null,
+    candidateReviewHistory: [],
+    deploymentAttestedAt: null,
+  };
+  const calls = [];
+  const checkpointed = () => ({ ...repair, missionCheckpoint: { auditId, missionRevision } });
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getMissionCheckpoint: () => ({ auditId, missionRevision }),
+    openCandidateReview: async (receivedAuditId, receivedRepairId, origin, source, expectedRevision) => {
+      calls.push(["open", receivedAuditId, receivedRepairId, origin, source, expectedRevision]);
+      repair = openCandidateReviewContract(repair, { candidateOrigin: origin }, source, 100);
+      missionRevision += 1;
+      return checkpointed();
+    },
+    recordCandidateReviewCheck: async (receivedAuditId, receivedRepairId, reviewId, input, source, expectedRevision) => {
+      calls.push(["record", receivedAuditId, receivedRepairId, reviewId, input, source, expectedRevision]);
+      repair = recordCandidateReviewCheckContract(repair, reviewId, input, source, 110);
+      missionRevision += 1;
+      return checkpointed();
+    },
+    loadCandidateReview: async () => checkpointed(),
+  };
+  const tools = createFrontmendTools(service);
+  const openTool = findTool(tools, "open_candidate_review");
+  const recordTool = findTool(tools, "record_candidate_review_check");
+  const getTool = findTool(tools, "get_candidate_review");
+  assert.ok(openTool.inputSchema.required.includes("expectedMissionRevision"));
+  assert.ok(recordTool.inputSchema.required.includes("expectedMissionRevision"));
+  assert.equal(getTool.inputSchema.required.includes("expectedMissionRevision"), false);
+
+  const opened = await openTool.execute({
+    repairId,
+    candidateOrigin: "http://localhost:5173",
+    expectedMissionRevision: 8,
+  });
+  assert.equal(opened.ok, true);
+  assert.equal(opened.data.browserTargetUrl, "http://localhost:5173/settings");
+  assert.deepEqual(opened.data.requiredCapabilities, ["visual-browser-access", "responsive-emulation"]);
+  assert.match(opened.data.evidenceBoundary, /not a provider audit/i);
+  assert.deepEqual(calls[0], ["open", auditId, repairId, "http://localhost:5173", "agent", 8]);
+
+  const recorded = await recordTool.execute({
+    repairId,
+    reviewId: opened.data.reviewId,
+    checkId: opened.data.nextTask.id,
+    outcome: "issue",
+    summary: "The retained low-contrast copy remains visible.",
+    observations: ["The muted copy still fails direct visual comparison at the mobile viewport."],
+    expectedMissionRevision: 9,
+  });
+  assert.equal(recorded.ok, true);
+  assert.equal(recorded.data.status, "issues-found");
+  assert.equal(recorded.data.acceptedResult.source, "agent");
+  assert.equal(recorded.data.nextAction.tool, "record_repository_implementation");
+  assert.equal(recorded.data.correctionPacket.revisionBinding.candidateReviewId, opened.data.reviewId);
+  assert.equal(recorded.data.correctionPacket.issues[0].target.path, "/settings");
+  assert.equal(recorded.data.correctionPacket.issues[0].target.selectorOrLandmark, ".muted-copy");
+
+  const read = await getTool.execute({ repairId });
+  assert.equal(read.ok, true);
+  assert.equal(read.data.status, "issues-found");
+  assert.equal(read.data.results[0].outcome, "issue");
+  assert.equal(read.data.browserTargetUrl, null);
+  assert.equal(read.data.correctionPacket.nextAction.tool, "record_repository_implementation");
+});
+
 test("verification receipt tool returns the same bounded proof artifact", async () => {
   const auditId = "c1de4f26-c222-4e44-a7e5-884ba6d9fe9a";
   const report = {
@@ -1935,7 +2066,13 @@ test("verification receipt tool returns the same bounded proof artifact", async 
 test("audit-scoped schemas make only the current audit ID optional", async () => {
   const service = { getActiveAudit: () => null, getResults: async () => ({}) };
   const tools = createFrontmendTools(service);
-  const auditScopedNames = TOOL_NAMES.filter((name) => name !== "start_site_audit");
+  const auditScopedNames = TOOL_NAMES.filter(
+    (name) => !["start_site_audit", "get_active_evidence_capsule"].includes(name),
+  );
+
+  const activeCapsule = findTool(tools, "get_active_evidence_capsule");
+  assert.deepEqual(activeCapsule.inputSchema.properties, {});
+  assert.deepEqual(activeCapsule.inputSchema.required ?? [], []);
 
   for (const name of auditScopedNames) {
     const definition = findTool(tools, name);
@@ -1956,6 +2093,99 @@ test("audit-scoped schemas make only the current audit ID optional", async () =>
   assert.equal(withoutContext.ok, false);
   assert.equal(withoutContext.error.code, "AUDIT_CONTEXT_REQUIRED");
   assert.match(withoutContext.error.message, /Provide auditId or open the audit workspace/);
+});
+
+test("capability handshake records only explicit self-reported availability", async () => {
+  const auditId = "audit-capabilities";
+  let checkpoint = { auditId, missionRevision: 4 };
+  const calls = [];
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", missionRevision: checkpoint.missionRevision }),
+    getMissionCheckpoint: () => checkpoint,
+    declareAgentCapabilities: async (receivedAuditId, capabilities, expectedMissionRevision) => {
+      calls.push({ receivedAuditId, capabilities, expectedMissionRevision });
+      checkpoint = {
+        auditId,
+        missionRevision: 5,
+        action: { tool: "open_browser_review", input: { auditId, expectedMissionRevision: 5 } },
+        capabilityNegotiation: {
+          status: "matched",
+          provenance: "agent-declared",
+          verificationStatus: "not-verified",
+        },
+      };
+      return {
+        agentCapabilities: {
+          schemaVersion: 1,
+          provenance: "agent-declared",
+          verificationStatus: "not-verified",
+          capabilities,
+          declaredCapabilities: ["visual-browser-access", "responsive-emulation"],
+          unavailableCapabilities: ["runtime-diagnostics", "repository-access", "terminal-execution"],
+          declaredAt: 10,
+          updatedAt: 10,
+          declarationRevision: 1,
+        },
+        missionCheckpoint: checkpoint,
+      };
+    },
+  };
+  const declaration = {
+    visualBrowserAccess: true,
+    responsiveEmulation: true,
+    runtimeDiagnostics: false,
+    repositoryAccess: false,
+    terminalExecution: false,
+  };
+  const tool = findTool(createFrontmendTools(service), "declare_agent_capabilities");
+  assert.deepEqual(tool.inputSchema.properties.capabilities.required, [
+    "visualBrowserAccess",
+    "responsiveEmulation",
+    "runtimeDiagnostics",
+    "repositoryAccess",
+    "terminalExecution",
+  ]);
+
+  const result = await tool.execute({ capabilities: declaration });
+  assert.equal(result.ok, true);
+  assert.deepEqual(calls, [{
+    receivedAuditId: auditId,
+    capabilities: declaration,
+    expectedMissionRevision: 4,
+  }]);
+  assert.equal(result.data.agentCapabilities.provenance, "agent-declared");
+  assert.equal(result.data.agentCapabilities.verificationStatus, "not-verified");
+  assert.equal(result.data.capabilityNegotiation.status, "matched");
+  assert.equal(result.data.nextAction.tool, "open_browser_review");
+});
+
+test("active evidence capsule follows the visible finding without accepting copied IDs", async () => {
+  const capsule = {
+    capsuleId: "audit-1:r7:finding-1",
+    auditId: "audit-1",
+    findingId: "finding-1",
+    auditRevision: 7,
+  };
+  let reads = 0;
+  const service = {
+    getActiveAudit: () => ({ id: "audit-1", status: "complete", missionRevision: 7 }),
+    getActiveEvidenceCapsule: () => {
+      reads += 1;
+      return capsule;
+    },
+    getMissionCheckpoint: () => ({ auditId: "audit-1", missionRevision: 7 }),
+  };
+  const tool = findTool(createFrontmendTools(service), "get_active_evidence_capsule");
+  const result = await tool.execute({});
+  assert.equal(result.ok, true);
+  assert.equal(reads, 1);
+  assert.deepEqual(result.data.capsule, capsule);
+  assert.equal(result.data.activeSelection, true);
+
+  const copiedId = await tool.execute({ findingId: "finding-1" });
+  assert.equal(copiedId.ok, false);
+  assert.equal(copiedId.error.code, "INVALID_INPUT");
+  assert.equal(reads, 1);
 });
 
 test("WebMCP preserves the current checkpoint in a safe stale-write error", async () => {
@@ -2214,6 +2444,54 @@ test("contextual tool availability follows the visible audit and human review st
     "prepare_site_repair",
     "stage_site_repair",
     "get_repair_workspace",
+    "record_repository_implementation",
+  ]);
+
+  repairs = [{
+    status: "approved",
+    deploymentAttestedAt: null,
+    implementationReceipt: {
+      agentReported: true,
+      checks: [{ name: "bun test", status: "passed" }],
+    },
+    candidateReview: null,
+  }];
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
+    "get_site_audit_results",
+    "get_evidence_chain",
+    "get_repository_fix_brief",
+    "prepare_site_repair",
+    "stage_site_repair",
+    "get_repair_workspace",
+    "open_candidate_review",
+    "record_repository_implementation",
+  ]);
+
+  repairs[0].candidateReview = { id: "candidate-review-1", state: { nextCheck: { id: "candidate-replay-1" } } };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
+    "get_site_audit_results",
+    "get_evidence_chain",
+    "get_repository_fix_brief",
+    "prepare_site_repair",
+    "stage_site_repair",
+    "get_repair_workspace",
+    "record_candidate_review_check",
+    "get_candidate_review",
+    "record_repository_implementation",
+  ]);
+
+  repairs[0].candidateReview = { id: "candidate-review-1", state: { nextCheck: null } };
+  assert.deepEqual(contextualFrontmendToolNames(service), [
+    "get_mission_summary",
+    "get_site_audit_results",
+    "get_evidence_chain",
+    "get_repository_fix_brief",
+    "prepare_site_repair",
+    "stage_site_repair",
+    "get_repair_workspace",
+    "get_candidate_review",
     "record_repository_implementation",
   ]);
 

@@ -8,7 +8,9 @@ export const ACTIVITY_TOOL_TITLES = Object.freeze({
   check_site_audit_progress: "Check site audit progress",
   cancel_site_audit: "Cancel site audit",
   get_mission_summary: "Get mission summary",
+  declare_agent_capabilities: "Declare agent capabilities",
   get_site_audit_results: "Get site audit results",
+  get_active_evidence_capsule: "Get active evidence capsule",
   get_evidence_chain: "Get one evidence chain",
   open_browser_review: "Open agent browser review",
   record_browser_review_check: "Record browser review check",
@@ -26,6 +28,9 @@ export const ACTIVITY_TOOL_TITLES = Object.freeze({
   revise_site_repair: "Revise site repair",
   get_repair_workspace: "Get repair workspace",
   record_repository_implementation: "Record repository implementation",
+  open_candidate_review: "Open candidate browser review",
+  record_candidate_review_check: "Record candidate browser check",
+  get_candidate_review: "Get candidate browser review",
   start_repair_verification: "Start repair verification",
 });
 const IDENTIFIER_FIELDS = Object.freeze([

@@ -70,6 +70,10 @@ import {
   createMissionCheckpoint,
 } from "../src/mission-checkpoint-contract.js";
 import {
+  agentCapabilitySnapshot,
+  createAgentCapabilityDeclaration,
+} from "../src/agent-capability-contract.js";
+import {
   aggregateRepairVerification,
   assignRepairVerificationJobs,
   browserReplaysForVerificationRows,
@@ -82,6 +86,11 @@ import {
   verificationCandidateProjection,
   verificationImpactLimits,
 } from "../src/verification-impact-contract.js";
+import {
+  isIdenticalCandidateReviewContribution,
+  openCandidateReview,
+  recordCandidateReviewCheck,
+} from "../src/candidate-review-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_LIMIT = 5;
@@ -164,6 +173,7 @@ function localCheckpoint(job) {
     repairs: job.repairs ?? [],
     browserReview: job.browserReview ?? null,
     explorations: job.explorations ?? [],
+    agentCapabilities: job.agentCapabilities ?? null,
   });
 }
 
@@ -188,6 +198,9 @@ function snapshot(job) {
     url: job.url,
     source: job.source,
     mission: job.mission ?? null,
+    agentCapabilities: job.agentCapabilities
+      ? agentCapabilitySnapshot(job.agentCapabilities)
+      : null,
     missionRevision: auditMissionRevision(job),
     missionCheckpoint: localCheckpoint(job),
     status: job.status,
@@ -353,6 +366,7 @@ export function createLocalAuditRuntime(options = {}) {
         source,
         ownerSessionHash: previousJob.ownerSessionHash ?? ownerSessionHash,
         mission: previousJob.mission ?? mission,
+        agentCapabilities: previousJob.agentCapabilities ?? null,
         verification,
         exploration,
         siteExploration,
@@ -383,6 +397,7 @@ export function createLocalAuditRuntime(options = {}) {
       source,
       ownerSessionHash,
       mission,
+      agentCapabilities: null,
       missionRevision: 1,
       verification,
       exploration,
@@ -798,6 +813,76 @@ export function createLocalAuditRuntime(options = {}) {
 
       const repairPolicyMatch = requestUrl.pathname.match(/^\/api\/audits\/([^/]+)\/repair-policy$/);
 
+      const agentCapabilitiesMatch = requestUrl.pathname.match(
+        /^\/api\/audits\/([^/]+)\/agent-capabilities$/,
+      );
+      if (agentCapabilitiesMatch) {
+        const baseline = jobs.get(agentCapabilitiesMatch[1]);
+        if (!baseline) {
+          return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        }
+        if (request.method !== "POST") {
+          return sendError(
+            response,
+            new AuditError("METHOD_NOT_ALLOWED", "Agent capabilities can only be declared with POST."),
+            405,
+          );
+        }
+        assertSameOrigin(request);
+        try {
+          const input = await readBody(request);
+          if (!input || typeof input !== "object" || Array.isArray(input)) {
+            throw new AuditError("INVALID_AGENT_CAPABILITIES", "The request body must be an object.");
+          }
+          const extra = Object.keys(input).find(
+            (key) => !["capabilities", "expectedMissionRevision"].includes(key),
+          );
+          if (extra) {
+            throw new AuditError("INVALID_AGENT_CAPABILITIES", `Unknown agent capability field: ${extra}.`);
+          }
+          if (!Number.isInteger(input.expectedMissionRevision) || input.expectedMissionRevision < 1) {
+            throw new AuditError(
+              "INVALID_AGENT_CAPABILITIES",
+              "expectedMissionRevision must identify the current positive mission revision.",
+            );
+          }
+          const declaration = createAgentCapabilityDeclaration(
+            input.capabilities,
+            baseline.agentCapabilities ?? null,
+          );
+          const current = baseline.agentCapabilities
+            ? agentCapabilitySnapshot(baseline.agentCapabilities)
+            : null;
+          if (current && JSON.stringify(current.capabilities) === JSON.stringify(declaration.capabilities)) {
+            return sendJson(response, 200, {
+              ok: true,
+              data: checkpointedLocal(baseline, {
+                auditId: baseline.id,
+                audit: snapshot(baseline),
+                agentCapabilities: current,
+              }),
+            });
+          }
+          assertLocalRevision(baseline, input.expectedMissionRevision);
+          baseline.agentCapabilities = declaration;
+          advanceLocalRevision(baseline);
+          return sendJson(response, 200, {
+            ok: true,
+            data: checkpointedLocal(baseline, {
+              auditId: baseline.id,
+              audit: snapshot(baseline),
+              agentCapabilities: declaration,
+            }),
+          });
+        } catch (error) {
+          return sendError(
+            response,
+            error,
+            error?.code === "MISSION_REVISION_STALE" ? 409 : 400,
+          );
+        }
+      }
+
       const prepareRepairMatch = requestUrl.pathname.match(
         /^\/api\/audits\/([^/]+)\/mission\/prepare-repair$/,
       );
@@ -1185,6 +1270,77 @@ export function createLocalAuditRuntime(options = {}) {
             ),
           ),
         });
+      }
+
+      const candidateReviewMatch = requestUrl.pathname.match(
+        /^\/api\/audits\/([^/]+)\/repairs\/([^/]+)\/candidate-review(?:\/(checks))?$/,
+      );
+      if (candidateReviewMatch) {
+        const [, auditId, rawRepairId, action] = candidateReviewMatch;
+        if ((action && request.method !== "POST") || (!action && !["GET", "POST"].includes(request.method))) {
+          return sendError(response, new AuditError("METHOD_NOT_ALLOWED", "That candidate review operation is not supported."), 405);
+        }
+        const baseline = jobs.get(auditId);
+        if (!baseline) return sendError(response, new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID."), 404);
+        if (baseline.status !== "complete" || !baseline.report) {
+          return sendError(response, new AuditError("AUDIT_NOT_READY", "Finish the audit before opening candidate review."), 409);
+        }
+        const repairId = validateRepairId(decodeURIComponent(rawRepairId));
+        const repair = baseline.repairs.find((item) => item.id === repairId);
+        if (!repair) return sendError(response, new AuditError("REPAIR_NOT_FOUND", "That repair draft does not exist."), 404);
+        if (!action && request.method === "GET") {
+          return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, repairWorkspaceItem(baseline, repair)) });
+        }
+        assertSameOrigin(request);
+        const input = await readBody(request);
+        try {
+          if (!action) {
+            const extra = Object.keys(input ?? {}).find(
+              (key) => !["candidateOrigin", "source", "expectedMissionRevision"].includes(key),
+            );
+            if (extra) throw new AuditError("INVALID_CANDIDATE_REVIEW", `Unknown candidate review field: ${extra}.`);
+            if (input?.source !== "agent" && input?.source !== "person") {
+              throw new AuditError("INVALID_CANDIDATE_REVIEW", "Candidate review must identify an agent or person source.");
+            }
+            const next = openCandidateReview(repair, { candidateOrigin: input.candidateOrigin }, input.source);
+            if (next !== repair) {
+              assertLocalRevision(baseline, input.expectedMissionRevision);
+              Object.assign(repair, next);
+              advanceLocalRevision(baseline);
+            }
+            return sendJson(response, next === repair ? 200 : 201, {
+              ok: true,
+              data: checkpointedLocal(baseline, repairWorkspaceItem(baseline, repair)),
+            });
+          }
+          const { reviewId, source, expectedMissionRevision, ...check } = input ?? {};
+          if (source !== "agent" && source !== "person") {
+            throw new AuditError("INVALID_CANDIDATE_REVIEW", "Candidate review evidence must identify an agent or person source.");
+          }
+          if (!isIdenticalCandidateReviewContribution(repair, reviewId, check, source)) {
+            assertLocalRevision(baseline, expectedMissionRevision);
+            Object.assign(repair, recordCandidateReviewCheck(repair, reviewId, check, source));
+            advanceLocalRevision(baseline);
+          }
+          return sendJson(response, 200, {
+            ok: true,
+            data: checkpointedLocal(baseline, repairWorkspaceItem(baseline, repair)),
+          });
+        } catch (error) {
+          const status = [
+            "MISSION_REVISION_STALE",
+            "REPAIR_NOT_APPROVED",
+            "IMPLEMENTATION_CHECKS_REQUIRED",
+            "CANDIDATE_REVIEW_EXISTS",
+            "CANDIDATE_REVIEW_PREDEPLOYMENT_ONLY",
+            "CANDIDATE_REVIEW_STALE",
+            "CANDIDATE_CORRECTION_REQUIRED",
+            "BROWSER_REVIEW_SEQUENCE",
+            "BROWSER_REVIEW_COMPLETE",
+            "BROWSER_REVIEW_CHECK_COMPLETE",
+          ].includes(error?.code) ? 409 : error?.code === "CANDIDATE_REVIEW_NOT_FOUND" ? 404 : 400;
+          return sendError(response, error, status);
+        }
       }
 
       const aggregateVerificationMatch = requestUrl.pathname.match(

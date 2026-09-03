@@ -19,6 +19,10 @@ import {
   createBrowserVerificationReview,
   recordBrowserReviewCheck,
 } from "../src/browser-review-contract.js";
+import {
+  openCandidateReview,
+  recordCandidateReviewCheck,
+} from "../src/candidate-review-contract.js";
 
 const finding = {
   id: "document-content-security-policy",
@@ -56,7 +60,14 @@ test("creates a source-safe repository handoff from measured evidence", () => {
   assert.equal(brief.repositoryHandoff.risk, "high");
   assert.match(brief.repositoryHandoff.inspectFor[0], /response-header/i);
   assert.match(brief.repositoryHandoff.suggestedChange, /Report-Only/);
-  assert.equal(brief.repositoryHandoff.acceptanceCriteria.length, 3);
+  assert.equal(brief.repositoryHandoff.acceptanceCriteria.length, 4);
+  assert.deepEqual(brief.candidateReview.sequence, [
+    "record_repository_implementation",
+    "open_candidate_review",
+    "record_candidate_review_check",
+    "get_candidate_review",
+  ]);
+  assert.match(brief.candidateReview.evidenceBoundary, /fresh public Frontmend verification is still required/i);
   assert.equal(brief.authority.frontmendChangedTarget, false);
   assert.equal(brief.authority.sourceAccess, "coding-agent-only");
   assert.match(brief.authority.privacy, /absolute paths/);
@@ -516,6 +527,39 @@ test("records bounded agent implementation evidence without claiming deployment"
     }),
     (error) => error.code === "DEPLOYMENT_ALREADY_ATTESTED",
   );
+});
+
+test("candidate issues return the authoritative repair mission to coding implementation", () => {
+  let repair = {
+    ...createRepairDraft({ auditId: "audit-1", finding, now: 100 }),
+    status: "approved",
+    reviewedAt: 110,
+  };
+  repair = recordRepositoryImplementation(repair, {
+    summary: "Implemented the reviewed header repair.",
+    files: ["worker/index.js"],
+    checks: [{ name: "bun test", status: "passed" }],
+  }, 120);
+  repair = openCandidateReview(repair, { candidateOrigin: "http://localhost:5173" }, "agent", 130);
+  repair = recordCandidateReviewCheck(repair, repair.candidateReview.id, {
+    checkId: repair.candidateReview.state.nextCheck.id,
+    outcome: "issue",
+    summary: "The retained candidate symptom remains.",
+    observations: ["The exact retained rule still fails at the candidate viewport."],
+  }, "agent", 140);
+
+  const mission = repairMissionState(repair);
+  assert.equal(mission.state, "candidate-attention");
+  assert.equal(mission.candidateReviewStatus, "issues-found");
+  assert.equal(mission.continuation.nextActor, "agent");
+  assert.equal(mission.continuation.nextAction.tool, "record_repository_implementation");
+  assert.equal(mission.candidateCorrectionPacket.issues[0].candidateObservation.source, "agent");
+  assert.equal(mission.steps.find((step) => step.id === "candidate").status, "attention");
+  assert.equal(mission.steps.find((step) => step.id === "implement").status, "attention");
+  assert.equal(mission.deploymentEvidence, "none");
+  const markdown = repairExportMarkdown({ report: {}, repair });
+  assert.match(markdown, /Candidate correction packet/);
+  assert.match(markdown, /Retained baseline/);
 });
 
 test("human feedback gates bounded agent revisions and clears stale approvals", () => {

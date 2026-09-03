@@ -1,5 +1,7 @@
 import {
   ArrowsOutSimple,
+  ArrowSquareOut,
+  Browser,
   Check,
   CheckCircle,
   ClipboardText,
@@ -12,8 +14,12 @@ import {
   Warning,
   Wrench,
 } from "@phosphor-icons/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { AuditError, auditService } from "../audit-service.js";
+import {
+  candidateCorrectionPacket,
+  candidateReviewSnapshot,
+} from "../candidate-review-contract.js";
 import { repairMissionState } from "../repair-contract.js";
 import { humanMissionMutationFailure } from "../ui/human-mission-recovery.js";
 import DiagnosticProvenanceCard from "./DiagnosticProvenanceCard.jsx";
@@ -26,6 +32,7 @@ function RepairMissionRail({ repair }) {
     "awaiting-human-review": "Human decision required",
     "changes-requested": "Agent revision required",
     "implementation-attention": "Repository checks need attention",
+    "candidate-attention": "Candidate correction required",
     "awaiting-external-deployment": "Waiting for site owner",
     "ready-for-verification": "Ready to verify",
   };
@@ -157,6 +164,313 @@ function RepairImpactMatrix({ repair }) {
       <small>
         Scope is frozen at approval. A failed exact row stays present; a failed guardrail is a regression; missing, blocked, or incomparable evidence stays inconclusive. Deployment remains person-owned.
       </small>
+    </section>
+  );
+}
+
+function CandidateReviewCard({ auditId, repair, onRepairChange }) {
+  const review = repair.candidateReview
+    ? candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory)
+    : null;
+  const correctionPacket = candidateCorrectionPacket(repair);
+  const checksPassed = (repair.implementationReceipt?.checks?.length ?? 0) > 0
+    && repair.implementationReceipt.checks.every((check) => check.status === "passed");
+  const eligible = repair.status === "approved"
+    && checksPassed
+    && !Number.isFinite(repair.deploymentAttestedAt);
+  const visible = eligible || review || repair.candidateReviewHistory?.length;
+  const [candidateOrigin, setCandidateOrigin] = useState("");
+  const [outcome, setOutcome] = useState("passed");
+  const [summary, setSummary] = useState("");
+  const [observations, setObservations] = useState("");
+  const [blockerReason, setBlockerReason] = useState("browser-unavailable");
+  const [busy, setBusy] = useState("");
+  const [error, setError] = useState("");
+  const headingRef = useRef(null);
+
+  useEffect(() => {
+    setOutcome("passed");
+    setSummary("");
+    setObservations("");
+    setError("");
+  }, [review?.id, review?.nextTask?.id]);
+
+  if (!visible) return null;
+
+  const focusHeading = () => {
+    window.requestAnimationFrame(() => headingRef.current?.focus());
+  };
+  const handleFailure = async (cause, fallback) => {
+    const failure = await humanMissionMutationFailure(cause, auditId, fallback);
+    setError(failure.message);
+    focusHeading();
+  };
+  const openReview = async () => {
+    setBusy("open");
+    setError("");
+    try {
+      onRepairChange(await auditService.openCandidateReview(
+        auditId,
+        repair.id,
+        candidateOrigin,
+        "person",
+      ));
+      focusHeading();
+    } catch (cause) {
+      await handleFailure(cause, "The candidate browser review could not be opened.");
+    } finally {
+      setBusy("");
+    }
+  };
+  const recordCheck = async () => {
+    if (!review?.nextTask) return;
+    const retainedObservations = observations
+      .split("\n")
+      .map((item) => item.trim())
+      .filter(Boolean)
+      .slice(0, 4);
+    if (outcome !== "blocked" && !retainedObservations.length) {
+      setError("Add at least one direct browser observation for a passed or issue result.");
+      return;
+    }
+    setBusy("record");
+    setError("");
+    try {
+      onRepairChange(await auditService.recordCandidateReviewCheck(
+        auditId,
+        repair.id,
+        review.id,
+        {
+          checkId: review.nextTask.id,
+          outcome,
+          summary,
+          observations: outcome === "blocked" ? undefined : retainedObservations,
+          blockerReason: outcome === "blocked" ? blockerReason : undefined,
+        },
+        "person",
+      ));
+      focusHeading();
+    } catch (cause) {
+      await handleFailure(cause, "The candidate browser observation could not be recorded.");
+    } finally {
+      setBusy("");
+    }
+  };
+
+  const statusCopy = {
+    "checks-passed": "Candidate checks passed—production unverified",
+    "issues-found": "Candidate issues found",
+    blocked: "Candidate review blocked",
+    "in-progress": "Candidate review in progress",
+  };
+  return (
+    <section className="candidate-review-card" data-status={review?.status ?? "not-started"} aria-labelledby={`candidate-review-${repair.id}`}>
+      <header>
+        <span aria-hidden="true"><Browser size={21} weight="duotone" /></span>
+        <div>
+          <p className="kicker">Optional pre-deployment preflight</p>
+          <strong id={`candidate-review-${repair.id}`} ref={headingRef} tabIndex={-1}>
+            Candidate Browser Review
+          </strong>
+          <small>{review ? statusCopy[review.status] : "Replay the retained evidence on the build you are about to ship."}</small>
+        </div>
+        {review ? <em>{review.state.completedCheckCount}/{review.state.requestedCheckCount}</em> : null}
+      </header>
+
+      {!review ? (
+        <div className="candidate-review-open">
+          <label htmlFor="candidate-origin">
+            <span>Candidate origin</span>
+            <input
+              id="candidate-origin"
+              type="url"
+              aria-describedby="candidate-origin-help"
+              value={candidateOrigin}
+              maxLength={2048}
+              placeholder="http://localhost:5173"
+              disabled={!eligible || Boolean(busy)}
+              onChange={(event) => setCandidateOrigin(event.target.value)}
+            />
+          </label>
+          <button
+            type="button"
+            onClick={openReview}
+            disabled={!eligible || !candidateOrigin.trim() || Boolean(busy)}
+          >
+            <Browser size={17} weight="bold" aria-hidden="true" />
+            {busy === "open" ? "Opening…" : "Open candidate review"}
+          </button>
+          <small id="candidate-origin-help">
+            Origin only. Loopback HTTP/HTTPS and public HTTPS are accepted. Frontmend does not fetch or navigate to it.
+          </small>
+          {!checksPassed ? <p role="status">A latest implementation receipt with every check passed is required first.</p> : null}
+        </div>
+      ) : (
+        <>
+          <div className="candidate-review-boundary" role="status">
+            <strong>{statusCopy[review.status]}</strong>
+            <span>{review.evidenceBoundary}</span>
+          </div>
+          {correctionPacket ? (
+            <section className="candidate-correction-packet" aria-labelledby={`candidate-correction-${repair.id}`}>
+              <header>
+                <span aria-hidden="true"><Wrench size={18} weight="duotone" /></span>
+                <div>
+                  <p className="kicker">Revision-bound coding handoff</p>
+                  <strong id={`candidate-correction-${repair.id}`}>Correction packet ready</strong>
+                  <small>
+                    Candidate iteration {correctionPacket.iteration} · implementation receipt {correctionPacket.revisionBinding.implementationReceiptRevision}
+                  </small>
+                </div>
+              </header>
+              {correctionPacket.issues.map((issue) => (
+                <article key={issue.checkId}>
+                  <div className="candidate-correction-target">
+                    <span><small>Route</small><code>{issue.target.path}</code></span>
+                    <span><small>Viewport</small><strong>{issue.target.viewport}</strong></span>
+                    <span><small>Inspect</small><code>{issue.target.selectorOrLandmark}</code></span>
+                  </div>
+                  <div className="candidate-correction-evidence">
+                    <div>
+                      <small>Retained baseline</small>
+                      <p>{issue.retainedSymptom.evidence}</p>
+                    </div>
+                    <div>
+                      <small>Candidate observation · {issue.candidateObservation.source === "person" ? "Person" : "Coding agent"}</small>
+                      <p>{issue.candidateObservation.summary}</p>
+                      {issue.candidateObservation.observations.length ? (
+                        <ul>{issue.candidateObservation.observations.map((item) => <li key={item}>{item}</li>)}</ul>
+                      ) : null}
+                    </div>
+                  </div>
+                  <p className="candidate-correction-acceptance">
+                    <strong>Accept when</strong> {issue.acceptanceCriteria}
+                  </p>
+                </article>
+              ))}
+              <div className="candidate-correction-scope">
+                <div>
+                  <small>Approved files</small>
+                  <p>{correctionPacket.approvedRepositoryScope.files.length
+                    ? correctionPacket.approvedRepositoryScope.files.join(" · ")
+                    : "Use only the existing reviewed repair scope."}</p>
+                </div>
+                <div>
+                  <small>Rerun checks</small>
+                  <p>{correctionPacket.approvedRepositoryScope.checks.length
+                    ? correctionPacket.approvedRepositoryScope.checks.join(" · ")
+                    : "Run the checks retained by the reviewed repair."}</p>
+                </div>
+              </div>
+              <footer>
+                <Robot size={16} weight="duotone" aria-hidden="true" />
+                <span>Correct this bounded issue, then record a newer implementation receipt. Frontmend will archive this iteration and unlock an exact replay.</span>
+              </footer>
+            </section>
+          ) : null}
+          {review.nextTask ? (
+            <div className="candidate-review-task">
+              <div className="candidate-review-target">
+                <span>
+                  <small>Current browser target</small>
+                  <code>{review.browserTargetUrl}</code>
+                </span>
+                <a href={review.browserTargetUrl} target="_blank" rel="noreferrer">
+                  Open target <ArrowSquareOut size={15} weight="bold" aria-hidden="true" />
+                </a>
+              </div>
+              <dl>
+                <div><dt>Viewport</dt><dd>{review.nextTask.viewport}</dd></div>
+                <div><dt>Inspect</dt><dd>{review.nextTask.trigger.selector ?? "Retained landmark or journey"}</dd></div>
+                <div><dt>Capabilities</dt><dd>{review.requiredCapabilities.join(" · ")}</dd></div>
+              </dl>
+              <div className="candidate-review-instruction">
+                <strong>{review.nextTask.label}</strong>
+                <p>{review.nextTask.assignment.instructions}</p>
+                <small>Acceptance: {review.nextTask.assignment.completionCriteria}</small>
+              </div>
+              <fieldset disabled={Boolean(busy)}>
+                <legend>Record this exact check</legend>
+                <label>
+                  <span>Outcome</span>
+                  <select value={outcome} onChange={(event) => setOutcome(event.target.value)}>
+                    <option value="passed">Passed</option>
+                    <option value="issue">Issue remains / regression</option>
+                    <option value="blocked">Blocked</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Bounded summary</span>
+                  <input
+                    value={summary}
+                    maxLength={300}
+                    placeholder="What did this exact comparison show?"
+                    onChange={(event) => setSummary(event.target.value)}
+                  />
+                </label>
+                {outcome === "blocked" ? (
+                  <label>
+                    <span>Blocker</span>
+                    <select value={blockerReason} onChange={(event) => setBlockerReason(event.target.value)}>
+                      <option value="browser-unavailable">Browser unavailable</option>
+                      <option value="interaction-unsafe">Interaction unsafe</option>
+                      <option value="authentication-required">Authentication required</option>
+                      <option value="unsupported-capability">Unsupported capability</option>
+                      <option value="target-changed">Target changed</option>
+                    </select>
+                  </label>
+                ) : (
+                  <label>
+                    <span>Direct observations · one per line</span>
+                    <textarea
+                      value={observations}
+                      maxLength={1603}
+                      rows={3}
+                      placeholder="The retained symptom was no longer observable."
+                      onChange={(event) => setObservations(event.target.value)}
+                    />
+                  </label>
+                )}
+                <button type="button" onClick={recordCheck} disabled={!summary.trim() || Boolean(busy)}>
+                  <Check size={17} weight="bold" aria-hidden="true" />
+                  {busy === "record" ? "Recording…" : "Record candidate check"}
+                </button>
+              </fieldset>
+            </div>
+          ) : null}
+          {review.results.length ? (
+            <ol className="candidate-review-results" aria-label="Candidate browser results">
+              {review.results.map((result) => (
+                <li key={result.checkId} data-outcome={result.outcome}>
+                  <span>{result.outcome === "passed" ? <Check size={13} weight="bold" /> : <Warning size={13} weight="fill" />}</span>
+                  <div>
+                    <strong>{review.tasks.find((task) => task.id === result.checkId)?.label ?? result.checkId}</strong>
+                    <p>{result.summary}</p>
+                    <small>{result.source === "person" ? "Person" : "Coding agent"} · {result.outcome}</small>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          ) : null}
+        </>
+      )}
+      {review?.historySummary?.length ? (
+        <details className="candidate-review-history">
+          <summary>{review.historySummary.length} previous candidate iteration{review.historySummary.length === 1 ? "" : "s"}</summary>
+          <ol>
+            {review.historySummary.map((item) => (
+              <li key={item.id}>
+                <strong>Implementation {item.implementationReceiptRevision}</strong>
+                <span>
+                  {item.status.replaceAll("-", " ")} · {item.completedCheckCount}/{item.requestedCheckCount} checks
+                  {item.issueSummaries?.[0] ? ` · ${item.issueSummaries[0]}` : ""}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </details>
+      ) : null}
+      {error ? <p className="repair-error" role="alert">{error}</p> : null}
     </section>
   );
 }
@@ -570,6 +884,7 @@ function RepairWorkbench({
           A coding agent can optionally attach repository-relative files and check outcomes before deployment.
         </p>
       ) : null}
+      <CandidateReviewCard auditId={auditId} repair={repair} onRepairChange={onRepairChange} />
       {changesRequested ? (
         <div className="change-requested-card" role="status">
           <span aria-hidden="true"><Robot size={20} weight="duotone" /></span>
@@ -631,6 +946,18 @@ function RepairWorkbench({
       ) : !deploymentAttested ? (
         <div className="deployment-gate">
           <div className="deployment-gate-copy">
+            {repair.candidateReview && !["checks-passed"].includes(candidateReviewSnapshot(
+              repair.candidateReview,
+              repair.candidateReviewHistory,
+            ).status) ? (
+              <div className="candidate-deployment-warning" role="status">
+                <Warning size={17} weight="fill" aria-hidden="true" />
+                <span>
+                  Candidate review {candidateReviewSnapshot(repair.candidateReview).status.replaceAll("-", " ")}.
+                  Deployment remains your decision; production is unverified.
+                </span>
+              </div>
+            ) : null}
             <p className="kicker">External deployment handoff</p>
             <strong>Apply the reviewed change through your normal site workflow.</strong>
             <p>

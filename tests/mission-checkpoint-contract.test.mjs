@@ -6,6 +6,15 @@ import {
   auditMissionRevision,
   createMissionCheckpoint,
 } from "../src/mission-checkpoint-contract.js";
+import { createAgentCapabilityDeclaration } from "../src/agent-capability-contract.js";
+
+const allCapabilities = createAgentCapabilityDeclaration({
+  visualBrowserAccess: true,
+  responsiveEmulation: true,
+  runtimeDiagnostics: true,
+  repositoryAccess: true,
+  terminalExecution: true,
+}, null, 10);
 
 const audit = {
   id: "audit-1",
@@ -41,8 +50,11 @@ test("projects legacy records at mission revision one without rewriting them", (
   assert.equal(checkpoint.auditId, "audit-1");
   assert.equal(checkpoint.workspacePath, "/audits/audit-1");
   assert.equal(checkpoint.requiredCapability, "browser");
-  assert.equal(checkpoint.action.tool, "open_browser_review");
+  assert.equal(checkpoint.action.tool, "declare_agent_capabilities");
   assert.deepEqual(checkpoint.action.input, { auditId: "audit-1", expectedMissionRevision: 1 });
+  assert.equal(checkpoint.capabilityNegotiation.status, "declaration-required");
+  assert.deepEqual(checkpoint.requiredCapabilities, ["visual-browser-access"]);
+  assert.equal(checkpoint.agentCapabilities, null);
   assert.equal(checkpoint.agentRun.mode, "continue");
   assert.equal(checkpoint.agentRun.continueAutomatically, true);
   assert.match(checkpoint.retainedEvidenceSummary.join(" "), /provider-only/);
@@ -75,6 +87,7 @@ test("projects exact completion criteria for the current browser assignment", ()
         },
       },
     },
+    agentCapabilities: allCapabilities,
   });
   assert.equal(checkpoint.missionRevision, 7);
   assert.deepEqual(checkpoint.action.input, {
@@ -84,6 +97,77 @@ test("projects exact completion criteria for the current browser assignment", ()
     expectedMissionRevision: 7,
   });
   assert.match(checkpoint.completionCriteria[0], /both viewports/);
+  assert.equal(checkpoint.capabilityNegotiation.status, "matched");
+});
+
+test("projects the exact candidate task and its dynamic browser capabilities", () => {
+  const candidateReview = {
+    id: "candidate-review-1",
+    state: {
+      nextCheck: {
+        id: "candidate-replay-1",
+        viewport: "mobile",
+        target: { viewport: "mobile", affectedViewports: ["mobile"] },
+        requiredCapabilities: ["visual-browser-access", "responsive-emulation"],
+        assignment: { completionCriteria: "Confirm the retained mobile symptom is no longer observable." },
+      },
+    },
+  };
+  const checkpoint = createMissionCheckpoint({
+    audit: { ...audit, missionRevision: 8 },
+    missionState: {
+      status: "in-progress",
+      nextActor: "agent",
+      nextAction: {
+        tool: "record_candidate_review_check",
+        input: {
+          repairId: "repair-1",
+          reviewId: "candidate-review-1",
+          checkId: "candidate-replay-1",
+        },
+        reason: "Complete the current candidate comparison.",
+      },
+      priorityCount: 1,
+      assessmentComplete: true,
+      priorities: [],
+    },
+    repairs: [{ id: "repair-1", candidateReview }],
+    agentCapabilities: allCapabilities,
+  });
+
+  assert.equal(checkpoint.action.tool, "record_candidate_review_check");
+  assert.deepEqual(checkpoint.requiredCapabilities, ["visual-browser-access", "responsive-emulation"]);
+  assert.match(checkpoint.completionCriteria[0], /mobile symptom/i);
+  assert.match(checkpoint.completionCriteria[1], /returns the mission to repository implementation/i);
+  assert.equal(checkpoint.agentRun.mode, "continue");
+});
+
+test("hands an unsupported agent task back to the person without overstating verification", () => {
+  const limited = createAgentCapabilityDeclaration({
+    visualBrowserAccess: false,
+    responsiveEmulation: false,
+    runtimeDiagnostics: false,
+    repositoryAccess: true,
+    terminalExecution: false,
+  }, null, 20);
+  const checkpoint = createMissionCheckpoint({
+    audit,
+    agentCapabilities: limited,
+    missionState: {
+      status: "action-available",
+      nextActor: "agent",
+      nextAction: { tool: "open_browser_review", input: {}, reason: "Rendered evidence is required." },
+      priorityCount: 1,
+      assessmentComplete: false,
+      priorities: [],
+    },
+  });
+  assert.equal(checkpoint.action, null);
+  assert.equal(checkpoint.nextActor, "person");
+  assert.equal(checkpoint.capabilityNegotiation.status, "human-handoff-required");
+  assert.deepEqual(checkpoint.capabilityNegotiation.missingCapabilities, ["visual-browser-access"]);
+  assert.equal(checkpoint.agentCapabilities.provenance, "agent-declared");
+  assert.equal(checkpoint.agentCapabilities.verificationStatus, "not-verified");
 });
 
 test("projects bounded polling and human stop semantics for autonomous agents", () => {

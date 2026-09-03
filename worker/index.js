@@ -80,6 +80,10 @@ import {
   createMissionCheckpoint,
 } from "../src/mission-checkpoint-contract.js";
 import {
+  agentCapabilitySnapshot,
+  createAgentCapabilityDeclaration,
+} from "../src/agent-capability-contract.js";
+import {
   aggregateRepairVerification,
   assignRepairVerificationJobs,
   browserReplaysForVerificationRows,
@@ -92,6 +96,11 @@ import {
   verificationCandidateProjection,
   verificationImpactLimits,
 } from "../src/verification-impact-contract.js";
+import {
+  isIdenticalCandidateReviewContribution,
+  openCandidateReview,
+  recordCandidateReviewCheck,
+} from "../src/candidate-review-contract.js";
 
 const BODY_LIMIT_BYTES = 12 * 1024;
 const RATE_WINDOW_MS = 10 * 60 * 1000;
@@ -121,6 +130,7 @@ function publicError(error) {
       "EXPLORATION_NOT_FOUND",
       "DIAGNOSTIC_NOT_FOUND",
       "BROWSER_REVIEW_NOT_FOUND",
+      "CANDIDATE_REVIEW_NOT_FOUND",
       "VERIFICATION_RUN_NOT_FOUND",
     ].includes(error.code)
       ? 404
@@ -145,6 +155,11 @@ function publicError(error) {
             "BROWSER_REVIEW_WITHDRAWAL_LOCKED",
             "BROWSER_REVIEW_WITHDRAWAL_UNAVAILABLE",
             "BROWSER_REVIEW_WITHDRAWN",
+            "IMPLEMENTATION_CHECKS_REQUIRED",
+            "CANDIDATE_REVIEW_EXISTS",
+            "CANDIDATE_REVIEW_PREDEPLOYMENT_ONLY",
+            "CANDIDATE_REVIEW_STALE",
+            "CANDIDATE_CORRECTION_REQUIRED",
             "MISSION_REVISION_STALE",
           ].includes(error.code)
           ? 409
@@ -285,6 +300,9 @@ function auditSnapshot(state, missionCheckpoint = state.missionCheckpoint ?? nul
     url: state.url,
     source: state.source,
     mission: state.mission ?? null,
+    agentCapabilities: state.agentCapabilities
+      ? agentCapabilitySnapshot(state.agentCapabilities)
+      : null,
     missionRevision: auditMissionRevision(state),
     missionCheckpoint,
     status: state.status,
@@ -322,6 +340,7 @@ async function auditJobCheckpoint(ctx, state) {
     repairs: repairs ?? [],
     browserReview: browserReview ?? null,
     explorations: explorations ?? [],
+    agentCapabilities: state.agentCapabilities ?? null,
   });
 }
 
@@ -880,6 +899,24 @@ async function routeApi(request, env, url) {
     return new Response(response.body, response);
   }
 
+  const agentCapabilitiesMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/agent-capabilities$/);
+  if (agentCapabilitiesMatch) {
+    if (request.method !== "POST") {
+      return errorResponse(
+        new AuditError("METHOD_NOT_ALLOWED", "Agent capabilities can only be declared with POST."),
+      );
+    }
+    assertSameOrigin(request);
+    const body = await readJsonBody(request);
+    const response = await proxyJobRequest(
+      jobFromId(env, agentCapabilitiesMatch[1]),
+      "/agent-capabilities",
+      request,
+      body,
+    );
+    return new Response(response.body, response);
+  }
+
   const activityMatch = url.pathname.match(/^\/api\/audits\/([^/]+)\/activities$/);
   if (activityMatch) {
     if (!["GET", "POST"].includes(request.method)) {
@@ -989,6 +1026,27 @@ async function routeApi(request, env, url) {
     const suffix = receipt ? "verification-receipt" : "verification";
     const response = await job.fetch(
       `https://frontmend.internal/repairs/${encodeURIComponent(repairId)}/${suffix}`,
+    );
+    return new Response(response.body, response);
+  }
+
+  const candidateReviewMatch = url.pathname.match(
+    /^\/api\/audits\/([^/]+)\/repairs\/([^/]+)\/candidate-review(?:\/(checks))?$/,
+  );
+  if (candidateReviewMatch) {
+    const [, auditId, repairId, action] = candidateReviewMatch;
+    if ((action && request.method !== "POST") || (!action && !["GET", "POST"].includes(request.method))) {
+      return errorResponse(new AuditError("METHOD_NOT_ALLOWED", "That candidate review operation is not supported."));
+    }
+    validateRepairId(decodeURIComponent(repairId));
+    let body;
+    if (request.method === "POST") body = await readJsonBody(request);
+    const suffix = action ? "candidate-review-checks" : "candidate-review";
+    const response = await proxyJobRequest(
+      jobFromId(env, auditId),
+      `/repairs/${encodeURIComponent(repairId)}/${suffix}`,
+      request,
+      body,
     );
     return new Response(response.body, response);
   }
@@ -1242,6 +1300,7 @@ export class FrontmendAuditJob {
             ? input.ownerSessionHash
             : null),
         mission: existing?.mission ?? input.mission ?? null,
+        agentCapabilities: existing?.agentCapabilities ?? null,
         missionRevision: existing ? auditMissionRevision(existing) + 1 : 1,
         verification: input.verification ?? null,
         exploration: input.exploration ?? null,
@@ -1402,6 +1461,57 @@ export class FrontmendAuditJob {
               browserReview: retainedBrowserReview ?? null,
               explorations: (await this.ctx.storage.get("explorations")) ?? [],
             }),
+            missionCheckpoint,
+          },
+        });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (request.method === "POST" && url.pathname === "/agent-capabilities") {
+      try {
+        const input = await readJsonBody(request);
+        if (!input || typeof input !== "object" || Array.isArray(input)) {
+          throw new AuditError("INVALID_AGENT_CAPABILITIES", "The request body must be an object.");
+        }
+        const extra = Object.keys(input).find(
+          (key) => !["capabilities", "expectedMissionRevision"].includes(key),
+        );
+        if (extra) {
+          throw new AuditError("INVALID_AGENT_CAPABILITIES", `Unknown agent capability field: ${extra}.`);
+        }
+        if (!Number.isInteger(input.expectedMissionRevision) || input.expectedMissionRevision < 1) {
+          throw new AuditError(
+            "INVALID_AGENT_CAPABILITIES",
+            "expectedMissionRevision must identify the current positive mission revision.",
+          );
+        }
+        const declaration = createAgentCapabilityDeclaration(
+          input.capabilities,
+          state.agentCapabilities ?? null,
+        );
+        const current = state.agentCapabilities ? agentCapabilitySnapshot(state.agentCapabilities) : null;
+        if (current && JSON.stringify(current.capabilities) === JSON.stringify(declaration.capabilities)) {
+          const missionCheckpoint = await auditJobCheckpoint(this.ctx, state);
+          return json({
+            ok: true,
+            data: {
+              auditId: state.id,
+              audit: auditSnapshot(state, missionCheckpoint),
+              agentCapabilities: current,
+              missionCheckpoint,
+            },
+          });
+        }
+        await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
+        const updated = await advanceJobRevision(this.ctx, state, { agentCapabilities: declaration });
+        const missionCheckpoint = await auditJobCheckpoint(this.ctx, updated);
+        return json({
+          ok: true,
+          data: {
+            auditId: updated.id,
+            audit: auditSnapshot(updated, missionCheckpoint),
+            agentCapabilities: declaration,
             missionCheckpoint,
           },
         });
@@ -1783,7 +1893,7 @@ export class FrontmendAuditJob {
     if (state.status !== "complete" || !state.report) {
       return errorResponse(new AuditError("AUDIT_NOT_READY", "Finish the audit before staging a repair."));
     }
-    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|export|verification-input|verification-start-input|verification-assignments|verification|verification-receipt))?)?$/);
+    const match = url.pathname.match(/^\/repairs(?:\/([^/]+)(?:\/(approve|changes|revise|implementation|deployment|export|candidate-review|candidate-review-checks|verification-input|verification-start-input|verification-assignments|verification|verification-receipt))?)?$/);
     if (!match) return errorResponse(new AuditError("NOT_FOUND", "That repair route does not exist."));
     const [, rawRepairId, action] = match;
     const repairs = (await this.ctx.storage.get("repairs")) ?? [];
@@ -1902,6 +2012,56 @@ export class FrontmendAuditJob {
     const repair = repairs[repairIndex];
     if (!action && request.method === "GET") {
       return json({ ok: true, data: await this.repairWorkspaceItem(repair, state) });
+    }
+
+    if (action === "candidate-review" && request.method === "GET") {
+      return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(repair, state)) });
+    }
+    if (action === "candidate-review" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const extra = Object.keys(input ?? {}).find(
+        (key) => !["candidateOrigin", "source", "expectedMissionRevision"].includes(key),
+      );
+      if (extra) return errorResponse(new AuditError("INVALID_CANDIDATE_REVIEW", `Unknown candidate review field: ${extra}.`));
+      if (input?.source !== "agent" && input?.source !== "person") {
+        return errorResponse(new AuditError("INVALID_CANDIDATE_REVIEW", "Candidate review must identify an agent or person source."));
+      }
+      try {
+        const next = openCandidateReview(
+          repair,
+          { candidateOrigin: input.candidateOrigin },
+          input.source,
+        );
+        if (next === repair) {
+          return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(repair, state)) });
+        }
+        await assertJobRevision(this.ctx, state, input.expectedMissionRevision);
+        repairs[repairIndex] = next;
+        await this.ctx.storage.put("repairs", repairs);
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(next, updated)) }, { status: 201 });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    }
+    if (action === "candidate-review-checks" && request.method === "POST") {
+      const input = await readJsonBody(request);
+      const { reviewId, source, expectedMissionRevision, ...check } = input ?? {};
+      if (source !== "agent" && source !== "person") {
+        return errorResponse(new AuditError("INVALID_CANDIDATE_REVIEW", "Candidate review evidence must identify an agent or person source."));
+      }
+      try {
+        if (isIdenticalCandidateReviewContribution(repair, reviewId, check, source)) {
+          return json({ ok: true, data: await checkpointedJobData(this.ctx, state, await this.repairWorkspaceItem(repair, state)) });
+        }
+        await assertJobRevision(this.ctx, state, expectedMissionRevision);
+        repairs[repairIndex] = recordCandidateReviewCheck(repair, reviewId, check, source);
+        await this.ctx.storage.put("repairs", repairs);
+        const updated = await advanceJobRevision(this.ctx, state);
+        return json({ ok: true, data: await checkpointedJobData(this.ctx, updated, await this.repairWorkspaceItem(repairs[repairIndex], updated)) });
+      } catch (error) {
+        return errorResponse(error);
+      }
     }
 
     if (action === "approve" && request.method === "POST") {

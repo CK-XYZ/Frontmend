@@ -66,10 +66,13 @@ Have Codex read `get_repository_fix_brief`, inspect the repository, and stage a 
 
 Keep **Review each plan** selected. Approve the proposal yourself in the visible UI, then let Codex implement only the reviewed repository scope and run the named checks. Have it attach `record_repository_implementation` with a short summary, relative files, truthful check statuses, and an optional commit ID.
 
+Open **Candidate Browser Review** against the controlled localhost or public-preview origin. Let Codex perform the exact returned check and deliberately show one genuine candidate issue if the controlled fixture contains it. Frontmend must stop that candidate iteration, display the revision-bound correction packet, and make `record_repository_implementation` the authoritative next agent action. After Codex corrects the approved files and records passing checks, open iteration two and replay the failed check plus retained guardrails. End this section on **Candidate checks passed—production unverified**.
+
 Pause on the mission rail:
 
 - Frontmend measured.
 - Codex diagnosed and implemented.
+- Codex caught and corrected a candidate regression before deployment.
 - The person reviewed.
 - Deployment still belongs to the site owner.
 - Verification is still blocked.

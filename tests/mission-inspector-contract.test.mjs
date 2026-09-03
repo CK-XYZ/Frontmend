@@ -5,6 +5,10 @@ import {
   createMissionInspector,
 } from "../src/mission-inspector-contract.js";
 import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
+import {
+  openCandidateReview,
+  recordCandidateReviewCheck,
+} from "../src/candidate-review-contract.js";
 
 const completeAudit = {
   id: "audit-1",
@@ -188,6 +192,67 @@ test("keeps human review, deployment, and replay authority explicit", () => {
   assert.equal(replay.questions.whatHappensNow.action.tool, "start_repair_verification");
 });
 
+test("shows the candidate replay and exact repository correction as distinct agent stages", () => {
+  const baseRepair = {
+    id: "repair-1",
+    auditId: "audit-1",
+    revision: 1,
+    status: "approved",
+    findingId: "contrast",
+    findingTitle: "Text contrast is too low",
+    findingSource: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+    findingScope: { focusAreas: ["accessibility"] },
+    implementationReceipt: {
+      revision: 1,
+      agentReported: true,
+      files: ["src/page.css"],
+      checks: [{ name: "bun test", status: "passed" }],
+    },
+    implementationHistory: [],
+    candidateReview: null,
+    candidateReviewHistory: [],
+    deploymentAttestedAt: null,
+    updatedAt: 10,
+  };
+  const opened = openCandidateReview(baseRepair, { candidateOrigin: "http://localhost:5173" }, "agent", 20);
+  const replay = inspector({
+    repairs: [opened],
+    missionState: { browserReview: { required: false, status: "not-required" } },
+    checkpoint: {
+      action: {
+        tool: "record_candidate_review_check",
+        input: {
+          repairId: opened.id,
+          reviewId: opened.candidateReview.id,
+          checkId: opened.candidateReview.state.nextCheck.id,
+        },
+      },
+      completionCriteria: ["Compare the retained mobile symptom"],
+    },
+  });
+  assert.equal(replay.stage, "replay");
+  assert.equal(replay.questions.whatHappensNow.actor, "Browser-capable coding agent");
+
+  const issue = recordCandidateReviewCheck(opened, opened.candidateReview.id, {
+    checkId: opened.candidateReview.state.nextCheck.id,
+    outcome: "issue",
+    summary: "The retained symptom remains.",
+    observations: ["The same mobile contrast issue remains visible."],
+  }, "agent", 30);
+  const correction = inspector({
+    repairs: [issue],
+    missionState: { browserReview: { required: false, status: "not-required" } },
+    checkpoint: {
+      action: { tool: "record_repository_implementation", input: { repairId: issue.id } },
+      completionCriteria: ["Record repository-relative files and passing checks"],
+    },
+  });
+  assert.equal(correction.stage, "implementation");
+  assert.match(correction.questions.whatHappensNow.title, /correct the candidate issue/i);
+  assert.equal(correction.questions.whatHappensNow.action.tool, "record_repository_implementation");
+  assert.match(correction.questions.whatItUnlocks.join(" "), /new candidate iteration/i);
+});
+
 test("projects exact browser replay ahead of ordinary mission state", () => {
   const value = inspector({
     audit: {
@@ -260,6 +325,7 @@ test("exports every supported mission inspector stage", () => {
     "investigation",
     "diagnosis",
     "human-review",
+    "implementation",
     "deployment",
     "replay",
     "complete",

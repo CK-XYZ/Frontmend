@@ -29,6 +29,72 @@ test("rejects local, private, credentialed, and non-web targets", () => {
   }
 });
 
+test("keeps the human-selected finding as the active no-ID evidence capsule", async () => {
+  const findings = [
+    {
+      id: "finding-mobile",
+      title: "Mobile action has insufficient contrast",
+      severity: "high",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      viewport: "Mobile",
+      selector: ".primary-action",
+      evidence: "The retained mobile measurement failed the contrast threshold.",
+      source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+    },
+    {
+      id: "finding-desktop",
+      title: "Desktop control has no accessible name",
+      severity: "medium",
+      category: "Accessibility",
+      focusAreas: ["accessibility"],
+      viewport: "Desktop",
+      selector: "#menu-control",
+      evidence: "The retained desktop measurement found no accessible name.",
+      source: { provider: "Lighthouse", auditId: "button-name", strategy: "desktop" },
+    },
+  ];
+  const report = {
+    auditId: AUDIT_ID,
+    url: "https://example.com/",
+    finalUrl: "https://example.com/",
+    completedAt: 1_777_000_000_000,
+    findings,
+    viewports: [
+      { id: "mobile", label: "Mobile", evidenceUrl: `/api/audits/${AUDIT_ID}/evidence/mobile` },
+      { id: "desktop", label: "Desktop", evidenceUrl: `/api/audits/${AUDIT_ID}/evidence/desktop` },
+    ],
+  };
+  const service = createAuditService({
+    now: () => 10,
+    transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission,
+        status: "complete",
+        phase: "complete",
+        progress: 100,
+        report,
+        missionRevision: 3,
+      }),
+    },
+  });
+  await service.startAudit({
+    url: "example.com",
+    source: "human",
+    mission: { focusAreas: ["accessibility"], maxPriorities: 3 },
+  });
+
+  service.setActiveEvidenceFinding(AUDIT_ID, "finding-desktop");
+  const capsule = service.getActiveEvidenceCapsule();
+  assert.equal(capsule.findingId, "finding-desktop");
+  assert.equal(capsule.target.selector, "#menu-control");
+  assert.equal(capsule.screenshot.url, `/api/audits/${AUDIT_ID}/evidence/desktop`);
+  assert.equal(capsule.auditRevision, 3);
+});
+
 test("uses the remote job transport and synchronizes active state", async () => {
   const calls = [];
   const states = [
@@ -2006,6 +2072,125 @@ test("HTTP transport uses the browser-review singleton and sequenced check route
     source: "person",
     expectedMissionRevision: 8,
   });
+});
+
+test("HTTP transport uses revision-bound candidate review routes without a browser side effect", async () => {
+  const calls = [];
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const reviewId = "candidate-review-1";
+  const transport = createHttpAuditTransport({
+    baseUrl: "https://frontmend.test",
+    fetchImpl: async (url, init = {}) => {
+      calls.push({ url, init });
+      return Response.json({ ok: true, data: { auditId: AUDIT_ID, id: repairId } });
+    },
+  });
+
+  await transport.getCandidateReview(AUDIT_ID, repairId);
+  await transport.openCandidateReview(AUDIT_ID, repairId, "http://localhost:5173", "agent", 7);
+  await transport.recordCandidateReviewCheck(AUDIT_ID, repairId, reviewId, {
+    checkId: "candidate-replay-1",
+    outcome: "passed",
+    summary: "The retained symptom is absent.",
+    observations: ["The control meets the retained acceptance criteria."],
+  }, "person", 8);
+
+  const candidateUrl = `https://frontmend.test/api/audits/${AUDIT_ID}/repairs/${repairId}/candidate-review`;
+  assert.equal(calls[0].url, candidateUrl);
+  assert.equal(calls[0].init.method, undefined);
+  assert.equal(calls[1].url, candidateUrl);
+  assert.equal(calls[1].init.method, "POST");
+  assert.deepEqual(JSON.parse(calls[1].init.body), {
+    candidateOrigin: "http://localhost:5173",
+    source: "agent",
+    expectedMissionRevision: 7,
+  });
+  assert.equal(calls[2].url, `${candidateUrl}/checks`);
+  assert.deepEqual(JSON.parse(calls[2].init.body), {
+    checkId: "candidate-replay-1",
+    outcome: "passed",
+    summary: "The retained symptom is absent.",
+    observations: ["The control meets the retained acceptance criteria."],
+    reviewId,
+    source: "person",
+    expectedMissionRevision: 8,
+  });
+});
+
+test("shared service persists candidate review reads and sequential mutations in the repair workspace", async () => {
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const reviewId = "candidate-review-1";
+  let missionRevision = 7;
+  let repair = {
+    id: repairId,
+    auditId: AUDIT_ID,
+    candidateReview: null,
+    candidateReviewHistory: [],
+    missionCheckpoint: missionCheckpoint(missionRevision),
+  };
+  const calls = [];
+  const transport = {
+    openCandidateReview: async (...args) => {
+      calls.push(["open", ...args]);
+      missionRevision += 1;
+      repair = {
+        ...repair,
+        candidateReview: { id: reviewId, results: [] },
+        missionCheckpoint: missionCheckpoint(missionRevision),
+      };
+      return repair;
+    },
+    recordCandidateReviewCheck: async (...args) => {
+      calls.push(["record", ...args]);
+      missionRevision += 1;
+      repair = {
+        ...repair,
+        candidateReview: {
+          ...repair.candidateReview,
+          results: [{ checkId: args[3].checkId, outcome: args[3].outcome }],
+        },
+        missionCheckpoint: missionCheckpoint(missionRevision),
+      };
+      return repair;
+    },
+    getCandidateReview: async (...args) => {
+      calls.push(["get", ...args]);
+      return repair;
+    },
+  };
+  const service = createAuditService({ transport });
+
+  const opened = await service.openCandidateReview(
+    AUDIT_ID,
+    repairId,
+    "http://localhost:5173",
+    "agent",
+    7,
+  );
+  assert.equal(opened.missionCheckpoint.missionRevision, 8);
+  assert.equal(service.getRepairs(AUDIT_ID)[0].candidateReview.id, reviewId);
+
+  const recorded = await service.recordCandidateReviewCheck(
+    AUDIT_ID,
+    repairId,
+    reviewId,
+    {
+      checkId: "candidate-replay-1",
+      outcome: "issue",
+      summary: "The retained symptom remains.",
+      observations: ["The candidate still reproduces the retained failure."],
+    },
+    "agent",
+    8,
+  );
+  assert.equal(recorded.missionCheckpoint.missionRevision, 9);
+  assert.equal(service.getRepairs(AUDIT_ID)[0].candidateReview.results[0].outcome, "issue");
+
+  const read = await service.loadCandidateReview(AUDIT_ID, repairId);
+  assert.equal(read.candidateReview.id, reviewId);
+  assert.deepEqual(calls.map((call) => call[0]), ["open", "record", "get"]);
+  assert.equal(calls[0].at(-1), 7);
+  assert.equal(calls[1].at(-1), 8);
 });
 
 test("HTTP transport reads and appends the audit-scoped activity ledger", async () => {

@@ -1,10 +1,13 @@
 import { AuditError, normalizePublicUrl } from "./url-policy.js";
 import {
   auditMissionSnapshot,
+  assessmentFindings,
   createAuditMission,
   deriveAuditMissionState,
   normalizeRepairFindingIds,
 } from "./audit-mission-contract.js";
+import { agentCapabilitySnapshot } from "./agent-capability-contract.js";
+import { getActiveEvidenceCapsule as createActiveEvidenceCapsule } from "./evidence-capsule-contract.js";
 import { createAssessmentReceipt } from "./assessment-receipt.js";
 import { auditMissionRevision, createMissionCheckpoint } from "./mission-checkpoint-contract.js";
 import {
@@ -90,6 +93,16 @@ export function createHttpAuditTransport(options = {}) {
             }),
           },
         ),
+      );
+    },
+
+    async declareAgentCapabilities(auditId, capabilities, expectedMissionRevision) {
+      return responsePayload(
+        await fetchImpl(`${baseUrl}/api/audits/${encodeURIComponent(auditId)}/agent-capabilities`, {
+          method: "POST",
+          headers: { accept: "application/json", "content-type": "application/json" },
+          body: JSON.stringify({ capabilities, expectedMissionRevision }),
+        }),
       );
     },
 
@@ -197,6 +210,57 @@ export function createHttpAuditTransport(options = {}) {
         await fetchImpl(
           `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/verification`,
           { headers: { accept: "application/json" } },
+        ),
+      );
+    },
+
+    async getCandidateReview(auditId, repairId) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/candidate-review`,
+          { headers: { accept: "application/json" } },
+        ),
+      );
+    },
+
+    async openCandidateReview(auditId, repairId, candidateOrigin, source = "agent", expectedMissionRevision) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/candidate-review`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({
+              candidateOrigin,
+              source: source === "person" ? "person" : "agent",
+              expectedMissionRevision,
+            }),
+          },
+        ),
+      );
+    },
+
+    async recordCandidateReviewCheck(
+      auditId,
+      repairId,
+      reviewId,
+      input,
+      source = "agent",
+      expectedMissionRevision,
+    ) {
+      return responsePayload(
+        await fetchImpl(
+          `${baseUrl}/api/audits/${encodeURIComponent(auditId)}/repairs/${encodeURIComponent(repairId)}/candidate-review/checks`,
+          {
+            method: "POST",
+            headers: { accept: "application/json", "content-type": "application/json" },
+            body: JSON.stringify({
+              ...input,
+              reviewId,
+              source: source === "person" ? "person" : "agent",
+              expectedMissionRevision,
+            }),
+          },
         ),
       );
     },
@@ -432,6 +496,7 @@ export function createAuditService(options = {}) {
   const browserReviews = new Map();
   const repairPolicies = new Map();
   const explorations = new Map();
+  const activeEvidenceFindingByAudit = new Map();
   const listeners = new Set();
   const agentActivitiesByAudit = new Map();
   let pendingAgentActivities = [];
@@ -522,6 +587,7 @@ export function createAuditService(options = {}) {
       repairs: repairs.get(auditId) ?? [],
       browserReview: browserReviews.get(auditId) ?? null,
       explorations: explorations.get(auditId) ?? [],
+      agentCapabilities: audit.agentCapabilities ?? null,
     });
   };
 
@@ -534,9 +600,11 @@ export function createAuditService(options = {}) {
     }
     if (expectedGeneration !== generation) return audit;
     const previous = jobs.get(audit.id);
-    const retained = audit.mission || !previous?.mission
-      ? audit
-      : { ...audit, mission: previous.mission };
+    const retained = {
+      ...audit,
+      mission: audit.mission ?? previous?.mission ?? null,
+      agentCapabilities: audit.agentCapabilities ?? previous?.agentCapabilities ?? null,
+    };
     jobs.set(audit.id, retained);
     activeAuditId = audit.id;
     emit();
@@ -812,9 +880,11 @@ export function createAuditService(options = {}) {
 
     if (auditResult.status === "fulfilled" && auditResult.value?.id) {
       const previous = jobs.get(auditId);
-      const retained = auditResult.value.mission || !previous?.mission
-        ? auditResult.value
-        : { ...auditResult.value, mission: previous.mission };
+      const retained = {
+        ...auditResult.value,
+        mission: auditResult.value.mission ?? previous?.mission ?? null,
+        agentCapabilities: auditResult.value.agentCapabilities ?? previous?.agentCapabilities ?? null,
+      };
       jobs.set(auditId, retained);
       activeAuditId = auditId;
     }
@@ -1002,6 +1072,47 @@ export function createAuditService(options = {}) {
         rememberCheckpoint(auditId, result.missionCheckpoint, expectedGeneration);
       }
       return result;
+    },
+
+    async declareAgentCapabilities(auditId, capabilities, expectedMissionRevision) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const expectedGeneration = generation;
+      const result = assertMissionCheckpointIdentity(
+        await transport.declareAgentCapabilities(
+          auditId,
+          capabilities,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
+        auditId,
+        true,
+      );
+      const declaration = agentCapabilitySnapshot(result.agentCapabilities);
+      if (!declaration) {
+        throw new AuditError("INVALID_RESPONSE", "The audit service did not retain the capability declaration.");
+      }
+      if (result.audit) {
+        assertResponseIdentity(result.audit, "id", auditId);
+        assertMatchingMissionRevisions(result.audit, result.missionCheckpoint);
+        remember({
+          ...result.audit,
+          agentCapabilities: declaration,
+          missionRevision: result.missionCheckpoint.missionRevision,
+          missionCheckpoint: result.missionCheckpoint,
+        }, expectedGeneration);
+      } else {
+        const current = jobs.get(auditId);
+        if (!current) throw new AuditError("AUDIT_NOT_FOUND", "No audit exists with that ID.");
+        jobs.set(auditId, {
+          ...current,
+          agentCapabilities: declaration,
+          missionRevision: result.missionCheckpoint.missionRevision,
+          missionCheckpoint: result.missionCheckpoint,
+        });
+        emit();
+      }
+      return { ...result, agentCapabilities: declaration };
     },
 
     async startSiteExploration(auditId, selection, source = "human", expectedMissionRevision) {
@@ -1242,6 +1353,100 @@ export function createAuditService(options = {}) {
         emit();
       }
       return aggregate;
+    },
+
+    async loadCandidateReview(auditId, repairId) {
+      if (typeof auditId !== "string" || !auditId || typeof repairId !== "string" || !repairId) {
+        throw new AuditError("INVALID_INPUT", "auditId and repairId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      const repair = assertAuditScopedResponse(
+        await transport.getCandidateReview(auditId, repairId),
+        auditId,
+        repairId,
+      );
+      assertMissionCheckpointIdentity(repair, auditId, true);
+      if (await reconcileAdvancedDirectRead(auditId, repair, expectedGeneration)) return repair;
+      return rememberRepair(repair, expectedGeneration);
+    },
+
+    async openCandidateReview(
+      auditId,
+      repairId,
+      candidateOrigin,
+      source = "agent",
+      expectedMissionRevision,
+    ) {
+      if (
+        typeof auditId !== "string"
+        || !auditId
+        || typeof repairId !== "string"
+        || !repairId
+        || typeof candidateOrigin !== "string"
+        || !candidateOrigin.trim()
+      ) {
+        throw new AuditError("INVALID_INPUT", "auditId, repairId, and candidateOrigin must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      return rememberRepair(
+        assertAuditScopedResponse(
+          await transport.openCandidateReview(
+            auditId,
+            repairId,
+            candidateOrigin,
+            source,
+            revisionFor(auditId, expectedMissionRevision),
+          ),
+          auditId,
+          repairId,
+        ),
+        expectedGeneration,
+      );
+    },
+
+    async recordCandidateReviewCheck(
+      auditId,
+      repairId,
+      reviewId,
+      input,
+      source = "agent",
+      expectedMissionRevision,
+    ) {
+      if (
+        typeof auditId !== "string"
+        || !auditId
+        || typeof repairId !== "string"
+        || !repairId
+        || typeof reviewId !== "string"
+        || !reviewId
+        || typeof input?.checkId !== "string"
+        || !input.checkId
+      ) {
+        throw new AuditError("INVALID_INPUT", "auditId, repairId, reviewId, and checkId must be non-empty strings.");
+      }
+      const expectedGeneration = generation;
+      const repair = assertAuditScopedResponse(
+        await transport.recordCandidateReviewCheck(
+          auditId,
+          repairId,
+          reviewId,
+          input,
+          source,
+          revisionFor(auditId, expectedMissionRevision),
+        ),
+        auditId,
+        repairId,
+      );
+      if (
+        repair.candidateReview?.id !== reviewId
+        || !(repair.candidateReview.results ?? []).some((result) => result?.checkId === input.checkId)
+      ) {
+        throw new AuditError(
+          "AUDIT_RESPONSE_MISMATCH",
+          "The audit service returned a different candidate review continuation.",
+        );
+      }
+      return rememberRepair(repair, expectedGeneration);
     },
 
     async listDiagnosticMissions(auditId) {
@@ -1738,6 +1943,68 @@ export function createAuditService(options = {}) {
       return checkpointFor(auditId);
     },
 
+    getAgentCapabilities(auditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("INVALID_INPUT", "auditId must be a non-empty string.");
+      }
+      const audit = jobs.get(auditId);
+      return audit?.agentCapabilities ? agentCapabilitySnapshot(audit.agentCapabilities) : null;
+    },
+
+    setActiveEvidenceFinding(auditId, findingId) {
+      if (typeof auditId !== "string" || !auditId || typeof findingId !== "string" || !findingId) {
+        throw new AuditError("INVALID_INPUT", "auditId and findingId must be non-empty strings.");
+      }
+      const audit = jobs.get(auditId);
+      const state = audit?.mission ? deriveAuditMissionState({
+        report: audit.report,
+        mission: audit.mission,
+        diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+        repairs: repairs.get(auditId) ?? [],
+        browserReview: browserReviews.get(auditId) ?? null,
+        explorations: explorations.get(auditId) ?? [],
+      }) : null;
+      if (!state?.priorities?.some((priority) => priority.findingId === findingId)) {
+        throw new AuditError("EVIDENCE_NOT_FOUND", "The selected finding is not a retained mission priority.");
+      }
+      activeEvidenceFindingByAudit.set(auditId, findingId);
+      return findingId;
+    },
+
+    getActiveEvidenceCapsule(auditId = activeAuditId) {
+      if (typeof auditId !== "string" || !auditId) {
+        throw new AuditError("AUDIT_CONTEXT_REQUIRED", "Open a completed audit workspace before reading its active evidence capsule.");
+      }
+      const audit = jobs.get(auditId);
+      if (!audit?.report || audit.status !== "complete") {
+        throw new AuditError("AUDIT_NOT_READY", "Finish the audit before reading an evidence capsule.");
+      }
+      const missionState = audit.mission ? deriveAuditMissionState({
+        report: audit.report,
+        mission: audit.mission,
+        diagnosticMissions: diagnosticMissions.get(auditId) ?? [],
+        repairs: repairs.get(auditId) ?? [],
+        browserReview: browserReviews.get(auditId) ?? null,
+        explorations: explorations.get(auditId) ?? [],
+      }) : null;
+      const browserReview = browserReviews.get(auditId) ?? null;
+      const selectedFindingId = activeEvidenceFindingByAudit.get(auditId);
+      const retainedFindingId = missionState?.priorities?.some(
+        (priority) => priority.findingId === selectedFindingId,
+      )
+        ? selectedFindingId
+        : missionState?.priorities?.[0]?.findingId ?? null;
+      if (retainedFindingId) activeEvidenceFindingByAudit.set(auditId, retainedFindingId);
+      return createActiveEvidenceCapsule({
+        audit,
+        report: audit.report,
+        missionState,
+        findings: assessmentFindings(audit.report, browserReview),
+        browserReview,
+        findingId: retainedFindingId,
+      });
+    },
+
     getAuditMissionState(auditId) {
       const audit = jobs.get(auditId);
       if (!audit?.mission) return null;
@@ -1896,6 +2163,7 @@ export function createAuditService(options = {}) {
       browserReviews.clear();
       repairPolicies.clear();
       explorations.clear();
+      activeEvidenceFindingByAudit.clear();
       agentActivitiesByAudit.clear();
       pendingAgentActivities = [];
       emit();

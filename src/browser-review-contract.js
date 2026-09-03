@@ -1,4 +1,5 @@
 import { AuditError } from "./url-policy.js";
+import { AGENT_CAPABILITIES, requiredCapabilitiesForBrowserTask } from "./agent-capability-contract.js";
 import {
   compileBrowserInvestigations,
   projectLegacyBrowserCheck,
@@ -185,6 +186,21 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
   const task = check?.schemaVersion === 1 && check?.assignment && check?.responseContract
     ? check
     : projectLegacyBrowserCheck(check, reviewTarget);
+  const kind = ["provider-confirmation", "coverage-gap", "safe-journey", "verification-replay", "verification-guardrail", "candidate-replay", "candidate-guardrail"].includes(task.kind)
+    ? task.kind
+    : "coverage-gap";
+  const rawPath = boundedString(task.target?.path ?? "/", "task.target.path", 256);
+  const path = kind.startsWith("candidate-") && !/^\/(?!\/)[^?#]{0,255}$/.test(rawPath)
+    ? "/"
+    : rawPath;
+  let candidateUrl = null;
+  if (kind.startsWith("candidate-")) {
+    try {
+      candidateUrl = new URL(path, `${new URL(reviewTarget).origin}/`).href;
+    } catch {
+      candidateUrl = null;
+    }
+  }
   const focusArea = task.focusArea === "seo" ? "seo" : task.focusArea === "reliability"
     ? "reliability"
     : task.focusArea === "performance" ? "performance" : "accessibility";
@@ -200,9 +216,7 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
   return {
     schemaVersion: 1,
     id: boundedString(task.id, "task.id", 80),
-    kind: ["provider-confirmation", "coverage-gap", "safe-journey", "verification-replay", "verification-guardrail"].includes(task.kind)
-      ? task.kind
-      : "coverage-gap",
+    kind,
     label: boundedString(task.label, "task.label", 120),
     focusArea,
     focusAreas: Array.isArray(task.focusAreas) && task.focusAreas.length
@@ -210,7 +224,8 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
       : [focusArea],
     viewport,
     target: {
-      path: boundedString(task.target?.path ?? "/", "task.target.path", 256),
+      path,
+      ...(candidateUrl ? { candidateUrl } : {}),
       viewport,
       affectedViewports: Array.isArray(task.target?.affectedViewports)
         ? [...new Set(task.target.affectedViewports.filter((item) => ["mobile", "desktop", "document"].includes(item)))].slice(0, 3)
@@ -241,6 +256,9 @@ function requestedCheckSnapshot(check, reviewTarget = "/") {
     },
     instruction: boundedString(task.assignment?.instructions ?? task.instruction, "task.instruction", 900),
     boundary: boundedString(task.assignment?.boundary ?? task.boundary, "task.boundary", 900),
+    requiredCapabilities: Array.isArray(task.requiredCapabilities)
+      ? [...new Set(task.requiredCapabilities.filter((item) => AGENT_CAPABILITIES.includes(item)))]
+      : requiredCapabilitiesForBrowserTask(task),
   };
 }
 
@@ -355,7 +373,7 @@ export function browserReviewState(review) {
   const nextCheck = blocked ?? pending ?? null;
   const completedCheckCount = results.filter((result) => ["passed", "issue"].includes(result.outcome)).length;
   const blockedCheckCount = results.filter((result) => result.outcome === "blocked").length;
-  const issueCount = review.purpose === "verification"
+  const issueCount = ["verification", "candidate"].includes(review.purpose)
     ? results.filter((result) => result.outcome === "issue").length
     : browserReviewFindings(review).length;
   const complete = requestedChecks.length > 0 && completedCheckCount === requestedChecks.length;
@@ -390,7 +408,7 @@ export function browserReviewSnapshot(review) {
     migratedFromSchemaVersion: review.schemaVersion === 1 ? 1 : null,
     id: boundedId(review.id, "browserReview.id"),
     auditId: boundedId(review.auditId),
-    purpose: review.purpose === "verification" ? "verification" : "assessment",
+    purpose: ["verification", "candidate"].includes(review.purpose) ? review.purpose : "assessment",
     target,
     verificationBaseline: review.purpose === "verification"
       ? verificationBaselineSnapshot(review.verificationBaseline)
@@ -401,7 +419,18 @@ export function browserReviewSnapshot(review) {
           .filter(Boolean)
           .slice(0, 3)
       : [],
-    requestedFocusAreas: missionFocusAreas({ focusAreas: review.requestedFocusAreas }),
+    requestedFocusAreas: review.purpose === "candidate"
+      ? [...new Set((review.requestedFocusAreas ?? []).filter((area) => ["accessibility", "seo", "reliability", "performance"].includes(area)))].slice(0, 4)
+      : missionFocusAreas({ focusAreas: review.requestedFocusAreas }),
+    candidateOrigin: review.purpose === "candidate" ? target : null,
+    repairId: review.purpose === "candidate" ? boundedId(review.repairId, "candidateReview.repairId") : null,
+    repairRevision: review.purpose === "candidate" && Number.isInteger(review.repairRevision) && review.repairRevision > 0
+      ? review.repairRevision
+      : null,
+    implementationReceiptRevision: review.purpose === "candidate" && Number.isInteger(review.implementationReceiptRevision) && review.implementationReceiptRevision > 0
+      ? review.implementationReceiptRevision
+      : null,
+    openedBy: review.purpose === "candidate" && review.openedBy === "person" ? "person" : review.purpose === "candidate" ? "agent" : null,
     adoption: review.purpose === "assessment" && review.adoption
       ? {
           mode: review.adoption.mode === "human-to-agent" ? "human-to-agent" : "agent-started",
@@ -440,6 +469,8 @@ export function browserReviewSnapshot(review) {
         ? "The person ended this untouched optional handoff before any browser evidence was recorded. Frontmend retains the withdrawn record without treating it as evidence."
         : snapshot.purpose === "verification"
         ? "The replay result is separately attributed browser evidence for the exact retained issue. Frontmend keeps it separate from provider measurement and never infers implementation or deployment from it."
+        : snapshot.purpose === "candidate"
+          ? "Candidate observations are attributed pre-production browser evidence only. They cannot create findings, attest deployment, populate production verification, or support a resolution claim."
         : "Browser review observations complement provider measurement; they do not prove repository ownership, implementation, deployment, or resolution.",
     },
   };
@@ -842,13 +873,13 @@ export function recordBrowserReviewCheck(reviewValue, input = {}, source = "agen
   if (!Array.isArray(rawFindings) || rawFindings.length > 3) {
     throw new AuditError("INVALID_BROWSER_REVIEW", "findings must contain zero to three browser findings.");
   }
-  if (review.purpose === "verification" && rawFindings.length) {
+  if (review.purpose !== "assessment" && rawFindings.length) {
     throw new AuditError(
       "INVALID_BROWSER_REVIEW",
-      "A verification replay compares the retained finding and must not create a new browser finding.",
+      "A verification or candidate replay compares retained evidence and must not create a new browser finding.",
     );
   }
-  if (review.purpose !== "verification" && input.outcome === "issue" && rawFindings.length < 1) {
+  if (review.purpose === "assessment" && input.outcome === "issue" && rawFindings.length < 1) {
     throw new AuditError("INVALID_BROWSER_REVIEW", "An issue outcome must include at least one browser finding.");
   }
   if (input.outcome === "passed" && rawFindings.length) {

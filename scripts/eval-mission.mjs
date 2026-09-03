@@ -286,6 +286,19 @@ async function waitForExploration(service, adapter, auditId, missionId, sequence
   throw new Error(`Exploration ${missionId} did not complete within ${MAX_POLLS} reads.`);
 }
 
+async function declareEvaluationCapabilities(service, auditId, sequence) {
+  return callContextualTool(service, "declare_agent_capabilities", {
+    auditId,
+    capabilities: {
+      visualBrowserAccess: true,
+      responsiveEmulation: true,
+      runtimeDiagnostics: true,
+      repositoryAccess: true,
+      terminalExecution: true,
+    },
+  }, sequence);
+}
+
 async function recordAssessmentReview(service, opened, auditId, sequence, conflict = true) {
   let task = opened.nextAction.browserTask;
   let last = opened;
@@ -372,6 +385,9 @@ async function runMainScenario(adapter, controller) {
   }, sequence);
   await waitForExploration(service, adapter, auditId, exploration.id, sequence);
   await service.restoreAuditWorkspace(auditId);
+  checkpointRevisions.push(service.getMissionCheckpoint(auditId).missionRevision);
+
+  await declareEvaluationCapabilities(service, auditId, sequence);
   checkpointRevisions.push(service.getMissionCheckpoint(auditId).missionRevision);
 
   const openedReview = await callContextualTool(service, "open_browser_review", { auditId }, sequence);
@@ -510,6 +526,74 @@ async function runMainScenario(adapter, controller) {
       { name: "bun run build", status: "passed" },
     ],
   }, sequence);
+  const firstCandidate = await callContextualTool(service, "open_candidate_review", {
+    auditId,
+    repairId,
+    candidateOrigin: "http://localhost:4173",
+  }, sequence);
+  assert.ok(firstCandidate.nextTask, "The first candidate iteration did not expose an exact browser task.");
+  const candidateIssue = await callContextualTool(service, "record_candidate_review_check", {
+    auditId,
+    repairId,
+    reviewId: firstCandidate.reviewId,
+    checkId: firstCandidate.nextTask.id,
+    outcome: "issue",
+    summary: "The first candidate build still reproduced the retained symptom.",
+    observations: ["The exact retained element remained incorrect at the assigned candidate viewport."],
+  }, sequence);
+  assert.equal(candidateIssue.status, "issues-found");
+  assert.equal(candidateIssue.nextTask, null);
+  assert.equal(candidateIssue.correctionPacket.revisionBinding.implementationReceiptRevision, 1);
+  assert.equal(candidateIssue.correctionPacket.issues[0].checkId, firstCandidate.nextTask.id);
+  assert.deepEqual(candidateIssue.correctionPacket.approvedRepositoryScope.files, [
+    "src/runtime.js",
+    "src/styles.css",
+  ]);
+
+  const correctionSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
+  assert.equal(correctionSummary.nextAction.tool, "record_repository_implementation");
+  assert.equal(correctionSummary.agentRun.mode, "continue");
+  assert.equal(correctionSummary.candidateCorrectionPacket.revisionBinding.candidateReviewId, firstCandidate.reviewId);
+  await callContextualTool(service, "record_repository_implementation", {
+    auditId,
+    repairId,
+    summary: "Corrected the candidate regression within the exact reviewed repository scope.",
+    files: ["src/runtime.js", "src/styles.css"],
+    checks: [
+      { name: "bun test", status: "passed" },
+      { name: "bun run build", status: "passed" },
+    ],
+  }, sequence);
+
+  const secondCandidate = await callContextualTool(service, "open_candidate_review", {
+    auditId,
+    repairId,
+    candidateOrigin: "http://localhost:4173",
+  }, sequence);
+  assert.equal(secondCandidate.review.implementationReceiptRevision, 2);
+  assert.equal(secondCandidate.review.historySummary.length, 1);
+  assert.equal(secondCandidate.review.historySummary[0].status, "issues-found");
+  let candidateTask = secondCandidate.nextTask;
+  let completedCandidate = secondCandidate;
+  while (candidateTask) {
+    completedCandidate = await callContextualTool(service, "record_candidate_review_check", {
+      auditId,
+      repairId,
+      reviewId: secondCandidate.reviewId,
+      checkId: candidateTask.id,
+      outcome: "passed",
+      summary: "The corrected candidate passed the exact retained comparison.",
+      observations: ["The retained symptom was no longer observable and the assigned guardrail remained intact."],
+    }, sequence);
+    candidateTask = completedCandidate.nextTask;
+  }
+  assert.equal(completedCandidate.status, "checks-passed");
+  const candidateRead = await callContextualTool(service, "get_candidate_review", {
+    auditId,
+    repairId,
+  }, sequence);
+  assert.equal(candidateRead.status, "checks-passed");
+  assert.equal(candidateRead.historySummary[0].status, "issues-found");
   const deploymentSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
   assert.equal(deploymentSummary.agentRun.mode, "human-required");
   assert.equal(deploymentSummary.nextAction, null);
@@ -571,6 +655,9 @@ async function runMainScenario(adapter, controller) {
     assessmentComplete: completedResults.missionState.assessmentComplete,
     packageSize: staged.findingIds.length,
     approvalMode: approved.approval.mode,
+    candidateFirstIteration: candidateIssue.status,
+    candidateSecondIteration: candidateRead.status,
+    candidateIterationsRetained: candidateRead.historySummary.length,
     deploymentOwnerAttested: Number.isFinite(deployed.deploymentAttestedAt),
     verificationStatus: aggregate.status,
     verificationRoutes: new Set(aggregate.rows.map((row) => row.path)).size,
@@ -591,6 +678,7 @@ async function runBlockerScenario(adapter, controller) {
   }, sequence);
   await waitForAudit(service, adapter, started.id, sequence);
   await service.restoreAuditWorkspace(started.id);
+  await declareEvaluationCapabilities(service, started.id, sequence);
   const opened = await callContextualTool(service, "open_browser_review", { auditId: started.id }, sequence);
   let task = opened.nextAction.browserTask;
   let conflictFindingId = null;
@@ -665,6 +753,9 @@ function comparableShape(result) {
     assessmentComplete: result.main.assessmentComplete,
     packageSize: result.main.packageSize,
     approvalMode: result.main.approvalMode,
+    candidateFirstIteration: result.main.candidateFirstIteration,
+    candidateSecondIteration: result.main.candidateSecondIteration,
+    candidateIterationsRetained: result.main.candidateIterationsRetained,
     deploymentOwnerAttested: result.main.deploymentOwnerAttested,
     verificationStatus: result.main.verificationStatus,
     verificationRoutes: result.main.verificationRoutes,

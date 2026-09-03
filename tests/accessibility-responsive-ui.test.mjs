@@ -126,6 +126,13 @@ test("keeps the self-advancing walkthrough stoppable", () => {
   assert.doesNotMatch(app, /loop-dialog-play/);
 });
 
+test("keeps the How it works dialog focused on the three handoffs", () => {
+  assert.doesNotMatch(app, /className="loop-dialog-bounds"/);
+  assert.doesNotMatch(landingStyles, /\.loop-dialog-bounds/);
+  assert.match(app, /className="guide-bounds"/);
+  assert.match(landingStyles, /\.guide-bounds/);
+});
+
 test("retains visible focus and 390 px touch and reflow safeguards", () => {
   assert.match(styles, /\.skip-link:focus\s*\{[^}]*transform: translateY\(0\)/s);
   assert.match(styles, /\.webmcp-status:focus-visible\s*\{[^}]*outline: 3px solid/s);
@@ -149,6 +156,12 @@ test("retains visible focus and 390 px touch and reflow safeguards", () => {
   assert.match(landingStyles, /\.app-shell\.landing \.audit-composer-body\s*\{[^}]*background: var\(--fm-paper\);/s);
   assert.doesNotMatch(landingStyles, /\.app-shell\.landing \.audit-composer > summary\s*\{[^}]*border-left:/s);
   assert.match(landingStyles, /\.app-shell\.landing \.audit-focus-options label\s*\{[^}]*min-height: 54px;/s);
+  // The authority comparison must stay opaque: the field art belongs around
+  // the ledger, never behind its capability rows.
+  assert.match(landingStyles, /\.ledger-columns\s*\{[^}]*background: var\(--fm-cobalt-deep\);/s);
+  assert.match(landingStyles, /\.ledger-column\s*\{[^}]*background: var\(--fm-cobalt-deep\);/s);
+  assert.match(landingStyles, /\.ledger-column\[data-side="human"\]\s*\{[^}]*background: var\(--fm-paper\);/s);
+  assert.doesNotMatch(landingStyles, /\.ledger-column(?:\[data-side="human"\])?\s*\{[^}]*background:\s*rgba\(/s);
 });
 
 /*

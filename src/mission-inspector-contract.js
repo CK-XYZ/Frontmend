@@ -3,6 +3,7 @@ import {
   FRONTMEND_TOOL_COUNT,
   shortBuildCommit,
 } from "./protocol-contract.js";
+import { candidateReviewSnapshot } from "./candidate-review-contract.js";
 
 const STAGES = Object.freeze([
   "landing",
@@ -10,6 +11,7 @@ const STAGES = Object.freeze([
   "investigation",
   "diagnosis",
   "human-review",
+  "implementation",
   "deployment",
   "replay",
   "complete",
@@ -26,7 +28,9 @@ const TOOL_DISPLAY_COPY = Object.freeze({
   check_site_audit_progress: "Checks the current audit phase, progress, and any blocker.",
   cancel_site_audit: "Stops the current audit without treating incomplete evidence as final.",
   get_mission_summary: "Reads the audit state, top priorities, blockers, and next available action.",
+  declare_agent_capabilities: "Declares what the current agent says it can perform so Frontmend assigns only matching work.",
   get_site_audit_results: "Reads the completed findings, evidence, and audit sources.",
+  get_active_evidence_capsule: "Reads the screenshot, target, evidence, and exact task for the finding selected on this page.",
   get_evidence_chain: "Reads one finding from observation through diagnosis, repair, and verification.",
   open_browser_review: "Opens the next check that needs direct browser inspection.",
   record_browser_review_check: "Adds a focused browser observation to the current review task.",
@@ -44,6 +48,9 @@ const TOOL_DISPLAY_COPY = Object.freeze({
   revise_site_repair: "Revises the repair plan against your requested changes.",
   get_repair_workspace: "Reads the current repair plan, review state, and evidence.",
   record_repository_implementation: "Records code changes without claiming they were deployed.",
+  open_candidate_review: "Opens the first exact browser comparison for a localhost or public-preview candidate.",
+  record_candidate_review_check: "Records one attributed candidate comparison and returns issues to the coding loop.",
+  get_candidate_review: "Reads the current candidate iteration, correction evidence, and prior attempts.",
   start_repair_verification: "Starts fresh public verification after deployment is confirmed.",
 });
 
@@ -200,6 +207,55 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
       unlocks: ["A repair-ready evidence chain", "Repair staging only after explicit preparation intent"],
       requiredCapability: "Repository diagnosis",
       action: checkpointAction ?? missionState.nextAction,
+    };
+  }
+
+  const candidate = repair?.candidateReview?.id
+    ? candidateReviewSnapshot(repair.candidateReview, repair.candidateReviewHistory)
+    : null;
+  if (
+    repair?.status === "approved"
+    && !Number.isFinite(repair.deploymentAttestedAt)
+    && (candidate?.status === "issues-found" || checkpointAction?.tool === "record_repository_implementation")
+  ) {
+    const correctingCandidate = candidate?.status === "issues-found";
+    return {
+      stage: "implementation",
+      actor: "Repository-capable coding agent",
+      title: correctingCandidate ? "Correct the candidate issue" : "Implement the reviewed repository plan",
+      summary: correctingCandidate
+        ? "Frontmend linked the direct candidate observation back to the retained baseline and frozen repository scope. The next implementation receipt must describe the correction and rerun the reviewed checks."
+        : "The person approved a bounded plan. The coding agent may implement only that reviewed repository scope and report its checks without uploading source.",
+      why: checkpointAction?.reason
+        ?? "Repository implementation is the next authorised agent-owned transition.",
+      mustReturn: checkpointCriteria.length
+        ? checkpointCriteria
+        : ["Repository-relative changed files", "Every reviewed check with a truthful outcome", "An optional Git object ID"],
+      unlocks: correctingCandidate
+        ? ["A new candidate iteration bound to the newer implementation receipt"]
+        : ["Optional exact candidate-browser preflight", "Person-owned external deployment"],
+      requiredCapability: "Repository implementation and terminal execution",
+      action: checkpointAction ?? { tool: "record_repository_implementation", input: { repairId: repair.id } },
+    };
+  }
+
+  if (
+    repair?.status === "approved"
+    && !Number.isFinite(repair.deploymentAttestedAt)
+    && candidate?.status === "in-progress"
+  ) {
+    return {
+      stage: "replay",
+      actor: "Browser-capable coding agent",
+      title: "Replay the current candidate check",
+      summary: "Inspect the exact candidate route, viewport, and retained symptom. The first observed issue stops this iteration and returns the mission to repository implementation.",
+      why: checkpointAction?.reason ?? "The optional candidate preflight was opened and has an unfinished exact comparison.",
+      mustReturn: checkpointCriteria.length
+        ? checkpointCriteria
+        : ["passed, issue, or an honest blocker", "One to four bounded direct candidate observations"],
+      unlocks: ["The next retained candidate guardrail", "An exact correction packet when an issue is observed"],
+      requiredCapability: "Rendered-browser candidate review",
+      action: checkpointAction ?? candidate.nextAction,
     };
   }
 

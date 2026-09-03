@@ -16,6 +16,13 @@ const projectRoot = fileURLToPath(new URL("..", import.meta.url));
 const localRuntimeCookies = new WeakMap();
 const TEST_AUDIT_COOKIE = "__Host-frontmend_session=11111111-1111-4111-8111-111111111111";
 const TEST_OTHER_AUDIT_COOKIE = "__Host-frontmend_session=22222222-2222-4222-8222-222222222222";
+const TEST_AGENT_CAPABILITIES = {
+  visualBrowserAccess: true,
+  responsiveEmulation: true,
+  runtimeDiagnostics: true,
+  repositoryAccess: true,
+  terminalExecution: true,
+};
 
 function preparedAuditMission(findingId, focusAreas = []) {
   return {
@@ -593,6 +600,78 @@ test("proxies server-issued verification candidates and aggregate repair receipt
     `/repairs/${repairId}/verification`,
     `/repairs/${repairId}/verification-receipt`,
   ]);
+});
+
+test("keeps candidate review reads public while owner-gating exact revision-bound writes", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const repairId = "3e8fe191-1f46-4f1b-92ac-492a5d73bb24";
+  const calls = [];
+  const env = {
+    AUDIT_JOBS: {
+      idFromName: (name) => name,
+      get: () => ({
+        fetch: withAuditAuthorization(async (url, init = {}) => {
+          calls.push({ pathname: new URL(url).pathname, method: init.method, body: init.body });
+          return Response.json({ ok: true, data: { auditId, id: repairId } });
+        }),
+      }),
+    },
+  };
+  const candidateUrl = `https://frontmend.test/api/audits/${auditId}/repairs/${repairId}/candidate-review`;
+
+  const read = await worker.fetch(new Request(candidateUrl), env);
+  const denied = await worker.fetch(new Request(candidateUrl, {
+    method: "POST",
+    headers: { origin: "https://frontmend.test", "content-type": "application/json" },
+    body: JSON.stringify({
+      candidateOrigin: "http://localhost:5173",
+      source: "agent",
+      expectedMissionRevision: 7,
+    }),
+  }), env);
+  const opened = await worker.fetch(new Request(candidateUrl, {
+    method: "POST",
+    headers: {
+      origin: "https://frontmend.test",
+      "content-type": "application/json",
+      cookie: TEST_AUDIT_COOKIE,
+    },
+    body: JSON.stringify({
+      candidateOrigin: "http://localhost:5173",
+      source: "agent",
+      expectedMissionRevision: 7,
+    }),
+  }), env);
+  const recorded = await worker.fetch(new Request(`${candidateUrl}/checks`, {
+    method: "POST",
+    headers: {
+      origin: "https://frontmend.test",
+      "content-type": "application/json",
+      cookie: TEST_AUDIT_COOKIE,
+    },
+    body: JSON.stringify({
+      reviewId: "candidate-review-1",
+      checkId: "candidate-replay-1",
+      outcome: "passed",
+      summary: "The retained symptom is absent.",
+      observations: ["The candidate meets the retained acceptance criteria."],
+      source: "agent",
+      expectedMissionRevision: 8,
+    }),
+  }), env);
+
+  assert.equal(read.status, 200);
+  assert.equal(denied.status, 403);
+  assert.equal((await denied.json()).error.code, "AUDIT_WRITE_AUTHORITY_REQUIRED");
+  assert.equal(opened.status, 200);
+  assert.equal(recorded.status, 200);
+  assert.deepEqual(calls.map((call) => [call.pathname, call.method]), [
+    [`/repairs/${repairId}/candidate-review`, "GET"],
+    [`/repairs/${repairId}/candidate-review`, "POST"],
+    [`/repairs/${repairId}/candidate-review-checks`, "POST"],
+  ]);
+  assert.equal(JSON.parse(calls[1].body).candidateOrigin, "http://localhost:5173");
+  assert.equal(JSON.parse(calls[2].body).reviewId, "candidate-review-1");
 });
 
 test("starts one existing audit job per reviewed verification target", async () => {
@@ -1323,7 +1402,43 @@ test("Durable Object adopts a person-started audit without restarting or duplica
     },
   ));
 
-  const response = await open(1);
+  const unboundDeclaration = await job.fetch(new Request(
+    "https://frontmend.internal/agent-capabilities",
+    { method: "POST", body: JSON.stringify({ capabilities: TEST_AGENT_CAPABILITIES }) },
+  ));
+  assert.equal(unboundDeclaration.status, 400);
+  assert.equal((await unboundDeclaration.json()).error.code, "INVALID_AGENT_CAPABILITIES");
+
+  const declarationResponse = await job.fetch(new Request(
+    "https://frontmend.internal/agent-capabilities",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        capabilities: TEST_AGENT_CAPABILITIES,
+        expectedMissionRevision: 1,
+      }),
+    },
+  ));
+  const declaration = (await declarationResponse.json()).data;
+  assert.equal(declarationResponse.status, 200);
+  assert.equal(declaration.agentCapabilities.provenance, "agent-declared");
+  assert.equal(declaration.agentCapabilities.verificationStatus, "not-verified");
+  assert.equal(declaration.missionCheckpoint.missionRevision, 2);
+
+  const declarationReplay = await job.fetch(new Request(
+    "https://frontmend.internal/agent-capabilities",
+    {
+      method: "POST",
+      body: JSON.stringify({
+        capabilities: TEST_AGENT_CAPABILITIES,
+        expectedMissionRevision: 1,
+      }),
+    },
+  ));
+  assert.equal(declarationReplay.status, 200);
+  assert.equal((await declarationReplay.json()).data.missionCheckpoint.missionRevision, 2);
+
+  const response = await open(2);
   const opened = (await response.json()).data;
   assert.equal(response.status, 201);
   assert.equal(opened.auditId, auditId);
@@ -1332,17 +1447,17 @@ test("Durable Object adopts a person-started audit without restarting or duplica
   assert.equal(opened.adoption.openedBy, "agent");
   assert.equal(opened.adoption.restarted, false);
   assert.equal(opened.missionCheckpoint.auditId, auditId);
-  assert.equal(opened.missionCheckpoint.missionRevision, 2);
+  assert.equal(opened.missionCheckpoint.missionRevision, 3);
   assert.equal(opened.missionCheckpoint.action.tool, "record_browser_review_check");
   assert.equal(values.get("state").id, auditId);
   assert.equal(values.get("state").attempt, 1);
   assert.deepEqual(values.get("state").mission, mission);
 
-  const repeated = await open(1);
+  const repeated = await open(2);
   const repeatedPayload = (await repeated.json()).data;
   assert.equal(repeated.status, 200);
   assert.equal(repeatedPayload.id, opened.id);
-  assert.equal(repeatedPayload.missionCheckpoint.missionRevision, 2);
+  assert.equal(repeatedPayload.missionCheckpoint.missionRevision, 3);
   assert.equal(values.get("browserReview").id, opened.id);
 });
 
@@ -1961,6 +2076,24 @@ test("local development exports completed evidence and adopts it without a secon
     assert.equal(workspacePayload.missionCheckpoint.missionRevision, 2, pathname);
   }
 
+  const declareCapabilities = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/agent-capabilities`,
+    headers: {
+      host: "localhost:3434",
+      origin: "http://localhost:3434",
+    },
+    body: JSON.stringify({
+      capabilities: TEST_AGENT_CAPABILITIES,
+      expectedMissionRevision: 2,
+    }),
+  });
+  const declared = JSON.parse(declareCapabilities.body).data;
+  assert.equal(declareCapabilities.status, 200);
+  assert.equal(declared.agentCapabilities.provenance, "agent-declared");
+  assert.equal(declared.agentCapabilities.verificationStatus, "not-verified");
+  assert.equal(declared.missionCheckpoint.missionRevision, 3);
+
   const adopt = await callLocalRuntime(middleware, {
     method: "POST",
     url: `/api/audits/${auditId}/browser-review`,
@@ -1971,7 +2104,7 @@ test("local development exports completed evidence and adopts it without a secon
     body: JSON.stringify({
       source: "agent",
       focusAreas: ["accessibility", "seo"],
-      expectedMissionRevision: 2,
+      expectedMissionRevision: 3,
     }),
   });
   const adopted = JSON.parse(adopt.body).data;
@@ -1982,7 +2115,7 @@ test("local development exports completed evidence and adopts it without a secon
   assert.equal(adopted.adoption.openedBy, "agent");
   assert.equal(adopted.adoption.sameAudit, true);
   assert.equal(adopted.adoption.restarted, false);
-  assert.equal(adopted.missionCheckpoint.missionRevision, 3);
+  assert.equal(adopted.missionCheckpoint.missionRevision, 4);
   assert.equal(adopted.missionCheckpoint.action.tool, "record_browser_review_check");
 
   const repeatedAdopt = await callLocalRuntime(middleware, {
@@ -1995,13 +2128,13 @@ test("local development exports completed evidence and adopts it without a secon
     body: JSON.stringify({
       source: "agent",
       focusAreas: ["accessibility", "seo"],
-      expectedMissionRevision: 2,
+      expectedMissionRevision: 3,
     }),
   });
   const repeated = JSON.parse(repeatedAdopt.body).data;
   assert.equal(repeatedAdopt.status, 200);
   assert.equal(repeated.id, adopted.id);
-  assert.equal(repeated.missionCheckpoint.missionRevision, 3);
+  assert.equal(repeated.missionCheckpoint.missionRevision, 4);
 
   const withheldAssessment = await callLocalRuntime(middleware, {
     url: `/api/audits/${auditId}/assessment`,
@@ -2016,12 +2149,12 @@ test("local development exports completed evidence and adopts it without a secon
       host: "localhost:3434",
       origin: "http://localhost:3434",
     },
-    body: JSON.stringify({ source: "person", expectedMissionRevision: 3 }),
+    body: JSON.stringify({ source: "person", expectedMissionRevision: 4 }),
   });
   const withdrawn = JSON.parse(withdrawal.body).data;
   assert.equal(withdrawal.status, 200);
   assert.equal(withdrawn.state.status, "withdrawn");
-  assert.equal(withdrawn.missionCheckpoint.missionRevision, 4);
+  assert.equal(withdrawn.missionCheckpoint.missionRevision, 5);
 
   const restoredAssessment = await callLocalRuntime(middleware, {
     url: `/api/audits/${auditId}/assessment`,
@@ -2259,6 +2392,61 @@ test("local development shares the bounded repair-intent transition without cons
   assert.equal(approved.verificationImpact.status, "reviewed");
   assert.equal(approved.verificationImpact.matrix.reviewedBy, "person");
   assert.equal(approved.missionCheckpoint.auditId, auditId);
+
+  const implementation = JSON.parse((await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/repairs/${stagedRepair.id}/implementation`,
+    headers: writeHeaders,
+    body: JSON.stringify({
+      source: "agent",
+      summary: "Implemented the approved candidate repair.",
+      files: ["src/page.css"],
+      checks: [{ name: "bun test", status: "passed" }],
+      expectedMissionRevision: approved.missionCheckpoint.missionRevision,
+    }),
+  })).body).data;
+  assert.equal(implementation.implementationReceipt.checks[0].status, "passed");
+
+  const candidateOpenResponse = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/repairs/${stagedRepair.id}/candidate-review`,
+    headers: writeHeaders,
+    body: JSON.stringify({
+      source: "person",
+      candidateOrigin: "http://localhost:5173",
+      expectedMissionRevision: implementation.missionCheckpoint.missionRevision,
+    }),
+  });
+  const candidate = JSON.parse(candidateOpenResponse.body).data;
+  assert.equal(candidateOpenResponse.status, 201);
+  assert.equal(candidate.candidateReview.openedBy, "person");
+  assert.match(candidate.candidateReview.state.nextCheck.assignment.boundary, /Candidate browser evidence only/);
+
+  const candidateRecordResponse = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/repairs/${stagedRepair.id}/candidate-review/checks`,
+    headers: writeHeaders,
+    body: JSON.stringify({
+      source: "person",
+      reviewId: candidate.candidateReview.id,
+      checkId: candidate.candidateReview.state.nextCheck.id,
+      outcome: "passed",
+      summary: "The candidate no longer reproduces the retained symptom.",
+      observations: ["The retained symptom is absent at the requested viewport."],
+      expectedMissionRevision: candidate.missionCheckpoint.missionRevision,
+    }),
+  });
+  const candidateRecorded = JSON.parse(candidateRecordResponse.body).data;
+  assert.equal(candidateRecordResponse.status, 200);
+  assert.equal(candidateRecorded.candidateReview.results[0].source, "person");
+  assert.equal(candidateRecorded.candidateReview.state.complete, true);
+  assert.equal(candidateRecorded.deploymentAttestedAt, null);
+
+  const candidateRead = JSON.parse((await callLocalRuntime(middleware, {
+    url: `/api/audits/${auditId}/repairs/${stagedRepair.id}/candidate-review`,
+  })).body).data;
+  assert.equal(candidateRead.candidateReview.id, candidate.candidateReview.id);
+  assert.equal(candidateRead.missionCheckpoint.missionRevision, candidateRecorded.missionCheckpoint.missionRevision);
 
   const repairs = JSON.parse((await callLocalRuntime(
     middleware,
@@ -3182,6 +3370,80 @@ test("audit jobs persist one repair per finding and require human approval befor
     "complete",
   );
 
+  const candidateOpen = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/candidate-review`, {
+      method: "POST",
+      body: JSON.stringify({ source: "agent", candidateOrigin: "http://localhost:5173" }),
+    }),
+  );
+  const candidateRepair = (await candidateOpen.json()).data;
+  assert.equal(candidateOpen.status, 201);
+  assert.equal(candidateRepair.candidateReview.purpose, "candidate");
+  assert.equal(candidateRepair.candidateReview.candidateOrigin, "http://localhost:5173");
+  assert.equal(candidateRepair.candidateReview.state.requestedCheckCount, 1);
+  assert.equal(
+    candidateRepair.mission.steps.find((step) => step.id === "candidate").status,
+    "current",
+  );
+  const candidateRevision = candidateRepair.missionCheckpoint.missionRevision;
+
+  const candidateReplay = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/candidate-review`, {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        candidateOrigin: "http://localhost:5173",
+        expectedMissionRevision: candidateRevision,
+      }),
+    }),
+  );
+  const replayedCandidate = (await candidateReplay.json()).data;
+  assert.equal(candidateReplay.status, 200);
+  assert.equal(replayedCandidate.candidateReview.id, candidateRepair.candidateReview.id);
+  assert.equal(replayedCandidate.missionCheckpoint.missionRevision, candidateRevision);
+
+  const staleCandidateResult = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/candidate-review-checks`, {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        reviewId: candidateRepair.candidateReview.id,
+        checkId: candidateRepair.candidateReview.state.nextCheck.id,
+        outcome: "issue",
+        summary: "The retained symptom remains in the candidate.",
+        observations: ["The retained browser comparison still fails."],
+        expectedMissionRevision: candidateRevision - 1,
+      }),
+    }),
+  );
+  assert.equal(staleCandidateResult.status, 409);
+  assert.equal((await staleCandidateResult.json()).error.code, "MISSION_REVISION_STALE");
+
+  const candidateResult = await job.fetch(
+    new Request(`https://frontmend.internal/repairs/${first.id}/candidate-review-checks`, {
+      method: "POST",
+      body: JSON.stringify({
+        source: "agent",
+        reviewId: candidateRepair.candidateReview.id,
+        checkId: candidateRepair.candidateReview.state.nextCheck.id,
+        outcome: "issue",
+        summary: "The retained symptom remains in the candidate.",
+        observations: ["The retained browser comparison still fails."],
+        expectedMissionRevision: candidateRevision,
+      }),
+    }),
+  );
+  const candidateIssue = (await candidateResult.json()).data;
+  assert.equal(candidateResult.status, 200);
+  assert.equal(candidateIssue.candidateReview.state.issueCount, 1);
+  assert.equal(candidateIssue.candidateReview.results[0].source, "agent");
+  assert.equal(candidateIssue.deploymentAttestedAt, null);
+  assert.equal(candidateIssue.verificationRun, null);
+  assert.equal(
+    candidateIssue.mission.steps.find((step) => step.id === "candidate").status,
+    "attention",
+  );
+
   const exportResponse = await job.fetch(
     new Request(`https://frontmend.internal/repairs/${first.id}/export`),
   );
@@ -3191,6 +3453,10 @@ test("audit jobs persist one repair per finding and require human approval befor
   assert.match(exportText, /does not claim the target site was changed/i);
   assert.match(exportText, /## Repository plan/);
   assert.match(exportText, /`worker\/index\.js`/);
+  assert.match(exportText, /## Candidate browser review/);
+  assert.match(exportText, /### Candidate correction packet/);
+  assert.match(exportText, /narrows the next coding iteration/i);
+  assert.match(exportText, /production evidence only|pre-production evidence only/i);
 
   const earlyVerificationInput = await job.fetch(
     new Request(`https://frontmend.internal/repairs/${first.id}/verification-input`),

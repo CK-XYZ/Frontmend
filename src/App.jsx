@@ -706,15 +706,6 @@ function HowItWorks({ onClose }) {
           </p>
         </header>
 
-        <dl className="loop-dialog-bounds">
-          {HOW_IT_WORKS_BOUNDS.map((bound) => (
-            <div key={bound.term}>
-              <dt>{bound.term}</dt>
-              <dd>{bound.value}</dd>
-            </div>
-          ))}
-        </dl>
-
         <div
           className="loop-dialog-rail"
           role="tablist"
