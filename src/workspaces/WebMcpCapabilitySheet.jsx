@@ -9,9 +9,20 @@ function registrationLabel(status) {
   if (!status.supported) return "Human mode";
   if (status.status === "ready") return "WebMCP ready";
   if (status.status === "registering") return "Syncing";
-  if (status.status === "error") return "Partial";
+  if (status.status === "error") return "WebMCP partial";
   return "Human mode";
 }
+
+const STAGE_LABELS = Object.freeze({
+  landing: "Ready to begin",
+  measurement: "Audit running",
+  investigation: "Browser review",
+  diagnosis: "Diagnosis",
+  "human-review": "Your review",
+  deployment: "Deployment",
+  replay: "Verification",
+  complete: "Audit complete",
+});
 
 /** Hairline record rows. Used everywhere a list of facts appears. */
 function RecordList({ items, empty }) {
@@ -54,6 +65,15 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
   const questions = inspector.questions;
   const activeTools = inspector.activeTools;
   const syncing = inspector.registration.status === "registering";
+  const stageLabel = STAGE_LABELS[inspector.stage] ?? "Current audit";
+  const availableActionLabel = activeTools.length
+    ? `${activeTools.length} agent ${activeTools.length === 1 ? "action" : "actions"} available on this screen`
+    : syncing
+      ? "Agent actions are syncing"
+      : "Use the controls on this screen";
+  const explainer = supported
+    ? "WebMCP lets a compatible AI agent use the actions on this page as tools. You ask in plain language; Frontmend runs the audit and keeps the evidence and your decision points visible."
+    : "WebMCP is the browser feature that lets a compatible AI agent use the actions on this page as tools. It is not available here, but you can still use every Frontmend workflow yourself.";
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -70,7 +90,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
       >
         <header className="inspector-head">
           <div className="inspector-head-line">
-            <h2 id="webmcp-sheet-title">Mission inspector</h2>
+            <h2 id="webmcp-sheet-title">Use Frontmend with an AI agent</h2>
             <span
               className={`inspector-status ${supported ? "is-ready" : "is-human"}`}
               data-state={inspector.registration.status}
@@ -79,46 +99,40 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
               {registrationLabel(status)}
             </span>
           </div>
-          <p className="inspector-state">
-            <span>{inspector.stage.replaceAll("-", " ")}</span>
-            <span>{questions.whatHappensNow.actor}</span>
-            <span>
-              {activeTools.length
-                ? `${activeTools.length} agent ${activeTools.length === 1 ? "action" : "actions"} ready`
-                : syncing
-                  ? "Agent actions syncing"
-                  : "Human actions available"}
-            </span>
-          </p>
           <button
             className="inspector-close"
             type="button"
             onClick={onClose}
-            aria-label="Close mission inspector"
+            aria-label="Close agent access"
           >
             <X size={17} weight="bold" />
           </button>
         </header>
 
-        {/*
-          The structure below answers this in full - now, then the authority
-          split - so the sentence only has to reach a screen reader.
-        */}
-        <p className="sr-only" id="webmcp-sheet-description">
-          The current shared mission, the evidence that must return, and the actions that stay
-          person-owned.
-        </p>
+        <div className="inspector-intro">
+          <p className="inspector-lede" id="webmcp-sheet-description">{explainer}</p>
+          <p className="inspector-state">
+            <span>{stageLabel}</span>
+            <span>{availableActionLabel}</span>
+          </p>
+        </div>
 
         <section className="inspector-now" aria-labelledby="mission-inspector-now-title">
-          <p className="inspector-label">Now</p>
+          <p className="inspector-label">Available now</p>
           <h3 id="mission-inspector-now-title">{questions.whatHappensNow.title}</h3>
           <p className="inspector-prose">{questions.whatHappensNow.summary}</p>
           <p className="inspector-why">{questions.whyNow}</p>
           {questions.whatHappensNow.requiredCapability ? (
             <p className="inspector-capability">
-              <span>Requires</span>
+              <span>Needs</span>
               <code>{questions.whatHappensNow.requiredCapability}</code>
             </p>
+          ) : null}
+          {supported && inspector.stage === "landing" ? (
+            <div className="inspector-example">
+              <span>Try asking your agent</span>
+              <code>Use Frontmend to audit example.com for accessibility and SEO.</code>
+            </div>
           ) : null}
         </section>
 
@@ -131,19 +145,19 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
         <div className="inspector-authority">
           <section aria-labelledby="mission-inspector-agent-title">
             <p className="inspector-label" id="mission-inspector-agent-title">
-              The agent may
+              What the agent can do
             </p>
-            <p className="inspector-sublabel">Must return</p>
+            <p className="inspector-sublabel">Returns</p>
             <RecordList
               items={questions.whatMustReturn}
               empty="No further evidence is required."
             />
-            <p className="inspector-sublabel">Unlocks</p>
+            <p className="inspector-sublabel">Then unlocks</p>
             <RecordList items={questions.whatItUnlocks} empty="Nothing further is unlocked." />
           </section>
           <section className="is-human" aria-labelledby="mission-inspector-human-title">
             <p className="inspector-label" id="mission-inspector-human-title">
-              Only a person may
+              What stays with you
             </p>
             <RecordList
               items={questions.whatRemainsHumanOnly}
@@ -155,11 +169,20 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
         <details className="inspector-disclosure">
           <summary>
             <CaretRight size={13} weight="bold" aria-hidden="true" />
-            Tool contracts
+            Technical details
             <span>
-              {activeTools.length} active · {inspector.registration.totalToolCount} bounded · protocol v{inspector.protocol.protocolVersion} · {inspector.protocol.displayCommit}
+              {activeTools.length} {activeTools.length === 1 ? "action" : "actions"} on this screen
             </span>
           </summary>
+          <div className="inspector-technical-intro">
+            <p>
+              These are the exact actions Frontmend currently exposes to a compatible agent. The
+              list changes as the audit moves forward.
+            </p>
+            <p className="inspector-technical-meta">
+              {inspector.registration.totalToolCount} total actions · protocol v{inspector.protocol.protocolVersion} · build {inspector.protocol.displayCommit}
+            </p>
+          </div>
           {activeTools.length ? (
             <ol className="inspector-tools">
               {activeTools.map((tool) => (

@@ -46,8 +46,14 @@ test("keeps modal focus, descriptions, scroll containment, and restoration bound
   assert.match(lazyWorkspace, /aria-describedby="lazy-workspace-state-description"/);
   assert.match(inspector, /id="webmcp-mission-inspector"/);
   assert.match(inspector, /aria-describedby="webmcp-sheet-description"/);
-  assert.match(inspector, /agent \$\{activeTools\.length === 1 \? "action" : "actions"\} ready/);
+  assert.match(inspector, /Use Frontmend with an AI agent/);
+  assert.match(inspector, /WebMCP lets a compatible AI agent use the actions on this page as tools/);
+  assert.match(inspector, /Try asking your agent/);
+  assert.match(inspector, /Technical details/);
+  assert.match(inspector, /agent \$\{activeTools\.length === 1 \? "action" : "actions"\} available on this screen/);
   assert.doesNotMatch(inspector, /\{activeTools\.length\} of \{inspector\.registration\.totalToolCount\} contracts/);
+  assert.doesNotMatch(inspector, />Mission inspector</);
+  assert.doesNotMatch(inspector, /Tool contracts/);
 });
 
 test("describes the Agent log as durable audit metadata without a misleading local clear", () => {

@@ -7774,10 +7774,9 @@ summary:focus-visible,
 /*
  * Mission inspector.
  *
- * Reads as a technical record, not a card stack: one surface, hairline rules
- * between blocks, uppercase micro-labels, mono for anything an agent or a
- * developer would copy. Lime marks person-owned authority, matching the
- * authority ledger on the landing page.
+ * Reads as a guided handoff, not a protocol console: one surface, hairline
+ * rules between blocks, and technical implementation details behind a
+ * disclosure. Lime marks person-owned authority, matching the landing ledger.
  */
 .webmcp-sheet {
   position: relative;
@@ -7816,13 +7815,12 @@ summary:focus-visible,
 }
 
 /*
- * The mission state as one instrument line, not a three-cell ledger. Stage,
- * operator and contract count are each two or three words; a full band each
- * was ceremony.
+ * The current stage and available agent actions are a quiet orientation line,
+ * after the plain-language WebMCP explanation.
  */
 .inspector-state {
   display: flex;
-  margin: 10px 0 0;
+  margin: 9px 0 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;
@@ -7905,12 +7903,17 @@ summary:focus-visible,
  * rule that separates it from the meta ledger, and a border on a max-width
  * element stops where the element stops rather than spanning the sheet.
  */
+.inspector-intro {
+  padding: 15px 28px 16px;
+  border-bottom: 1px solid var(--line);
+  background: #fbfbf6;
+}
+
 .inspector-lede {
   margin: 0;
-  padding: 14px 96px 16px 28px;
-  border-bottom: 1px solid var(--line);
-  color: var(--muted);
-  font-size: 13px;
+  max-width: 65ch;
+  color: var(--ink);
+  font-size: 14px;
   line-height: 1.55;
 }
 
@@ -7934,17 +7937,6 @@ summary:focus-visible,
   color: var(--ink);
 }
 
-/*
- * A block whose answer is a single line reads as a labelled row, not a stacked
- * band: the label sits in its own column and the value beside it.
- */
-.inspector-block.is-inline {
-  display: grid;
-  grid-template-columns: 118px minmax(0, 1fr);
-  align-items: baseline;
-  gap: 0 14px;
-}
-
 .inspector-label {
   margin: 0;
   color: var(--muted);
@@ -7954,7 +7946,6 @@ summary:focus-visible,
   text-transform: uppercase;
 }
 
-.inspector-block h3,
 .inspector-now h3 {
   margin: 9px 0 0;
   color: var(--ink);
@@ -8064,11 +8055,28 @@ summary:focus-visible,
   font-size: 12px;
 }
 
-/* The measured/unlocks pair reads as one table, not two cards. */
-.inspector-split {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  border-bottom: 1px solid var(--line);
+.inspector-example {
+  margin-top: 15px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.inspector-example span {
+  display: block;
+  color: var(--muted);
+  font-size: 10px;
+  font-weight: 740;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.inspector-example code {
+  display: block;
+  margin-top: 6px;
+  color: #47514b;
+  font-family: var(--fm-mono);
+  font-size: 12px;
+  line-height: 1.55;
 }
 
 /* --------------------------------------------------------- record rows */
@@ -8097,12 +8105,6 @@ summary:focus-visible,
   color: var(--muted);
   font-size: 13px;
   line-height: 1.5;
-}
-
-/* Lime is the person-owned authority, exactly as on the landing ledger. */
-.inspector-block.is-human {
-  border-left: 2px solid var(--lime);
-  background: rgba(185, 237, 80, 0.07);
 }
 
 /* ---------------------------------------------------------- disclosure */
@@ -8143,6 +8145,25 @@ summary:focus-visible,
   font-family: var(--fm-mono);
   font-size: 12px;
   font-weight: 400;
+}
+
+.inspector-technical-intro {
+  padding: 14px 28px 4px;
+  border-top: 1px solid var(--line);
+}
+
+.inspector-technical-intro > p {
+  max-width: 64ch;
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.inspector-technical-intro > .inspector-technical-meta {
+  margin-top: 7px;
+  font-family: var(--fm-mono);
+  font-size: 11.5px;
 }
 
 .inspector-tools {
@@ -8223,10 +8244,12 @@ summary:focus-visible,
 
 @media (max-width: 620px) {
   .inspector-head,
+  .inspector-intro,
   .inspector-now,
   .inspector-authority > section,
   .inspector-disclosure > summary,
   .inspector-tools,
+  .inspector-technical-intro,
   .inspector-foot {
     padding-inline: 18px;
   }

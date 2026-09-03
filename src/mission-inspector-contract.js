@@ -16,11 +16,36 @@ const STAGES = Object.freeze([
 ]);
 
 const HUMAN_ONLY = Object.freeze([
-  "Choose or change the public target and product intent.",
-  "Approve a repair or grant a bounded low-risk delegation policy.",
-  "Deploy the reviewed change and attest that deployment.",
-  "Accept business risk when retained evidence remains blocked or inconclusive.",
+  "Choose the website and what the audit should focus on.",
+  "Approve a repair or grant limited authority for low-risk work.",
+  "Deploy the reviewed change and accept any remaining risk.",
 ]);
+
+const TOOL_DISPLAY_COPY = Object.freeze({
+  start_site_audit: "Starts a saved audit for the public website and focus areas you choose.",
+  check_site_audit_progress: "Checks the current audit phase, progress, and any blocker.",
+  cancel_site_audit: "Stops the current audit without treating incomplete evidence as final.",
+  get_mission_summary: "Reads the audit state, top priorities, blockers, and next available action.",
+  get_site_audit_results: "Reads the completed findings, evidence, and audit sources.",
+  get_evidence_chain: "Reads one finding from observation through diagnosis, repair, and verification.",
+  open_browser_review: "Opens the next check that needs direct browser inspection.",
+  record_browser_review_check: "Adds a focused browser observation to the current review task.",
+  get_assessment_receipt: "Creates a portable record of the completed assessment and its evidence.",
+  get_repository_fix_brief: "Prepares a code-focused brief for one saved finding.",
+  start_related_page_audit: "Audits a same-site page discovered from the current website.",
+  open_diagnostic_mission: "Opens a focused diagnosis task for one saved finding.",
+  submit_runtime_diagnosis: "Records code ownership, reproduction steps, and planned checks.",
+  record_diagnostic_blocker: "Records an honest blocker when diagnosis cannot be completed safely.",
+  start_site_exploration: "Starts a limited exploration of selected pages on the same website.",
+  get_site_exploration: "Reads the current page exploration and its saved evidence.",
+  get_verification_receipt: "Reads the final repair-verification result and its sources.",
+  prepare_site_repair: "Moves the audit into repair preparation after you ask.",
+  stage_site_repair: "Creates a reviewable repair plan for the selected finding.",
+  revise_site_repair: "Revises the repair plan against your requested changes.",
+  get_repair_workspace: "Reads the current repair plan, review state, and evidence.",
+  record_repository_implementation: "Records code changes without claiming they were deployed.",
+  start_repair_verification: "Starts fresh public verification after deployment is confirmed.",
+});
 
 function bounded(value, maximum = 600) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim().slice(0, maximum);
@@ -33,7 +58,10 @@ function activeToolDetails(toolDetails, names) {
     return {
       name: bounded(name, 80),
       title: bounded(tool.title ?? name, 120),
-      description: bounded(tool.description ?? "Available in the current authoritative state.", 600),
+      description: bounded(
+        TOOL_DISPLAY_COPY[name] ?? tool.description ?? "Available at this point in the audit.",
+        240,
+      ),
       inputSchema: tool.inputSchema && typeof tool.inputSchema === "object"
         ? JSON.parse(JSON.stringify(tool.inputSchema))
         : { type: "object", properties: {}, additionalProperties: false },
@@ -57,16 +85,16 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
     return {
       stage: "landing",
       actor: "Person or agent",
-      title: "Start with one public target",
-      summary: "Enter a public HTTP or HTTPS URL. An agent can start the same bounded assessment through WebMCP when the browser supports it.",
+      title: "Audit a public website",
+      summary: "Paste a public website URL here, or ask a compatible agent to start the same audit for you.",
       why: audit?.status === "failed"
-        ? "The prior audit did not produce a completed report, so no evidence-led continuation is valid."
+        ? "The previous audit did not finish, so a new audit is needed before Frontmend can continue."
         : audit?.status === "cancelled"
-          ? "The prior audit was cancelled and retained no completed evidence to continue."
-          : "No audit mission is active yet.",
-      mustReturn: ["A normalized public URL", "A durable audit workspace and job ID"],
-      unlocks: ["Live mobile, desktop, and document measurement"],
-      requiredCapability: "Public URL selection",
+          ? "The previous audit was cancelled before it produced complete evidence."
+          : "No audit is running yet.",
+      mustReturn: ["A checked public website URL", "A saved audit with a trackable job ID"],
+      unlocks: ["Live checks for mobile, desktop, and page structure"],
+      requiredCapability: "A public website URL",
       action: checkpointAction ?? { tool: "start_site_audit", input: {} },
     };
   }
@@ -299,8 +327,8 @@ export function createMissionInspector({
     humanFallback: {
       complete: true,
       message: supported
-        ? "The same authoritative service remains available through the human interface."
-        : "document.modelContext is unavailable, so no agent tools are active; the complete human workflow remains available.",
+        ? "Prefer clicking? Every step still works through Frontmend's regular interface."
+        : "WebMCP is not available in this browser, but every Frontmend workflow still works here.",
     },
   };
 }

@@ -39,16 +39,34 @@ test("answers all five mission questions for landing and complete Human mode", (
   });
   assert.equal(value.stage, "landing");
   assert.equal(value.mode, "human");
-  assert.match(value.questions.whatHappensNow.title, /public target/i);
-  assert.match(value.questions.whyNow, /no audit mission/i);
+  assert.match(value.questions.whatHappensNow.title, /public website/i);
+  assert.match(value.questions.whyNow, /no audit is running/i);
   assert.equal(value.questions.whatMustReturn.length, 2);
   assert.equal(value.questions.whatItUnlocks.length, 1);
-  assert.equal(value.questions.whatRemainsHumanOnly.length, 4);
+  assert.equal(value.questions.whatRemainsHumanOnly.length, 3);
   assert.equal(value.humanFallback.complete, true);
-  assert.match(value.humanFallback.message, /complete human workflow/i);
+  assert.match(value.humanFallback.message, /every Frontmend workflow/i);
   assert.equal(value.protocol.protocolVersion, 1);
   assert.equal(value.protocol.toolCount, FRONTMEND_TOOL_COUNT);
   assert.equal(value.protocol.displayCommit, "unidentified build");
+});
+
+test("uses concise human-facing descriptions for the active agent actions", () => {
+  const value = inspector({
+    contextualToolNames: ["get_mission_summary"],
+    toolDetails: [{
+      name: "get_mission_summary",
+      title: "Get mission summary",
+      description: "Return the small stable Frontmend control-plane view with retained intent and protocol revisions.",
+      inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    }],
+  });
+
+  assert.equal(
+    value.activeTools[0].description,
+    "Reads the audit state, top priorities, blockers, and next available action.",
+  );
+  assert.doesNotMatch(value.activeTools[0].description, /control-plane|protocol/i);
 });
 
 test("projects the measurement state from the authoritative audit job", () => {
