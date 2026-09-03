@@ -44,3 +44,37 @@ test("keeps the evidence hierarchy operable at the 620 px workspace breakpoint",
   assert.match(mobile, /\.evidence-overview-failures li\s*\{\s*grid-template-columns: 1fr max-content;/);
   assert.doesNotMatch(styles, /\.score-card/);
 });
+
+test("presents the mission projection instead of a duplicate raw finding queue", () => {
+  const priorityQueueSource = reportSource.slice(
+    reportSource.indexOf('className="finding-list"'),
+    reportSource.indexOf('className="preview-column"'),
+  );
+
+  assert.match(reportSource, /const displayedFindings = missionPriorityFindings/);
+  assert.match(reportSource, /retainedObservationCount = Number\.isFinite\(missionState\.matchingFindingCount\)/);
+  assert.match(reportSource, /retained observations grouped by rule and evidence source/);
+  assert.match(reportSource, /mission \$\{displayedFindings\.length === 1 \? "priority" : "priorities"\} from/);
+  assert.match(reportSource, /Recommended first/);
+  assert.match(reportSource, /priority\?\.occurrenceCount/);
+  assert.match(reportSource, /grouped observations/);
+  assert.doesNotMatch(priorityQueueSource, /\{findings\.map\(\(finding, index\) =>/);
+});
+
+test("puts the agent continuation before raw diagnostic detail and compacts the mobile index", () => {
+  const findingDetailIndex = reportSource.indexOf('<h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>');
+  const diagnosisIndex = reportSource.indexOf('label="repository diagnosis workspace"', findingDetailIndex);
+  const measuredEvidenceIndex = reportSource.indexOf('>Inspect measured evidence<', findingDetailIndex);
+  const evidenceSectionIndex = reportSource.indexOf('id="case-evidence"');
+  const elevatedTakeoverIndex = reportSource.indexOf("<AgentTakeover", evidenceSectionIndex);
+  const summarySectionIndex = reportSource.indexOf('id="case-summary"');
+
+  assert.equal(findingDetailIndex > 0, true);
+  assert.equal(diagnosisIndex > findingDetailIndex, true);
+  assert.equal(diagnosisIndex < measuredEvidenceIndex, true);
+  assert.equal(elevatedTakeoverIndex > evidenceSectionIndex, true);
+  assert.equal(elevatedTakeoverIndex < summarySectionIndex, true);
+  assert.match(reportSource, /className="case-file-index-toggle"/);
+  assert.match(reportSource, /data-expanded=\{expanded \? "true" : "false"\}/);
+  assert.match(styles, /\.case-file-index\[data-expanded="false"\] \.case-file-index-content\s*\{\s*display: none;/);
+});

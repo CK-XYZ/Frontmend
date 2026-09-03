@@ -682,10 +682,10 @@ function AgentTakeover({ auditId, state, webMcp, onOpened }) {
       </span>
       <div>
         <p className="kicker">Same audit · optional rendered review</p>
-        <h2 id={titleId}>{webMcpReady ? "Hand off without starting over" : "Complete rendered review yourself"}</h2>
+        <h2 id={titleId}>{webMcpReady ? "Continue the audit with an agent" : "Complete rendered review yourself"}</h2>
         <p>
           {webMcpReady
-            ? "Hand this completed person-started assessment to a browser-capable agent, or complete the same bounded tasks yourself."
+            ? "Hand off to agent without starting over. It can complete the same bounded rendered checks against this retained evidence."
             : "WebMCP is not ready in this browser, so Human mode can open and complete the same bounded rendered tasks directly."}
           {" "}Frontmend keeps the current audit ID, provider evidence, focus, and person attribution.
         </p>
@@ -696,7 +696,7 @@ function AgentTakeover({ auditId, state, webMcp, onOpened }) {
       </div>
       <button type="button" onClick={openHandoff} disabled={busy}>
         {webMcpReady ? <Robot size={17} weight="bold" aria-hidden="true" /> : <Browser size={17} weight="duotone" aria-hidden="true" />}
-        {busy ? "Opening review…" : webMcpReady ? "Hand off to agent" : "Open rendered review"}
+        {busy ? "Opening review…" : webMcpReady ? "Continue with agent" : "Open rendered review"}
       </button>
       <small className="agent-takeover-boundary">
         Once opened, the receipt stays locked until the rendered checks complete. Before any evidence, you may visibly withdraw the optional handoff; after evidence, complete it or retain an honest blocker.
@@ -1410,7 +1410,9 @@ function CaseSectionMarker({ number, label }) {
   );
 }
 
-function CaseFileIndex({ report, mission, missionState }) {
+function CaseFileIndex({ report, mission }) {
+  const [expanded, setExpanded] = useState(false);
+  const contentId = useId();
   const documentStatus = caseSourceStatus(
     report,
     /document/i,
@@ -1430,35 +1432,50 @@ function CaseFileIndex({ report, mission, missionState }) {
   ];
 
   return (
-    <aside className="case-file-index" aria-label="Audit case index">
-      <p className="kicker">Case index</p>
-      <dl>
-        <div>
-          <dt>Audit</dt>
-          <dd>{report.auditId.slice(0, 8).toUpperCase()}</dd>
-        </div>
-        <div>
-          <dt>Type</dt>
-          <dd>{mission.requestedFocusAreas?.length ? "Focused assessment" : "Full frontend audit"}</dd>
-        </div>
-        <div>
-          <dt>Initiated by</dt>
-          <dd>{mission.requestedBy === "agent" ? "Agent-started" : "Person-started"}</dd>
-        </div>
-        <div>
-          <dt>Scope</dt>
-          <dd>{mission.scope === "bounded-site" ? "Bounded site" : "This public page"}</dd>
-        </div>
-      </dl>
-      <nav aria-label="Case file contents">
-        <p className="kicker">Contents</p>
-        {contents.map(([number, label, id]) => (
-          <a key={id} href={`#${id}`}>
-            <span>{number}</span>
-            {label}
-          </a>
-        ))}
-      </nav>
+    <aside className="case-file-index" aria-label="Audit case index" data-expanded={expanded ? "true" : "false"}>
+      <button
+        className="case-file-index-toggle"
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
+        onClick={() => setExpanded((current) => !current)}
+      >
+        <span>
+          <strong>Case index</strong>
+          <small>{report.auditId.slice(0, 8).toUpperCase()} · 5 sections</small>
+        </span>
+        <ArrowRight size={16} weight="bold" aria-hidden="true" />
+      </button>
+      <div className="case-file-index-content" id={contentId}>
+        <p className="kicker">Case index</p>
+        <dl>
+          <div>
+            <dt>Audit</dt>
+            <dd>{report.auditId.slice(0, 8).toUpperCase()}</dd>
+          </div>
+          <div>
+            <dt>Type</dt>
+            <dd>{mission.requestedFocusAreas?.length ? "Focused assessment" : "Full frontend audit"}</dd>
+          </div>
+          <div>
+            <dt>Initiated by</dt>
+            <dd>{mission.requestedBy === "agent" ? "Agent-started" : "Person-started"}</dd>
+          </div>
+          <div>
+            <dt>Scope</dt>
+            <dd>{mission.scope === "bounded-site" ? "Bounded site" : "This public page"}</dd>
+          </div>
+        </dl>
+        <nav aria-label="Case file contents">
+          <p className="kicker">Contents</p>
+          {contents.map(([number, label, id]) => (
+            <a key={id} href={`#${id}`}>
+              <span>{number}</span>
+              {label}
+            </a>
+          ))}
+        </nav>
+      </div>
     </aside>
   );
 }
@@ -1509,8 +1526,15 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     explorations: siteExplorations,
   });
   const findings = useMemo(() => assessmentFindings(report, browserReview), [report, browserReview]);
+  const missionPriorityFindings = missionState.priorities
+    .map((priority) => findings.find((finding) => finding.id === priority.findingId))
+    .filter(Boolean);
+  const displayedFindings = missionPriorityFindings;
+  const retainedObservationCount = Number.isFinite(missionState.matchingFindingCount)
+    ? missionState.matchingFindingCount
+    : findings.length;
   const [selectedFindingId, setSelectedFindingId] = useState(
-    () => missionState.priorities[0]?.findingId ?? findings[0]?.id ?? null,
+    () => displayedFindings[0]?.id ?? null,
   );
   const [shareState, setShareState] = useState("idle");
   const shareInputRef = useRef(null);
@@ -1559,16 +1583,9 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
       ? report.findingsOmitted
       : (report.findingCount ?? report.findings.length) - report.findings.length,
   );
-  const singleFindingLabel = findings[0]
-    ? /header/i.test(findings[0].title)
-      ? "response-header gap"
-      : `${findings[0].category.toLowerCase()} issue`
-    : "retained issue";
-  const summaryHeadline = report.findingCount === 0
-    ? "No retained issues need attention."
-    : report.findingCount === 1
-      ? `One ${singleFindingLabel} needs attention.`
-      : `${report.findingCount} retained issues need attention.`;
+  const summaryHeadline = displayedFindings.length === 0
+    ? "No mission priority needs attention."
+    : `${displayedFindings.length} mission ${displayedFindings.length === 1 ? "priority" : "priorities"} from ${retainedObservationCount} retained ${retainedObservationCount === 1 ? "observation" : "observations"}.`;
   const assessmentStatusLabel = missionState.assessmentComplete
     ? "Assessment complete"
     : missionState.status === "blocked"
@@ -1631,10 +1648,10 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
   }, [report.auditId, workspaceRefreshAttempt]);
 
   useEffect(() => {
-    if (findings.length && !findings.some((finding) => finding.id === selectedFindingId)) {
-      setSelectedFindingId(missionState.priorities[0]?.findingId ?? findings[0].id);
+    if (displayedFindings.length && !displayedFindings.some((finding) => finding.id === selectedFindingId)) {
+      setSelectedFindingId(displayedFindings[0].id);
     }
-  }, [findings, missionState.priorities, selectedFindingId]);
+  }, [displayedFindings, selectedFindingId]);
 
   const rememberRepair = (repair) => {
     setRepairs((current) => [...current.filter((item) => item.id !== repair.id), repair]);
@@ -1860,7 +1877,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
       ) : null}
 
       <div className="case-file-layout">
-        <CaseFileIndex report={report} mission={mission} missionState={missionState} />
+        <CaseFileIndex report={report} mission={mission} />
 
         <div className="case-file-document">
           <section className="case-file-section" id="case-mission" aria-labelledby="case-mission-title">
@@ -1891,7 +1908,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
           <section className="case-file-section" id="case-evidence" aria-label="Evidence">
             <CaseSectionMarker number="02" label="Evidence" />
             <EvidenceOverview report={report} missionState={missionState} />
-            {!missionState.assessmentComplete ? (
+            {missionState.browserReview.adoptionAvailable || !missionState.assessmentComplete ? (
               <div className="case-required-continuation">
                 <AgentTakeover
                   auditId={report.auditId}
@@ -1899,14 +1916,16 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                   webMcp={webMcp}
                   onOpened={setBrowserReview}
                 />
-                <BrowserReviewMission
-                  auditId={report.auditId}
-                  state={missionState}
-                  review={browserReview}
-                  verification={report.verification}
-                  webMcp={webMcp}
-                  onChanged={setBrowserReview}
-                />
+                {!missionState.assessmentComplete ? (
+                  <BrowserReviewMission
+                    auditId={report.auditId}
+                    state={missionState}
+                    review={browserReview}
+                    verification={report.verification}
+                    webMcp={webMcp}
+                    onChanged={setBrowserReview}
+                  />
+                ) : null}
               </div>
             ) : null}
           </section>
@@ -1924,8 +1943,8 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                   <small>Checks passed</small>
                 </div>
                 <div>
-                  <span>{report.findingCount}</span>
-                  <small>Findings</small>
+                  <span>{retainedObservationCount}</span>
+                  <small>Retained observations</small>
                 </div>
                 <div>
                   <span>{report.viewportCount}</span>
@@ -1977,34 +1996,42 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             <CaseSectionMarker number="04" label="Finding" />
             <h2 id="case-finding-title">What needs attention</h2>
             <div className="workspace-grid">
-              <aside className={`findings-panel ${findings.length === 1 ? "single-finding" : ""}`} aria-label="Audit findings">
+              <aside className={`findings-panel ${displayedFindings.length === 1 ? "single-finding" : ""}`} aria-label="Audit mission priorities">
                 <div className="findings-heading">
                   <div>
-                    <p className="kicker">Ranked priorities</p>
-                    <h3>{findings.length === 1 ? "1 retained finding" : `${findings.length} retained findings`}</h3>
+                    <p className="kicker">Mission priorities</p>
+                    <h3>{displayedFindings.length === 1 ? "1 recommended priority" : `${displayedFindings.length} mission priorities`}</h3>
+                    <small>{retainedObservationCount} retained observations grouped by rule and evidence source</small>
                   </div>
-                  <span>{findings.length}</span>
+                  <span>{displayedFindings.length}/{retainedObservationCount}</span>
                 </div>
                 <div className="finding-list">
-                  {findings.map((finding, index) => (
-                    <button
-                      type="button"
-                      key={finding.id}
-                      className={finding.id === selectedFindingId ? "selected" : ""}
-                      aria-pressed={finding.id === selectedFindingId}
-                      aria-controls={findingDetailId}
-                      onClick={() => selectFinding(finding.id)}
-                    >
-                      <span className={`finding-index ${finding.severity}`}>{index + 1}</span>
-                      <span className="finding-copy">
-                        <small>{finding.category}</small>
-                        <strong>{finding.title}</strong>
-                        <em>{finding.selector}</em>
-                      </span>
-                      <ArrowRight size={16} weight="bold" aria-hidden="true" />
-                    </button>
-                  ))}
-                  {!findings.length ? (
+                  {displayedFindings.map((finding, index) => {
+                    const priority = missionState.priorities.find((item) => item.findingId === finding.id);
+                    const occurrenceCount = priority?.occurrenceCount ?? 1;
+                    return (
+                      <button
+                        type="button"
+                        key={finding.id}
+                        className={finding.id === selectedFindingId ? "selected" : ""}
+                        aria-pressed={finding.id === selectedFindingId}
+                        aria-controls={findingDetailId}
+                        onClick={() => selectFinding(finding.id)}
+                      >
+                        <span className={`finding-index ${finding.severity}`}>{priority?.rank ?? index + 1}</span>
+                        <span className="finding-copy">
+                          <small>{index === 0 ? "Recommended first" : `Priority ${priority?.rank ?? index + 1}`} · {finding.category}</small>
+                          <strong>{finding.title}</strong>
+                          <em>
+                            {occurrenceCount} {occurrenceCount === 1 ? "observation" : "grouped observations"}
+                            {priority?.affectedStrategies?.length ? ` · ${priority.affectedStrategies.join(" + ")}` : ""}
+                          </em>
+                        </span>
+                        <ArrowRight size={16} weight="bold" aria-hidden="true" />
+                      </button>
+                    );
+                  })}
+                  {!displayedFindings.length ? (
                     <p className="empty-findings">
                       {missionState.browserReview.required && missionState.browserReview.status !== "complete"
                         ? "No provider failure matched this focus. The rendered-browser review is still active."
@@ -2021,7 +2048,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                 ) : null}
                 {missionState.priorities.length ? (
                   <details className="case-priority-details">
-                    <summary>Open mission evidence chain</summary>
+                    <summary>Why this order</summary>
                     <MissionPriorities
                       state={missionState}
                       selectedFindingId={selectedFindingId}
@@ -2048,6 +2075,21 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                     </div>
                     <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
                     <p>{selectedFinding.summary}</p>
+                    {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
+                      <LazyWorkspace
+                        load={loadDiagnosisWorkspace}
+                        label="repository diagnosis workspace"
+                        resetKey={`${report.auditId}:diagnosis:${selectedFinding.id}:${audit.missionRevision ?? 1}`}
+                        variant="inline"
+                        componentProps={{
+                          mode: "mission",
+                          auditId: report.auditId,
+                          finding: selectedFinding,
+                          mission: selectedDiagnosticMission,
+                          webMcp,
+                        }}
+                      />
+                    ) : null}
                     {selectedFindingScope.length > 1 ? (
                       <section className="finding-scope" aria-label="Cross-viewport finding scope">
                         <div>
@@ -2077,31 +2119,22 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                     </dl>
                     <BrowserFindingProvenance finding={selectedFinding} />
                     {selectedFinding.diagnosticEvidence ? (
-                      <LazyWorkspace
-                        load={loadDiagnosisWorkspace}
-                        label="diagnostic evidence workspace"
-                        resetKey={`${report.auditId}:evidence:${selectedFinding.id}`}
-                        variant="inline"
-                        componentProps={{ mode: "evidence", evidence: selectedFinding.diagnosticEvidence }}
-                      />
+                      <details className="case-diagnostic-evidence">
+                        <summary>
+                          <span>Inspect measured evidence</span>
+                          <small>Selectors, snippets, and raw measurements</small>
+                        </summary>
+                        <LazyWorkspace
+                          load={loadDiagnosisWorkspace}
+                          label="diagnostic evidence workspace"
+                          resetKey={`${report.auditId}:evidence:${selectedFinding.id}`}
+                          variant="inline"
+                          componentProps={{ mode: "evidence", evidence: selectedFinding.diagnosticEvidence }}
+                        />
+                      </details>
                     ) : null}
                     <CspResourceInventory context={selectedFinding.repairContext} />
                   </article>
-                ) : null}
-                {selectedFinding && (selectedDiagnosticMission || findingRequiresDiagnosticMission(selectedFinding)) ? (
-                  <LazyWorkspace
-                    load={loadDiagnosisWorkspace}
-                    label="repository diagnosis workspace"
-                    resetKey={`${report.auditId}:diagnosis:${selectedFinding.id}:${audit.missionRevision ?? 1}`}
-                    variant="inline"
-                    componentProps={{
-                      mode: "mission",
-                      auditId: report.auditId,
-                      finding: selectedFinding,
-                      mission: selectedDiagnosticMission,
-                      webMcp,
-                    }}
-                  />
                 ) : null}
                 <details className="case-preview-disclosure">
                   <summary>
@@ -2196,22 +2229,14 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
             </summary>
             <div>
               {missionState.assessmentComplete ? (
-                <>
-                  <AgentTakeover
-                    auditId={report.auditId}
-                    state={missionState}
-                    webMcp={webMcp}
-                    onOpened={setBrowserReview}
-                  />
-                  <BrowserReviewMission
-                    auditId={report.auditId}
-                    state={missionState}
-                    review={browserReview}
-                    verification={report.verification}
-                    webMcp={webMcp}
-                    onChanged={setBrowserReview}
-                  />
-                </>
+                <BrowserReviewMission
+                  auditId={report.auditId}
+                  state={missionState}
+                  review={browserReview}
+                  verification={report.verification}
+                  webMcp={webMcp}
+                  onChanged={setBrowserReview}
+                />
               ) : null}
               {findings.length && (repairReadyPriorities.length || preparedFindingIds.length || repairs.length) ? (
                 <LazyWorkspace

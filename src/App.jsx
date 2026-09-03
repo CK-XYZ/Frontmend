@@ -376,6 +376,17 @@ function WebMcpStatus({ status, expanded, restoring, restoreFailed, onClick, but
         : failed
           ? `WebMCP · ${status.toolNames.length}/${activeCount} active`
           : "Human mode";
+  const compactLabel = restoring
+    ? restoreFailed
+      ? "Agent paused"
+      : "Agent syncing"
+    : ready
+      ? "Agent ready"
+      : status.status === "registering"
+        ? "Agent syncing"
+        : failed
+          ? "Agent limited"
+          : "Human mode";
   const accessibleLabel = restoring
     ? restoreFailed
       ? "WebMCP tools stay paused until an audit workspace is restored or a new audit starts"
@@ -408,7 +419,8 @@ function WebMcpStatus({ status, expanded, restoring, restoreFailed, onClick, but
       onClick={onClick}
     >
       <span className="status-dot" aria-hidden="true" />
-      <span role="status" aria-live="polite">{label}</span>
+      <span className="webmcp-status-label" role="status" aria-live="polite">{label}</span>
+      <span className="webmcp-status-compact" aria-hidden="true">{compactLabel}</span>
     </button>
   );
 }
@@ -1389,7 +1401,7 @@ function ClosingCta({ onStart }) {
             Start site audit
             <ArrowRight size={18} weight="bold" aria-hidden="true" />
           </button>
-          <p className="closing-note">Public pages only · Human approval stays required</p>
+          <p className="closing-note">Agent-ready evidence · You choose what ships</p>
         </div>
       </div>
     </section>
@@ -1427,7 +1439,7 @@ function LandingFooter({ onHome, onLanding = true }) {
             <p className="landing-footer-label">Operating model</p>
             <span>Public pages only</span>
             <span>No source upload</span>
-            <span>Human approval required</span>
+            <span>You choose what ships</span>
           </div>
         </nav>
       </div>
@@ -1522,7 +1534,12 @@ function Landing({
                 (isSubmitting ? "Starting the live audit…" : "No account needed for the first audit.")}
             </p>
 
-            <p className="hero-trust">No login · Public pages only · Human approval stays required</p>
+            <p className="hero-trust">Agents automate the evidence loop. You choose what ships.</p>
+
+            <p className="hero-agent-prompt" aria-label="Example coding-agent request">
+              <span>Ask your coding agent</span>
+              <code>Use Frontmend to audit my deployed site for accessibility and SEO, then investigate the top issue in this repository.</code>
+            </p>
 
             <details className="audit-composer">
               <summary>
@@ -1667,6 +1684,11 @@ function AuditProgress({
     { id: "verify", label: "Verify", icon: CheckCircle },
   ];
   const phaseIndex = Math.max(0, stages.findIndex((stage) => stage.id === audit.phase));
+  const visiblePhaseLabel = {
+    capture: "Capturing the public page",
+    inspect: "Inspecting live evidence",
+    verify: "Verifying retained evidence",
+  }[audit.phase] ?? audit.phaseLabel;
 
   if (["failed", "cancelled"].includes(audit.status)) {
     const cancelled = audit.status === "cancelled";
@@ -1730,7 +1752,7 @@ function AuditProgress({
           <p className="kicker" role="status" aria-live="polite" aria-atomic="true">
             Live audit · attempt {audit.attempt ?? 1} · {audit.progress}%
           </p>
-          <h1 id="progress-title">{audit.phaseLabel}</h1>
+          <h1 id="progress-title">{visiblePhaseLabel}</h1>
           <p className="audit-url">{audit.url}</p>
           <div
             className="progress-track"
@@ -1765,6 +1787,9 @@ function AuditProgress({
               );
             })}
           </ol>
+          <p className="audit-persistence-note">
+            This can take a moment. Your audit keeps running if you leave.
+          </p>
           <p className="audit-engine-note">
             Live PageSpeed Insights job · Lighthouse mobile and desktop evidence
           </p>
@@ -2261,18 +2286,20 @@ export function App() {
       <header className={`site-header${mode === "landing" && isHeaderCondensed ? " is-condensed" : ""}`}>
         <Brand onClick={reset} />
         <div className="header-actions">
-          <button
-            className="agent-activity-trigger"
-            type="button"
-            aria-expanded={showAgentActivity}
-            aria-controls="agent-activity-drawer"
-            aria-haspopup="dialog"
-            onClick={() => setShowAgentActivity(true)}
-          >
-            <Robot size={16} weight="bold" aria-hidden="true" />
-            Agent log
-            {agentActivities.length ? <span>{agentActivities.length}</span> : null}
-          </button>
+          {agentActivities.length || !["landing", "guide"].includes(mode) ? (
+            <button
+              className="agent-activity-trigger"
+              type="button"
+              aria-expanded={showAgentActivity}
+              aria-controls="agent-activity-drawer"
+              aria-haspopup="dialog"
+              onClick={() => setShowAgentActivity(true)}
+            >
+              <Robot size={16} weight="bold" aria-hidden="true" />
+              Agent log
+              {agentActivities.length ? <span>{agentActivities.length}</span> : null}
+            </button>
+          ) : null}
           <button
             className="text-button"
             type="button"

@@ -83,10 +83,11 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
             <span>{inspector.stage.replaceAll("-", " ")}</span>
             <span>{questions.whatHappensNow.actor}</span>
             <span>
-              {activeTools.length} of {inspector.registration.totalToolCount} contracts
-            </span>
-            <span>
-              protocol v{inspector.protocol.protocolVersion} · {inspector.protocol.displayCommit}
+              {activeTools.length
+                ? `${activeTools.length} agent ${activeTools.length === 1 ? "action" : "actions"} ready`
+                : syncing
+                  ? "Agent actions syncing"
+                  : "Human actions available"}
             </span>
           </p>
           <button
@@ -156,7 +157,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
             <CaretRight size={13} weight="bold" aria-hidden="true" />
             Tool contracts
             <span>
-              {activeTools.length} active · {inspector.registration.totalToolCount} bounded
+              {activeTools.length} active · {inspector.registration.totalToolCount} bounded · protocol v{inspector.protocol.protocolVersion} · {inspector.protocol.displayCommit}
             </span>
           </summary>
           {activeTools.length ? (

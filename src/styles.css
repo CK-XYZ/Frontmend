@@ -355,6 +355,10 @@ summary:focus-visible,
   cursor: pointer;
 }
 
+.webmcp-status-compact {
+  display: none;
+}
+
 .webmcp-status:hover,
 .webmcp-status[aria-expanded="true"] {
   background: #f0f3e9;
@@ -839,8 +843,15 @@ summary:focus-visible,
 }
 
 .progress-hero .audit-engine-note {
-  margin-top: 26px;
+  margin-top: 8px;
   color: rgb(197 213 255 / 52%);
+}
+
+.audit-persistence-note {
+  margin: 24px 0 0;
+  color: rgb(245 243 241 / 82%);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .progress-evidence {
@@ -7003,6 +7014,15 @@ summary:focus-visible,
   letter-spacing: -0.035em;
 }
 
+.findings-heading > div > small {
+  display: block;
+  max-width: 30ch;
+  margin-top: 6px;
+  color: #7f8782;
+  font-size: 9px;
+  line-height: 1.45;
+}
+
 .findings-heading > span {
   width: 31px;
   height: 31px;
@@ -8603,7 +8623,11 @@ summary:focus-visible,
   border-right: 1px solid var(--line-strong);
 }
 
-.case-file-index > .kicker,
+.case-file-index-toggle {
+  display: none;
+}
+
+.case-file-index-content > .kicker,
 .case-file-index nav > .kicker {
   margin: 0 0 13px;
   color: var(--fm-cobalt);
@@ -9087,6 +9111,28 @@ summary:focus-visible,
   background: none;
 }
 
+.case-file-finding .diagnostic-mission {
+  margin: 20px 0 22px;
+  border-color: color-mix(in srgb, var(--fm-cobalt) 28%, transparent);
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--paper) 93%, #dce8ff);
+  box-shadow: none;
+}
+
+.case-file-finding .diagnostic-mission:not(.ready):not(.blocked) > .repair-button {
+  width: auto;
+  min-width: min(100%, 250px);
+  background: var(--fm-cobalt);
+  color: var(--fm-bone);
+  box-shadow: 0 12px 28px rgb(8 37 96 / 18%);
+}
+
+.case-file-finding .diagnostic-mission:not(.ready):not(.blocked) > .repair-button:hover:not(:disabled) {
+  background: #123f9f;
+  color: #fff;
+  transform: translateY(-1px);
+}
+
 .case-file-finding .csp-inventory-heading > span,
 .case-file-finding .diagnostic-evidence-heading > span {
   border-radius: 5px;
@@ -9098,7 +9144,14 @@ summary:focus-visible,
   border-bottom: 1px solid var(--line-strong);
 }
 
+.case-diagnostic-evidence {
+  margin-top: 18px;
+  border-top: 1px solid var(--line-strong);
+  border-bottom: 1px solid var(--line-strong);
+}
+
 .case-preview-disclosure > summary,
+.case-diagnostic-evidence > summary,
 .case-file-continuation > summary {
   display: grid;
   gap: 4px;
@@ -9107,6 +9160,7 @@ summary:focus-visible,
 }
 
 .case-preview-disclosure > summary span,
+.case-diagnostic-evidence > summary span,
 .case-file-continuation > summary span {
   color: var(--ink);
   font-size: 13px;
@@ -9114,6 +9168,7 @@ summary:focus-visible,
 }
 
 .case-preview-disclosure > summary small,
+.case-diagnostic-evidence > summary small,
 .case-file-continuation > summary small {
   color: #7a827d;
   font-size: 10px;
@@ -9121,6 +9176,12 @@ summary:focus-visible,
 
 .case-preview-disclosure > div {
   padding: 0 0 22px;
+}
+
+.case-diagnostic-evidence > .lazy-workspace-state,
+.case-diagnostic-evidence > .diagnostic-evidence {
+  margin-top: 0;
+  margin-bottom: 16px;
 }
 
 .case-preview-disclosure .browser-preview {
@@ -10016,6 +10077,60 @@ summary:focus-visible,
     border-bottom: 1px solid var(--line-strong);
   }
 
+  .case-file-index-toggle {
+    width: 100%;
+    min-height: 58px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: var(--ink);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .case-file-index-toggle > span {
+    display: grid;
+    gap: 4px;
+  }
+
+  .case-file-index-toggle strong {
+    color: var(--fm-cobalt);
+    font-family: var(--fm-mono);
+    font-size: 10px;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+  }
+
+  .case-file-index-toggle small {
+    color: #767e79;
+    font-family: var(--fm-mono);
+    font-size: 9px;
+  }
+
+  .case-file-index-toggle svg {
+    transition: transform 160ms ease;
+  }
+
+  .case-file-index[data-expanded="true"] .case-file-index-toggle svg {
+    transform: rotate(90deg);
+  }
+
+  .case-file-index[data-expanded="false"] .case-file-index-content {
+    display: none;
+  }
+
+  .case-file-index-content {
+    padding-top: 10px;
+  }
+
+  .case-file-index-content > .kicker {
+    display: none;
+  }
+
   .case-file-index dl {
     display: grid;
     grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -10206,6 +10321,7 @@ summary:focus-visible,
   }
 
   .case-file-continuation > summary,
+  .case-diagnostic-evidence > summary,
   .case-preview-disclosure > summary {
     min-height: 58px;
   }

@@ -46,13 +46,32 @@ test("keeps modal focus, descriptions, scroll containment, and restoration bound
   assert.match(lazyWorkspace, /aria-describedby="lazy-workspace-state-description"/);
   assert.match(inspector, /id="webmcp-mission-inspector"/);
   assert.match(inspector, /aria-describedby="webmcp-sheet-description"/);
+  assert.match(inspector, /agent \$\{activeTools\.length === 1 \? "action" : "actions"\} ready/);
+  assert.doesNotMatch(inspector, /\{activeTools\.length\} of \{inspector\.registration\.totalToolCount\} contracts/);
 });
 
 test("describes the Agent log as durable audit metadata without a misleading local clear", () => {
   assert.match(app, /The last 20 completed actions are retained with this audit/);
   assert.match(app, /revision \$\{activity\.missionRevisionBefore\}→\$\{activity\.missionRevisionAfter\}/);
+  assert.match(app, /agentActivities\.length \|\| !\["landing", "guide"\]\.includes\(mode\)/);
   assert.doesNotMatch(app, /stay in memory for this session/);
   assert.doesNotMatch(app, />\s*Clear log\s*</);
+});
+
+test("keeps the agent path legible on the compact landing header", () => {
+  assert.match(app, /const compactLabel = [\s\S]*?"Agent ready"/);
+  assert.match(app, /className="webmcp-status-compact" aria-hidden="true"/);
+  assert.match(app, /Agents automate the evidence loop\. You choose what ships\./);
+  assert.match(app, /Use Frontmend to audit my deployed site for accessibility and SEO/);
+  assert.match(landingStyles, /\.app-shell\.landing \.webmcp-status-compact\s*\{[^}]*display: inline;/s);
+  assert.match(landingStyles, /\.hero-agent-prompt\s*\{[^}]*grid-template-columns:/s);
+});
+
+test("uses concise visible progress without discarding the detailed status", () => {
+  assert.match(app, /inspect: "Inspecting live evidence"/);
+  assert.match(app, /<h1 id="progress-title">\{visiblePhaseLabel\}<\/h1>/);
+  assert.match(app, /Your audit keeps running if you leave/);
+  assert.match(app, /aria-valuetext=\{`\$\{audit\.progress\}% complete — \$\{audit\.phaseLabel\}`\}/);
 });
 
 test("describes diagnosis against retained evidence without inventing a measured provider issue", () => {
