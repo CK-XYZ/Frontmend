@@ -9252,17 +9252,38 @@ summary:focus-visible,
   padding: clamp(38px, 5vw, 70px) max(24px, calc((100vw - 1320px) / 2));
   border-radius: 0;
   background-color: var(--fm-cobalt-deep);
+  /*
+   * Two washes, because one radial could not do this job here.
+   *
+   * The landing's wash clears to almost nothing at the corners, which is right
+   * over a uniform cobalt field: the art burns at the edges and there is
+   * nothing there to read. This masthead runs the same stops over bitgrain that
+   * goes rust at one edge and acid yellow at the other, and it puts the case
+   * actions right on top of the yellow. Export and More were effectively
+   * unreadable.
+   *
+   * So the radial keeps the centre exactly as dark as it was - the title has
+   * not moved - and a shallow linear scrim underneath holds a floor at both
+   * edges. The art still reads; it just stops competing with the only two
+   * things on this band that have to be legible.
+   */
   background-image:
+    linear-gradient(
+      100deg,
+      rgba(0, 0, 0, 0.52) 0%,
+      rgba(0, 0, 0, 0.24) 56%,
+      rgba(0, 0, 0, 0.42) 100%
+    ),
     radial-gradient(
-      ellipse 74% 82% at 42% 42%,
-      rgba(0, 0, 0, 0.64) 0%,
-      rgba(0, 0, 0, 0.48) 54%,
-      rgba(0, 0, 0, 0.04) 100%
+      ellipse 80% 88% at 40% 44%,
+      rgba(0, 0, 0, 0.5) 0%,
+      rgba(0, 0, 0, 0.34) 58%,
+      rgba(0, 0, 0, 0.16) 100%
     ),
     url("/backgrounds/frontmend-hero-signal-terrain-bitgrain.png");
-  background-position: center, center bottom;
-  background-repeat: no-repeat, no-repeat;
-  background-size: 100% 100%, 100% auto;
+  background-position: center, center, center bottom;
+  background-repeat: no-repeat, no-repeat, no-repeat;
+  background-size: 100% 100%, 100% 100%, 100% auto;
 }
 
 .report-heading-copy {
@@ -9271,7 +9292,7 @@ summary:focus-visible,
 
 .app-shell.report .report-case-label {
   margin: 0 0 18px;
-  color: var(--fm-orange);
+  color: var(--fm-bone-muted);
   font-family: var(--fm-mono);
   font-size: 11px;
   font-weight: 700;
@@ -9309,9 +9330,9 @@ summary:focus-visible,
 
 .report-heading-evidence {
   margin-top: 8px;
-  color: var(--fm-bone-muted);
+  color: rgb(245 243 241 / 72%);
   font-family: var(--fm-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
@@ -9415,12 +9436,20 @@ summary:focus-visible,
   display: none;
 }
 
+/*
+ * The rail, un-ruled.
+ *
+ * Every row here carried its own bottom hairline - four in the metadata list,
+ * five in the contents - so a column of eleven short lines was fenced into
+ * eleven boxes. The rail already has one edge, and that edge is enough to say
+ * where it stops. What separates the rows is space.
+ */
 .case-file-index-content > .kicker,
 .case-file-index nav > .kicker {
-  margin: 0 0 13px;
+  margin: 0 0 15px;
   color: var(--fm-cobalt);
   font-family: var(--fm-mono);
-  font-size: 10px;
+  font-size: 11px;
   letter-spacing: 0.14em;
 }
 
@@ -9430,38 +9459,38 @@ summary:focus-visible,
 
 .case-file-index dl > div {
   display: grid;
-  gap: 4px;
-  padding: 10px 0 11px;
-  border-bottom: 1px solid var(--line);
+  gap: 3px;
+  padding: 0 0 16px;
 }
 
 .case-file-index dt {
-  color: #7b827d;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .case-file-index dd {
   margin: 0;
   color: var(--ink);
   font-family: var(--fm-mono);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 630;
   line-height: 1.35;
 }
 
 .case-file-index nav {
   display: grid;
-  margin-top: 30px;
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 1px solid var(--line);
 }
 
 .case-file-index nav a {
   display: grid;
-  grid-template-columns: 30px minmax(0, 1fr);
-  gap: 7px;
-  padding: 10px 0;
-  border-bottom: 1px solid var(--line);
+  grid-template-columns: 26px minmax(0, 1fr);
+  gap: 8px;
+  padding: 7px 0;
   color: #4b5350;
-  font-size: 11px;
+  font-size: 12px;
   text-decoration: none;
 }
 
@@ -9493,10 +9522,10 @@ summary:focus-visible,
   display: flex;
   align-items: baseline;
   gap: 14px;
-  margin: 0 0 14px;
+  margin: 0 0 16px;
   color: var(--fm-cobalt);
   font-family: var(--fm-mono);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.16em;
   text-transform: uppercase;
@@ -9632,7 +9661,7 @@ summary:focus-visible,
   background: #ecebe5;
   color: #656d68;
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -9675,7 +9704,7 @@ summary:focus-visible,
   border-radius: 50%;
   color: #858b87;
   font-family: var(--fm-mono);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .agent-capability-handshake li.available > span {
@@ -9687,14 +9716,14 @@ summary:focus-visible,
 .agent-capability-handshake li strong {
   overflow-wrap: anywhere;
   color: var(--ink);
-  font-size: 10px;
+  font-size: 13px;
   line-height: 1.35;
 }
 
 .agent-capability-handshake li small {
   color: #777f7a;
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.45;
 }
 
@@ -9704,20 +9733,20 @@ summary:focus-visible,
 }
 
 .agent-capability-handshake > footer p {
-  max-width: 720px;
+  max-width: 620px;
   margin: 0;
   color: #3f4743;
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
 .agent-capability-handshake > footer small {
-  max-width: 340px;
-  color: #777f7a;
+  max-width: 360px;
+  color: var(--muted);
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
   line-height: 1.5;
-  text-align: right;
+  text-align: left;
 }
 
 .case-file-document .evidence-overview {
@@ -9749,12 +9778,22 @@ summary:focus-visible,
   line-height: 1;
 }
 
+/*
+ * A type floor of 11px across the case file.
+ *
+ * The evidence table was running labels at 10px, its annotation column at 10px
+ * and this coverage tag at 9px - three sizes below anything a person is
+ * expected to read, on the one screen in the product whose whole job is to be
+ * read. Everything here now sits at 11px or above, and the labels take the
+ * shared --muted token instead of four hand-mixed greys that were each a
+ * little short of contrast at that size.
+ */
 .case-file-document .evidence-overview-heading > span {
   border: 0;
   background: none;
-  color: #6f7772;
+  color: var(--muted);
   font-family: var(--fm-mono);
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .case-file-document .evidence-overview-grid {
@@ -9766,10 +9805,10 @@ summary:focus-visible,
 .case-file-document .evidence-overview article,
 .case-file-document .evidence-overview article:nth-child(2) {
   display: grid;
-  grid-template-columns: 190px minmax(0, 1fr) minmax(190px, 0.8fr);
-  gap: 18px;
+  grid-template-columns: 190px minmax(0, 1fr) minmax(210px, 0.72fr);
+  gap: 24px;
   align-items: center;
-  padding: 12px 0;
+  padding: 15px 0;
   border: 0;
   border-bottom: 1px solid var(--line);
   background: none;
@@ -9777,25 +9816,36 @@ summary:focus-visible,
 
 .case-file-document .evidence-overview article > span {
   margin: 0;
-  color: #646d68;
-  font-size: 10px;
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .case-file-document .evidence-overview article > strong {
   color: var(--ink);
-  font-size: 14px;
+  font-size: 15px;
 }
 
+/*
+ * The annotations share a left edge now.
+ *
+ * Right-aligned, they were four captions of different lengths hanging off the
+ * right margin with nothing to line up on - a ragged second column that read as
+ * an afterthought rather than a column. They are a column, so they get a
+ * column: same left edge, same width, aligned with the row they annotate.
+ */
 .case-file-document .evidence-overview article > small {
   margin: 0;
-  color: #7b837f;
-  font-size: 10px;
-  text-align: right;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+  text-align: left;
 }
 
 .case-file-document .evidence-overview-score strong,
 .case-file-document .evidence-overview-priorities strong {
-  font-size: 24px;
+  font-size: 27px;
+  font-weight: 560;
+  letter-spacing: -0.02em;
 }
 
 .case-file-document .evidence-overview-sources li {
@@ -9805,7 +9855,7 @@ summary:focus-visible,
 
 .case-file-document .evidence-overview-sources em {
   border-radius: 4px;
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .case-file-document .evidence-overview-failures,
@@ -9815,12 +9865,12 @@ summary:focus-visible,
   border-top: 0;
   border-bottom: 1px solid var(--line-strong);
   background: none;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .case-file-document .evidence-overview-failures li {
   grid-template-columns: 120px max-content minmax(0, 1fr);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .case-required-continuation {
@@ -9854,7 +9904,7 @@ summary:focus-visible,
 
 .case-file-summary .summary-row p {
   color: #737b77;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .case-file-summary .viewport-failures {
@@ -9928,7 +9978,7 @@ summary:focus-visible,
 }
 
 .case-file-finding .finding-copy em {
-  font-size: 9px;
+  font-size: 11px;
 }
 
 .case-priority-details {
@@ -9939,7 +9989,7 @@ summary:focus-visible,
 .case-priority-details > summary {
   padding: 13px 0;
   color: var(--fm-cobalt);
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 650;
   cursor: pointer;
 }
@@ -10016,7 +10066,7 @@ summary:focus-visible,
 .evidence-capsule > header > span,
 .evidence-capsule > footer {
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -10058,7 +10108,7 @@ summary:focus-visible,
 
 .evidence-capsule figure > div span {
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -10075,7 +10125,7 @@ summary:focus-visible,
 
 .evidence-capsule figcaption strong {
   color: var(--ink);
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .evidence-capsule figcaption span {
@@ -10120,7 +10170,7 @@ summary:focus-visible,
 .evidence-capsule-task > span {
   color: #717975;
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -10130,7 +10180,7 @@ summary:focus-visible,
   margin-top: 4px;
   overflow-wrap: anywhere;
   color: #333b37;
-  font-size: 9px;
+  font-size: 12px;
   line-height: 1.45;
 }
 
@@ -10162,14 +10212,14 @@ summary:focus-visible,
 .evidence-capsule-task p {
   margin: 0;
   color: #444c48;
-  font-size: 10px;
+  font-size: 12px;
   line-height: 1.55;
 }
 
 .evidence-capsule-task small {
   color: #6f7773;
   font-family: var(--fm-mono);
-  font-size: 8px;
+  font-size: 11px;
 }
 
 .evidence-capsule > footer {
@@ -10282,7 +10332,7 @@ summary:focus-visible,
 .case-diagnostic-evidence > summary small,
 .case-file-continuation > summary small {
   color: #7a827d;
-  font-size: 10px;
+  font-size: 12px;
 }
 
 .case-preview-disclosure > div {
@@ -10943,7 +10993,7 @@ summary:focus-visible,
   }
 
   .summary-row p {
-    font-size: 10px;
+    font-size: 12px;
   }
 
   .preview-column {
@@ -11236,15 +11286,15 @@ summary:focus-visible,
   .case-file-index-toggle strong {
     color: var(--fm-cobalt);
     font-family: var(--fm-mono);
-    font-size: 10px;
+    font-size: 11px;
     letter-spacing: 0.14em;
     text-transform: uppercase;
   }
 
   .case-file-index-toggle small {
-    color: #767e79;
+    color: var(--muted);
     font-family: var(--fm-mono);
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .case-file-index-toggle svg {
