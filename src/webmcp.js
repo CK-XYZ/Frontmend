@@ -9,7 +9,6 @@ import {
   DIAGNOSTIC_BLOCKER_REASONS,
   diagnosticEvidenceChain,
   diagnosticMissionSnapshot,
-  findingRequiresDiagnosticMission,
 } from "./diagnostic-contract.js";
 import {
   AUDIT_FOCUS_AREAS,
@@ -124,6 +123,21 @@ function coherentResultsForTool(service, auditId) {
   return typeof service?.getCoherentResults === "function"
     ? service.getCoherentResults(auditId)
     : service.getResults(auditId);
+}
+
+function assertPreparedRepairPackage(service, auditId, findingIds) {
+  const activeAudit = service?.getActiveAudit?.();
+  const preparation = activeAudit?.id === auditId
+    ? activeAudit.mission?.repairPreparation ?? null
+    : null;
+  const preparedFindingIds = preparation?.findingIds
+    ?? (preparation?.findingId ? [preparation.findingId] : []);
+  if (JSON.stringify(preparedFindingIds) !== JSON.stringify(findingIds)) {
+    throw new AuditError(
+      "REPAIR_INTENT_REQUIRED",
+      "Call prepare_site_repair for this exact finding package before requesting its repository fix brief.",
+    );
+  }
 }
 
 const TOOL_CAPABILITIES = Object.freeze({
@@ -445,11 +459,13 @@ export function contextualFrontmendToolNames(service) {
     available.add("start_site_exploration");
   }
   if (explorations.length) available.add("get_site_exploration");
-  if (findings.length && browserReviewComplete) {
-    available.add("get_repository_fix_brief");
-    if (missionState?.assessmentComplete !== false) {
-      available.add("prepare_site_repair");
-    }
+  const preparedFindingId = audit.mission?.repairPreparation?.findingId ?? null;
+  const preparedFindingIds = audit.mission?.repairPreparation?.findingIds
+    ?? (preparedFindingId ? [preparedFindingId] : []);
+  const preparedFindingIdSet = new Set(preparedFindingIds);
+  if (findings.length && browserReviewComplete && missionState?.assessmentComplete !== false) {
+    available.add("prepare_site_repair");
+    if (preparedFindingIds.length) available.add("get_repository_fix_brief");
   }
   if (findings.length) available.add("get_evidence_chain");
   if (repairs.length) available.add("get_repair_workspace");
@@ -480,50 +496,27 @@ export function contextualFrontmendToolNames(service) {
   ) {
     available.add("record_browser_review_check");
   }
-  const diagnosticFindings = findings.filter(findingRequiresDiagnosticMission);
-  const diagnosticPriorityIds = new Set(
-    (missionState?.priorities ?? [])
-      .filter((priority) => priority.diagnosticMissionRequired)
-      .map((priority) => priority.findingId),
+  const preparedDiagnosticMissions = diagnosticMissions.filter(
+    (mission) => preparedFindingIdSet.has(mission.findingId),
   );
-  const openedDiagnosticFindingIds = new Set(
-    diagnosticMissions.map((mission) => mission.findingId).filter(Boolean),
-  );
-  if (
-    browserReviewComplete &&
-    (
-      diagnosticFindings.some((finding) => !openedDiagnosticFindingIds.has(finding.id)) ||
-      [...diagnosticPriorityIds].some((id) => !openedDiagnosticFindingIds.has(id))
-    )
-  ) {
+  if (browserReviewComplete && missionState?.nextAction?.tool === "open_diagnostic_mission") {
     available.add("open_diagnostic_mission");
   }
-  if (browserReviewComplete && diagnosticMissions.some((mission) => ["awaiting-diagnosis", "blocked"].includes(mission.state?.state))) {
+  if (
+    browserReviewComplete
+    && preparedDiagnosticMissions.some((mission) => ["awaiting-diagnosis", "blocked"].includes(mission.state?.state))
+  ) {
     available.add("submit_runtime_diagnosis");
   }
-  if (browserReviewComplete && diagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")) {
+  if (
+    browserReviewComplete
+    && preparedDiagnosticMissions.some((mission) => mission.state?.state === "awaiting-diagnosis")
+  ) {
     available.add("record_diagnostic_blocker");
   }
-  const preparedFindingId = audit.mission?.repairPreparation?.findingId ?? null;
-  const preparedFindingIds = audit.mission?.repairPreparation?.findingIds
-    ?? (preparedFindingId ? [preparedFindingId] : []);
-  const preparedFinding = findings.find((finding) => finding.id === preparedFindingId);
-  const preparedDiagnostic = diagnosticMissions.find(
-    (mission) => mission.findingId === preparedFindingId,
-  );
-  const agentRepositoryTraceRequired = audit.mission?.repairPreparation?.requestedBy === "agent";
-  const preparedRepositoryTraceReady = preparedFindingIds.every((id) =>
-    diagnosticMissions.find((mission) => mission.findingId === id)?.state?.state === "ready-for-repair");
   if (
-    missionState?.assessmentComplete !== false &&
-    preparedFinding &&
-    (
-      (!agentRepositoryTraceRequired
-        && !findingRequiresDiagnosticMission(preparedFinding)
-        && !diagnosticPriorityIds.has(preparedFindingId)) ||
-      (agentRepositoryTraceRequired && preparedRepositoryTraceReady) ||
-      (!agentRepositoryTraceRequired && preparedDiagnostic?.state?.state === "ready-for-repair")
-    )
+    missionState?.nextAction?.tool === "stage_site_repair"
+    || (!missionState && preparedFindingIds.length > 0)
   ) {
     available.add("stage_site_repair");
   }
@@ -605,7 +598,7 @@ export function createFrontmendTools(service) {
       name: "start_site_audit",
       title: "Start site audit",
       description:
-        "Start a durable Frontmend assessment for a public HTTP or HTTPS website. Use intent assess for natural audit requests, preserve any requested accessibility, SEO, performance, security, or reliability focus, and use prepare-fix only when the person explicitly asked to prepare a repair. Resolve the target URL from their request or current repository deployment configuration; ask only when it cannot be determined safely. After starting, navigate to the stable workspace, check progress, then continue the exact mission until assessmentComplete is true or its named blocker cannot be resolved.",
+        "Start a durable Frontmend assessment for a public HTTP or HTTPS website. Use intent assess for natural audit requests, preserve any requested accessibility, SEO, performance, security, or reliability focus, and use prepare-fix only when the person explicitly asked to prepare a repair. Resolve the target URL from their request or current repository deployment configuration; ask only when it cannot be determined safely. After starting, navigate to the stable workspace, check progress, then continue the public evidence mission until assessmentComplete is true or its named blocker cannot be resolved. Repository diagnosis is a later repair phase and is never required merely to finalise this audit.",
       inputSchema: {
         type: "object",
         properties: {
@@ -914,7 +907,7 @@ export function createFrontmendTools(service) {
       name: "get_site_audit_results",
       title: "Get site audit results",
       description:
-        "Return a compact completed measurement and persisted assessment mission with bounded priorities, evidence state, assessmentComplete, and an exact next tool/input. Use detailLevel full only when raw retained report evidence is necessary; routine continuation should use this compact default or get_mission_summary, then get_evidence_chain for one priority. Optional focus/max values are a labelled read-only projection and never rewrite mission intent. Do not stop at measurement completion while assessmentComplete is false and the named action is available.",
+        "Return a compact completed measurement and persisted assessment mission with bounded priorities, evidence state, assessmentComplete, and an exact next tool/input. Use detailLevel full only when raw retained report evidence is necessary; routine continuation should use this compact default or get_mission_summary, then get_evidence_chain for one priority. Optional focus/max values are a labelled read-only projection and never rewrite mission intent. Do not stop at measurement completion while assessmentComplete is false and the named public-evidence action is available. Once true, the ranking and assessment receipt are final even when repairReadiness says repository diagnosis has not started.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -1315,7 +1308,7 @@ export function createFrontmendTools(service) {
       name: "get_assessment_receipt",
       title: "Get assessment receipt",
       description:
-        "Return the completed Frontmend assessment as both structured evidence and portable Markdown. The receipt freezes the retained mission, ranked provider measurements, and any separately attributed browser, repository, and planned-check contributions. It becomes available only when assessmentComplete is true and does not prove repair approval, implementation, deployment, or resolution.",
+        "Return the completed Frontmend assessment as both structured evidence and portable Markdown. The receipt freezes the final provider and browser evidence ranking, plus any later repository contribution as a separately attributed repair-preparation record. It becomes available when public audit evidence is complete; repository diagnosis is not required. It does not prove repair approval, implementation, deployment, or resolution.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -1344,7 +1337,7 @@ export function createFrontmendTools(service) {
       name: "get_repository_fix_brief",
       title: "Prepare repository fix brief",
       description:
-        "Translate one completed Frontmend finding, plus an optional frozen package of up to three findings, into a bounded source-safe implementation contract for a coding agent with repository access. It returns measured evidence, package scope, repository search hints, shared verification candidates, acceptance criteria, and authority boundaries. It does not inspect files, upload source, stage a repair, change the repository, or deploy the target.",
+        "After explicit prepare_site_repair intent, translate the selected finding or frozen package of up to three findings into a bounded source-safe implementation contract for a coding agent with repository access. It returns measured evidence, package scope, repository search hints, shared verification candidates, acceptance criteria, and authority boundaries. It does not inspect files, upload source, stage a repair, change the repository, or deploy the target.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1370,6 +1363,7 @@ export function createFrontmendTools(service) {
         const findingId = requiredString(value.findingId, "findingId", 160);
         const findingIds = normalizeRepairFindingIds(findingId, value.findingIds);
         const report = await coherentResultsForTool(service, auditId);
+        assertPreparedRepairPackage(service, auditId, findingIds);
         const verificationCandidates = await (
           service?.getVerificationCandidates?.(auditId, findingId, findingIds) ?? null
         );
@@ -1455,7 +1449,7 @@ export function createFrontmendTools(service) {
       name: "open_diagnostic_mission",
       title: "Open diagnostic mission",
       description:
-        "Open an idempotent diagnostic mission for a structured runtime symptom, evidence conflict, or explicitly selected agent-prepared repair. The mission keeps measured and browser evidence separate from the repository-relative source ownership and planned checks that the coding agent must contribute. Continue with submit_runtime_diagnosis only from evidence you actually obtain; if browser/repository access is unavailable or the runtime conflicts, use record_diagnostic_blocker instead of inventing a cause. This tool does not diagnose, read repository source, stage a repair, or change the target site.",
+        "Open an idempotent repository-diagnosis mission only for a finding already selected through prepare_site_repair. The mission keeps final audit evidence separate from the repository-relative source ownership and planned checks that the coding agent must contribute before a proposal. Continue with submit_runtime_diagnosis only from evidence you actually obtain; if browser/repository access is unavailable or the runtime conflicts, use record_diagnostic_blocker instead of inventing a cause. This tool does not finalise the audit, diagnose by itself, read repository source, stage a repair, or change the target site.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1569,7 +1563,7 @@ export function createFrontmendTools(service) {
       name: "record_diagnostic_blocker",
       title: "Record diagnostic blocker",
       description:
-        "Record why a measured symptom cannot currently be reproduced or mapped to repository ownership. Use this instead of inventing diagnosis when browser access, the correct repository, or matching runtime evidence is unavailable. Frontmend preserves the measured evidence, labels the blocker as agent-reported, keeps the assessment incomplete, and exposes runtime diagnosis again if access is later restored. This does not dismiss the finding, approve a repair, or claim resolution.",
+        "Record why a selected repair cannot currently be reproduced or mapped to repository ownership. Use this instead of inventing diagnosis when browser access, the correct repository, or matching runtime evidence is unavailable. Frontmend preserves the final audit and ranking, labels the repair blocker as agent-reported, and exposes runtime diagnosis again if access is later restored. This does not dismiss the finding, approve a repair, or claim resolution.",
       inputSchema: {
         type: "object",
         properties: {
@@ -1613,7 +1607,8 @@ export function createFrontmendTools(service) {
           evidenceChain: mission.evidenceChain ?? diagnosticEvidenceChain(mission),
           blocker: mission.blocker,
           state: mission.state,
-          assessmentComplete: false,
+          assessmentComplete: service?.getAuditMissionState?.(auditId)?.assessmentComplete ?? true,
+          repairReadiness: service?.getAuditMissionState?.(auditId)?.repairReadiness ?? null,
           missionCheckpoint: mission.missionCheckpoint ?? service?.getMissionCheckpoint?.(auditId),
           nextAction: "The finding remains unresolved and no repair can be staged from this blocker. When browser and repository access match the measured runtime, submit the bounded diagnosis to resume.",
         };

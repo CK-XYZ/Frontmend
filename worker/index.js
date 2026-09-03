@@ -146,6 +146,7 @@ function publicError(error) {
             "CHANGES_ALREADY_REQUESTED",
             "CHANGES_REQUESTED",
             "REVISION_NOT_REQUESTED",
+            "REPAIR_INTENT_REQUIRED",
             "DIAGNOSTIC_MISSION_REQUIRED",
             "ASSESSMENT_INCOMPLETE",
             "VERIFICATION_RECEIPT_UNAVAILABLE",
@@ -2320,6 +2321,14 @@ export class FrontmendAuditJob {
         (await this.ctx.storage.get("explorations")) ?? [],
       ).find((item) => item.id === input?.findingId);
       if (!finding) return errorResponse(new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."));
+      const preparedFindingIds = state.mission?.repairPreparation?.findingIds
+        ?? (state.mission?.repairPreparation?.findingId ? [state.mission.repairPreparation.findingId] : []);
+      if (!preparedFindingIds.includes(finding.id)) {
+        return errorResponse(new AuditError(
+          "REPAIR_INTENT_REQUIRED",
+          "Select this retained finding with prepare_site_repair before opening repository diagnosis.",
+        ));
+      }
       const existing = missions.find((mission) => mission.findingId === finding.id);
       if (existing) {
         return json({ ok: true, data: await checkpointedJobData(this.ctx, state, diagnosticMissionSnapshot(existing)) });
@@ -2364,6 +2373,14 @@ export class FrontmendAuditJob {
       });
     }
     if (action === "evidence" && request.method === "POST") {
+      const preparedFindingIds = state.mission?.repairPreparation?.findingIds
+        ?? (state.mission?.repairPreparation?.findingId ? [state.mission.repairPreparation.findingId] : []);
+      if (!preparedFindingIds.includes(missions[missionIndex].findingId)) {
+        return errorResponse(new AuditError(
+          "REPAIR_INTENT_REQUIRED",
+          "Select this retained finding with prepare_site_repair before contributing repository diagnosis.",
+        ));
+      }
       const input = await readJsonBody(request);
       const { source, expectedMissionRevision, ...evidence } = input ?? {};
       if (source !== "agent" && source !== "person") {
@@ -2380,6 +2397,14 @@ export class FrontmendAuditJob {
       }
     }
     if (action === "blocker" && request.method === "POST") {
+      const preparedFindingIds = state.mission?.repairPreparation?.findingIds
+        ?? (state.mission?.repairPreparation?.findingId ? [state.mission.repairPreparation.findingId] : []);
+      if (!preparedFindingIds.includes(missions[missionIndex].findingId)) {
+        return errorResponse(new AuditError(
+          "REPAIR_INTENT_REQUIRED",
+          "Select this retained finding with prepare_site_repair before recording a repository-diagnosis blocker.",
+        ));
+      }
       const input = await readJsonBody(request);
       const { source, expectedMissionRevision, ...blocker } = input ?? {};
       if (source !== "agent" && source !== "person") {

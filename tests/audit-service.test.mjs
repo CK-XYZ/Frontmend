@@ -429,11 +429,31 @@ test("rejects foreign mutation records before changing shared mission caches", a
   const repairId = "repair-1";
   const service = createAuditService({
     transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission: {
+          ...mission,
+          intent: "prepare-fix",
+          repairPreparation: {
+            findingId: "finding-1",
+            findingIds: ["finding-1"],
+            requestedBy: "human",
+            requestedAt: 20,
+          },
+        },
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [{ id: "finding-1" }] },
+      }),
       openBrowserReview: async () => ({ id: reviewId, auditId: foreignAuditId }),
       submitDiagnosticEvidence: async () => ({ id: missionId, auditId: foreignAuditId }),
       stageRepair: async () => ({ id: repairId, auditId: foreignAuditId }),
     },
   });
+
+  await service.startAudit({ url: "https://example.com/" });
 
   await assert.rejects(
     () => service.openBrowserReview(AUDIT_ID),
@@ -470,6 +490,24 @@ test("rejects wrong retained IDs and continuation lineage before changing worksp
   const foreignAuditId = "95b52d88-0ed2-49df-a740-0f548065dadd";
   const service = createAuditService({
     transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission: {
+          ...mission,
+          intent: "prepare-fix",
+          repairPreparation: {
+            findingId: "finding-1",
+            findingIds: ["finding-1"],
+            requestedBy: "human",
+            requestedAt: 20,
+          },
+        },
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [{ id: "finding-1" }] },
+      }),
       recordBrowserReviewCheck: async () => ({ id: "review-2", auditId: AUDIT_ID }),
       recordDiagnosticBlocker: async () => ({ id: "mission-2", auditId: AUDIT_ID }),
       approveRepair: async () => ({ id: "repair-2", auditId: AUDIT_ID }),
@@ -493,6 +531,8 @@ test("rejects wrong retained IDs and continuation lineage before changing worksp
       }),
     },
   });
+
+  await service.startAudit({ url: "https://example.com/" });
 
   await assert.rejects(
     () => service.recordBrowserReviewCheck(AUDIT_ID, reviewId, {
@@ -522,7 +562,7 @@ test("rejects wrong retained IDs and continuation lineage before changing worksp
     () => service.startVerification(AUDIT_ID, repairId),
     (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
   );
-  assert.equal(service.getActiveAudit(), null);
+  assert.equal(service.getActiveAudit().id, AUDIT_ID);
   assert.equal(service.getBrowserReview(AUDIT_ID), null);
   assert.deepEqual(service.getDiagnosticMissions(AUDIT_ID), []);
   assert.deepEqual(service.getRepairs(AUDIT_ID), []);
@@ -650,6 +690,24 @@ test("requires an authoritative checkpoint from every continuation response fami
   const verificationId = "verification-1";
   const service = createAuditService({
     transport: {
+      start: async ({ url, source, mission }) => ({
+        id: AUDIT_ID,
+        url,
+        source,
+        mission: {
+          ...mission,
+          intent: "prepare-fix",
+          repairPreparation: {
+            findingId,
+            findingIds: [findingId],
+            requestedBy: "human",
+            requestedAt: 20,
+          },
+        },
+        status: "complete",
+        progress: 100,
+        report: { auditId: AUDIT_ID, findings: [{ id: findingId }] },
+      }),
       startRelated: async (_auditId, path) => ({
         id: "related-1",
         exploration: { parentAuditId: AUDIT_ID, observedPath: path },
@@ -684,6 +742,7 @@ test("requires an authoritative checkpoint from every continuation response fami
       }),
     },
   });
+  await service.startAudit({ url: "https://example.com/" });
   const cases = [
     ["related route", () => service.startRelatedAudit(AUDIT_ID, "/privacy")],
     ["repair intent", () => service.prepareRepair(AUDIT_ID, findingId)],
@@ -1490,7 +1549,7 @@ test("binds same-audit diagnosis and repair continuations to the exact requested
   );
   await assert.rejects(
     () => service.openDiagnosticMission(AUDIT_ID, requestedFindingId),
-    (error) => error.code === "AUDIT_RESPONSE_MISMATCH",
+    (error) => error.code === "REPAIR_INTENT_REQUIRED",
   );
   await assert.rejects(
     () => service.stageRepair(AUDIT_ID, { findingId: requestedFindingId, source: "agent" }),
@@ -3098,10 +3157,36 @@ test("records and remembers a diagnostic blocker through the bounded transport r
     baseUrl: "https://frontmend.test",
     fetchImpl: async (url, init) => {
       calls.push({ url, init });
+      if (url === "https://frontmend.test/api/audits") {
+        const input = JSON.parse(init.body);
+        return Response.json({
+          ok: true,
+          data: {
+            id: AUDIT_ID,
+            url: input.url,
+            source: input.source,
+            status: "complete",
+            progress: 100,
+            mission: {
+              ...input.mission,
+              intent: "prepare-fix",
+              repairPreparation: {
+                findingId: blockedMission.findingId,
+                findingIds: [blockedMission.findingId],
+                requestedBy: "human",
+                requestedAt: 20,
+              },
+            },
+            report: { auditId: AUDIT_ID, findings: [{ id: blockedMission.findingId }] },
+          },
+        });
+      }
       return Response.json({ ok: true, data: blockedMission });
     },
   });
   const service = createAuditService({ transport });
+  await service.startAudit({ url: "https://example.com/" });
+  calls.length = 0;
 
   const result = await service.recordDiagnosticBlocker(AUDIT_ID, missionId, {
     reason: "conflicting-runtime",
@@ -3154,7 +3239,27 @@ test("submits person-attributed diagnostic evidence with the loaded mission revi
       if (url.endsWith(`/api/audits/${AUDIT_ID}`) && !init.method) {
         return Response.json({
           ok: true,
-          data: { id: AUDIT_ID, status: "complete", missionRevision: checkpoint.missionRevision },
+          data: {
+            id: AUDIT_ID,
+            status: "complete",
+            missionRevision: checkpoint.missionRevision,
+            mission: {
+              schemaVersion: 2,
+              intent: "prepare-fix",
+              focusAreas: ["reliability"],
+              maxPriorities: 3,
+              scope: "page",
+              routeLimit: 3,
+              requestedBy: "human",
+              requestedAt: 10,
+              repairPreparation: {
+                findingId: "mobile-errors-in-console",
+                findingIds: ["mobile-errors-in-console"],
+                requestedBy: "human",
+                requestedAt: 20,
+              },
+            },
+          },
         });
       }
       return Response.json({

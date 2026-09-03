@@ -94,15 +94,23 @@ export function createAssessmentReceipt({
   if (!state.assessmentComplete) {
     const action = state.nextAction?.tool
       ? ` Complete ${state.nextAction.tool} first.`
-      : " Complete the outstanding diagnostic evidence first.";
+      : " Complete the outstanding retained audit evidence first.";
     throw new AuditError(
       "ASSESSMENT_INCOMPLETE",
       `The assessment receipt is unavailable while required evidence is incomplete.${action}`,
     );
   }
   const diagnosticByFinding = new Map(diagnostics.map((item) => [item.findingId, item]));
+  const selectedRepairFindingIds = new Set(mission.repairPreparation?.findingIds ?? []);
   const priorities = state.priorities.slice(0, MAX_PRIORITIES).map((priority) => {
     const diagnostic = diagnosticByFinding.get(priority.findingId) ?? null;
+    const repairDiagnosisStatus = diagnostic?.diagnosis
+      ? "contributed"
+      : diagnostic?.blocker
+        ? "blocked"
+        : selectedRepairFindingIds.has(priority.findingId)
+          ? "required"
+          : "not-started";
     const occurrences = (priority.evidenceRecords?.provider?.findings ?? [])
       .flatMap((finding) => finding.occurrences ?? [])
       .slice(0, 8)
@@ -147,6 +155,7 @@ export function createAssessmentReceipt({
       evidenceRecords: priority.evidenceRecords,
       occurrences,
       diagnosticMissionId: diagnostic?.id ?? null,
+      repairDiagnosisStatus,
       evidenceChain: diagnostic
         ? diagnostic.evidenceChain ?? diagnosticEvidenceChain(diagnostic)
         : null,
@@ -180,6 +189,13 @@ export function createAssessmentReceipt({
       routeLimit: mission.routeLimit,
       requestedBy: mission.requestedBy,
       requestedAt: mission.requestedAt,
+      repairPreparation: mission.repairPreparation
+        ? {
+            findingIds: [...mission.repairPreparation.findingIds],
+            requestedBy: mission.repairPreparation.requestedBy,
+            requestedAt: mission.repairPreparation.requestedAt,
+          }
+        : null,
     },
     assessment: {
       complete: true,
@@ -190,6 +206,7 @@ export function createAssessmentReceipt({
       rankingStatus: state.rankingStatus,
       scopeVersion: state.scopeVersion,
       pendingRoutes: state.pendingRoutes,
+      repairReadiness: state.repairReadiness,
     },
     browserReview: browserReview
       ? {
@@ -228,7 +245,7 @@ export function createAssessmentReceipt({
       implementationProved: false,
       deploymentProved: false,
       resolutionProved: false,
-      boundary: "This receipt proves a completed bounded assessment with separately attributed provider and browser evidence, not repair approval, implementation, deployment, or resolution.",
+      boundary: "This receipt proves a completed bounded audit with separately attributed provider and browser evidence. Repository diagnosis is a later, optional repair-preparation contribution and is not required to finalise the ranking; this receipt does not prove repair approval, implementation, deployment, or resolution.",
     },
   };
 }
@@ -243,7 +260,7 @@ export function assessmentReceiptMarkdown(receipt) {
   const lines = [
     "# Frontmend assessment receipt",
     "",
-    "> Completed bounded assessment only. Provider measurement and contributed diagnosis remain separately attributed; this artifact does not prove a repair, deployment, or resolution.",
+    "> Completed bounded audit only. Provider and browser evidence determine the final ranking; optional repository diagnosis belongs to later repair preparation and remains separately attributed. This artifact does not prove a repair, deployment, or resolution.",
     "",
     `- Target: ${markdownText(receipt.target, 2_048)}`,
     `- Final URL: ${markdownText(receipt.finalUrl, 2_048)}`,
@@ -281,6 +298,7 @@ export function assessmentReceiptMarkdown(receipt) {
     `- Requested by: ${markdownText(receipt.mission?.requestedBy, 40)}`,
     `- Assessment complete: yes`,
     `- Priority ranking: ${markdownText(receipt.assessment?.rankingStatus ?? "final", 40)} (scope v${receipt.assessment?.scopeVersion ?? 2})`,
+    `- Repair diagnosis: ${receipt.mission?.repairPreparation ? markdownText(receipt.assessment?.repairReadiness?.status ?? "in-progress", 40) : "not started; explicit repair selection required"}`,
     `- Matching findings: ${Number.isFinite(receipt.assessment?.matchingFindingCount) ? receipt.assessment.matchingFindingCount : "—"}`,
     `- Ranked priorities: ${receipt.priorities?.length ?? 0}`,
   );
@@ -365,7 +383,8 @@ export function assessmentReceiptMarkdown(receipt) {
       `- Evidence provenance: ${markdownText(priority.evidenceProvenance, 80)}`,
       `- Evidence relationship: ${markdownText(priority.relationship, 80)}`,
       `- Relationship reason: ${markdownText(priority.relationshipReason, 500)}`,
-      `- Unresolved requirement: ${priority.unresolvedRequirement ? markdownText(priority.unresolvedRequirement, 500) : "none"}`,
+      `- Repair diagnosis: ${markdownText(priority.repairDiagnosisStatus ?? "not-started", 40)}`,
+      `- Repair-preparation requirement: ${priority.unresolvedRequirement ? markdownText(priority.unresolvedRequirement, 500) : "none"}`,
       `- Strategies: ${priority.affectedStrategies?.length ? priority.affectedStrategies.map((strategy) => markdownText(strategy, 40)).join(", ") : "document"}`,
       `- Occurrences: ${priority.occurrenceCount}`,
       `- Measured evidence: ${markdownText(priority.evidence, 600)}`,

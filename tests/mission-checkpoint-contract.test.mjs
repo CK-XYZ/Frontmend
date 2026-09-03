@@ -193,7 +193,7 @@ test("projects bounded polling and human stop semantics for autonomous agents", 
   assert.equal(humanRequired.agentRun.mode, "human-required");
   assert.equal(humanRequired.agentRun.continueAutomatically, false);
   assert.equal(humanRequired.action, null);
-  assert.match(humanRequired.authorityBoundary.agentMay, /consecutive agent-owned/i);
+  assert.match(humanRequired.authorityBoundary.agentMay, /only after explicit repair selection/i);
 });
 
 test("rejects stale writes with the current bounded checkpoint", () => {

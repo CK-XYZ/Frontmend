@@ -553,7 +553,7 @@ function diagnosticNextAction(priority) {
     return {
       tool: "open_diagnostic_mission",
       input: { findingId: priority.findingId },
-      reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
+      reason: "This selected repair needs browser reproduction and repository ownership before a proposal can be staged.",
     };
   }
   if (priority.evidenceState === "diagnosis-in-progress") {
@@ -608,10 +608,6 @@ export function deriveAuditMissionState({
   const requestedBrowserCheckCount = (reviewState?.requestedCheckCount
     ?? (reviewRequired ? browserReviewChecksForMission(mission).length : 0))
     + explorationReviewTasks.length;
-  const unresolved = projection.priorities.find((priority) => diagnosticNextAction(priority));
-  const blocked = projection.priorities.find(
-    (priority) => priority.evidenceState === "diagnosis-blocked",
-  );
   const measurementComplete = Boolean(report);
   // Retained for compatibility with existing clients. New code should use the
   // narrower measurementComplete name and assessmentComplete separately.
@@ -686,22 +682,8 @@ export function deriveAuditMissionState({
     };
   }
 
-  if (auditComplete && siteScopeSuccessful && !reviewOutstanding && unresolved) {
-    status = unresolved.evidenceState === "diagnosis-recommended" ? "action-available" : "in-progress";
-    nextActor = "agent";
-    nextAction = diagnosticNextAction(unresolved);
-  }
-
-  if (auditComplete && siteScopeSuccessful && !reviewOutstanding && !unresolved && blocked) {
-    status = "blocked";
-    nextActor = null;
-    nextAction = null;
-  }
-
   const assessmentComplete = measurementComplete
     && !reviewOutstanding
-    && !unresolved
-    && !blocked
     && siteScopeSuccessful;
   const pendingRoutes = siteScope.requested
     ? siteScope.status === "not-started" || siteScope.status === "awaiting-route-discovery"
@@ -711,32 +693,40 @@ export function deriveAuditMissionState({
   const rankingStatus = measurementComplete && siteScopeSuccessful && !reviewOutstanding
     ? "final"
     : "provisional";
+  let repairReadiness = {
+    status: assessmentComplete ? "not-started" : "assessment-incomplete",
+    findingIds: [],
+    diagnosisRequired: false,
+    diagnosisReady: false,
+    reason: assessmentComplete
+      ? "The audit and priority ranking are final. Repository diagnosis starts only after an explicit repair selection."
+      : "Complete the retained audit evidence before selecting a repair.",
+  };
   if (assessmentComplete && siteScopeSuccessful && mission.intent === "prepare-fix" && !mission.repairPreparation) {
     status = "awaiting-repair-preparation";
     nextActor = "person";
     nextAction = null;
   }
 
-  if (assessmentComplete && siteScopeSuccessful && mission.repairPreparation && !reviewOutstanding && !unresolved && !blocked) {
+  if (assessmentComplete && siteScopeSuccessful && mission.repairPreparation && !reviewOutstanding) {
     const selectedIds = mission.repairPreparation.findingIds;
     const selectedPriorities = selectedIds.map((selectedId) => projection.priorities.find(
       (priority) => priority.findingId === selectedId,
     )).filter(Boolean);
     const agentRepositoryTraceRequired = mission.repairPreparation.requestedBy === "agent";
-    const repositoryTracePriority = agentRepositoryTraceRequired
-      ? selectedPriorities.find((priority) => diagnosticMissions.find(
-          (diagnostic) => diagnostic.findingId === priority.findingId,
-        )?.state?.state !== "ready-for-repair")
-      : null;
-    const repositoryTraceMission = repositoryTracePriority
-      ? diagnosticMissions.find((diagnostic) => diagnostic.findingId === repositoryTracePriority.findingId) ?? null
-      : null;
-    const diagnosticPriority = selectedPriorities.find((priority) => diagnosticNextAction({
-      findingId: priority.findingId,
-      evidenceState: priority.evidenceState,
-      diagnosticMissionId: priority.diagnosticMissionId,
-      nextAction: priority.nextAction,
-    }));
+    const selectedDiagnosis = selectedPriorities.map((priority) => {
+      const diagnostic = diagnosticMissions.find((item) => item.findingId === priority.findingId) ?? null;
+      const required = agentRepositoryTraceRequired
+        || priority.evidenceState === "diagnosis-blocked"
+        || Boolean(diagnosticNextAction(priority));
+      return { priority, diagnostic, required };
+    });
+    const blockedDiagnosis = selectedDiagnosis.find(
+      ({ required, diagnostic }) => required && diagnostic?.state?.state === "blocked",
+    ) ?? null;
+    const pendingDiagnosis = selectedDiagnosis.find(
+      ({ required, diagnostic }) => required && diagnostic?.state?.state !== "ready-for-repair",
+    ) ?? null;
     const repair = repairs.find((item) => {
       const repairIds = item?.findingIds ?? (item?.findingId ? [item.findingId] : []);
       return JSON.stringify(repairIds) === JSON.stringify(selectedIds);
@@ -744,34 +734,46 @@ export function deriveAuditMissionState({
     status = "action-available";
     nextActor = "agent";
     const repairNext = repairMissionContinuation(repair);
-    if (repositoryTracePriority) {
-      if (!repositoryTraceMission) {
+    repairReadiness = {
+      status: blockedDiagnosis
+        ? "blocked"
+        : pendingDiagnosis?.diagnostic
+          ? "diagnosis-in-progress"
+          : pendingDiagnosis
+            ? "diagnosis-required"
+            : repair
+              ? repairNext?.status ?? "in-progress"
+              : "ready-to-stage",
+      findingIds: [...selectedIds],
+      diagnosisRequired: selectedDiagnosis.some(({ required }) => required),
+      diagnosisReady: !pendingDiagnosis && !blockedDiagnosis,
+      reason: blockedDiagnosis
+        ? "The selected repair diagnosis is blocked; the completed audit and final ranking remain available."
+        : pendingDiagnosis
+          ? "Repair intent is recorded. Complete repository diagnosis only for the selected repair scope."
+          : "The selected repair scope has enough evidence to stage a bounded proposal.",
+    };
+    if (blockedDiagnosis) {
+      status = "blocked";
+      nextActor = null;
+      nextAction = null;
+    } else if (pendingDiagnosis) {
+      if (!pendingDiagnosis.diagnostic) {
         nextAction = {
           tool: "open_diagnostic_mission",
-          input: { findingId: repositoryTracePriority.findingId },
+          input: { findingId: pendingDiagnosis.priority.findingId },
           reason: "Trace the selected finding to repository-relative source ownership and exact checks before proposing a patch.",
         };
-      } else if (repositoryTraceMission.state?.state === "blocked") {
-        status = "blocked";
-        nextActor = null;
-        nextAction = null;
       } else {
         status = "in-progress";
         nextAction = {
           tool: "submit_runtime_diagnosis",
-          input: { missionId: repositoryTraceMission.id },
+          input: { missionId: pendingDiagnosis.diagnostic.id },
           reason: "Contribute the bounded browser reproduction, repository-relative ownership, and planned checks before proposing a patch.",
         };
       }
     } else {
-      nextAction = diagnosticPriority
-        ? diagnosticNextAction({
-            findingId: diagnosticPriority.findingId,
-            evidenceState: diagnosticPriority.evidenceState,
-            diagnosticMissionId: diagnosticPriority.diagnosticMissionId,
-            nextAction: diagnosticPriority.nextAction,
-          })
-        : (repairNext
+      nextAction = repairNext
         ? repairNext.nextAction
         : {
             tool: "stage_site_repair",
@@ -781,8 +783,8 @@ export function deriveAuditMissionState({
             reason: selectedIds.length > 1
               ? "Prepare one bounded repair package for the explicitly selected diagnosed findings."
               : "Prepare a bounded repair draft for the explicitly selected finding.",
-          });
-      if (!diagnosticPriority && repairNext) {
+          };
+      if (repairNext) {
         status = repairNext.status;
         nextActor = repairNext.nextActor;
       }
@@ -806,6 +808,7 @@ export function deriveAuditMissionState({
     categoryScores: projection.categoryScores,
     priorities: projection.priorities,
     rankingStatus,
+    repairReadiness,
     scopeVersion: mission.schemaVersion,
     pendingRoutes,
     priorityRanking: {
@@ -850,7 +853,8 @@ export function deriveAuditMissionState({
     nextActor,
     nextAction,
     authority: {
-      mayDiagnose: true,
+      maySelectRepair: assessmentComplete && !mission.repairPreparation,
+      mayDiagnose: Boolean(mission.repairPreparation),
       mayPrepareRepair: Boolean(mission.repairPreparation),
       mayDeploy: false,
       mayAttestDeployment: false,

@@ -134,7 +134,7 @@ Each returned priority has exactly one of:
 - `diagnosis-blocked`
 - `unsupported-continuation`
 
-The implemented blocker contract can produce `diagnosis-blocked` only from an explicit bounded `record_diagnostic_blocker` contribution. It preserves reason, summary, source, timestamp, and revision history; keeps missing evidence stages required; leaves `assessmentComplete` false; and cannot unlock receipt or repair staging. A later `submit_runtime_diagnosis` contribution clears the active blocker into bounded history and resumes the existing mission. Never infer or invent blocked evidence.
+The implemented blocker contract can produce `diagnosis-blocked` only from an explicit bounded `record_diagnostic_blocker` contribution after repair intent. It preserves reason, summary, source, timestamp, and revision history; keeps the final audit and assessment receipt available; and blocks only repair staging. A later `submit_runtime_diagnosis` contribution clears the active blocker into bounded history and resumes the selected repair. Never infer or invent blocked evidence.
 
 ### Assessment state
 
@@ -143,18 +143,18 @@ The implemented blocker contract can produce `diagnosis-blocked` only from an ex
   intent: "assess",
   status: "complete" | "action-available" | "in-progress" | "awaiting-repair-preparation",
   auditComplete: true,
-  assessmentComplete: false,
+  assessmentComplete: true,
   requestedFocusAreas: ["accessibility", "seo"],
   priorityCount: 3,
   priorities: [...],
   nextActor: "agent" | "person" | null,
   nextAction: null | {
-    tool: "open_browser_review" | "record_browser_review_check" | "open_diagnostic_mission",
+    tool: "open_browser_review" | "record_browser_review_check" | "prepare_site_repair" | "open_diagnostic_mission",
     input: { ... },
     reason: "..."
   },
   authority: {
-    mayDiagnose: true,
+    mayDiagnose: false,
     mayPrepareRepair: false,
     mayDeploy: false,
     mayAttestDeployment: false
@@ -169,11 +169,11 @@ Derivation rules:
 3. Merge completed browser issues into the candidate queue without changing their `agent-reported-browser` provenance.
 4. Deduplicate provider rules while retaining all strategies and occurrence count; do not collapse provider and browser sources.
 5. Order by severity, occurrence count, then stable source order, and apply the persisted focus and maximum.
-6. A supported diagnostic priority with no mission recommends `open_diagnostic_mission` only after browser review is complete.
-7. An awaiting diagnostic mission recommends `submit_runtime_diagnosis`; a contributed diagnosis satisfies that read-only obligation.
-8. A non-diagnostic priority has sufficient evidence after browser review; its repository fix brief is optional.
-9. Zero combined priorities complete honestly only after the required browser review.
-10. In Assess, repair preparation is unavailable as an allowed action. In Prepare fix, the existing repair mission state determines the next actor and action after the selected finding is frozen.
+6. Required browser and bounded-route evidence determine assessment completion and the final ranking; repository diagnosis never delays the audit receipt.
+7. In Assess, diagnostic priorities remain visible but no repository-diagnosis tool is registered.
+8. Explicit repair preparation freezes the selected finding package and only then may recommend `open_diagnostic_mission` or `submit_runtime_diagnosis`.
+9. A contributed diagnosis satisfies repair readiness; a blocker leaves the audit final while pausing only the selected repair.
+10. Zero combined priorities complete honestly after the required browser and route evidence.
 
 Implements: PRD Stories 2.2, 3.1, 3.2, 8.1.
 
@@ -288,7 +288,7 @@ Return the mission snapshot, workspace path, and a concise next action to poll.
 - Keep optional focus/max overrides only for backward-compatible read-only re-filtering; label them `resultProjection` and never rewrite persisted mission intent.
 - Return raw bounded report evidence plus `missionState` from the shared derivation.
 - Replace the loose `recommendedNextAction` with the typed mission state's exact tool and input while retaining a compatibility alias for one release if tests/documentation require it.
-- Explicitly state that job completion does not equal assessment completion while required browser review or diagnosis remains.
+- Explicitly state that job completion does not equal assessment completion while required browser or bounded-route evidence remains; repository diagnosis belongs to the later repair phase.
 
 ### Browser-review tools
 
@@ -318,7 +318,7 @@ Rules:
 - Description must say to call only after an explicit person request to prepare/fix this finding.
 - It records intent only and is not approval.
 - It does not accept plan text, files, checks, code, or risk.
-- It returns updated mission state and names `stage_site_repair` as the next possible agent action.
+- It returns updated mission state and names the selected repository diagnosis or `stage_site_repair` as the next possible agent action.
 
 ### Contextual registration changes
 
@@ -326,14 +326,14 @@ Rules:
 - Active browser review: expose results plus `record_browser_review_check` for the current exact task.
 - Completed verification measurement with a required unopened browser replay: expose results plus `open_browser_review`, but not `get_verification_receipt`.
 - Active or blocked verification replay: expose results plus `record_browser_review_check`; expose the receipt only after the exact replay completes with pass or issue.
-- Completed Assess mission: results, receipt, applicable evidence/exploration tools, diagnostics, and `prepare_site_repair`; do not expose `stage_site_repair` until repair preparation is recorded.
-- Awaiting diagnosis: expose `submit_runtime_diagnosis` and keep results.
+- Completed Assess mission: results, receipt, applicable evidence/exploration tools, and `prepare_site_repair`; do not expose repository briefs, diagnostics, or staging until repair preparation is recorded.
+- Prepared repair awaiting diagnosis: expose the repository brief plus `open_diagnostic_mission` or `submit_runtime_diagnosis` and keep the final audit receipt available.
 - Awaiting diagnosis: also expose `record_diagnostic_blocker`; after a blocker is recorded, keep `submit_runtime_diagnosis` as a recovery capability but remove blocker creation until real access changes.
 - Prepare fix: expose existing staging/workspace actions according to diagnostic readiness and repair state.
 - Existing revisions, implementation receipts, verification receipts, and verification start continue to follow current repair state.
 - A verification audit's receipt remains independent of root mission intent, but a required browser replay must complete before that receipt is available.
 
-The implemented bounded library contains twenty-one tools. Tests and visible capability copy use the contextual subset rather than advertising all tools as simultaneously available.
+The implemented bounded library contains twenty-eight tools. Tests and visible capability copy use the contextual subset rather than advertising all tools as simultaneously available.
 
 Implements: PRD Stories 1.1, 1.2, 3.1, 3.2, 5.1, 8.2.
 
@@ -418,9 +418,9 @@ docs/hackathon-build/             Planning/checklist/build journal
 5. Audit provider runs unchanged. Progress snapshots carry the mission for the shared UI.
 6. Completed report freezes the mission snapshot for exports and restoration.
 7. UI and `get_site_audit_results` call the same pure mission derivation with report + current diagnostic/repair snapshots.
-8. If diagnosis is recommended, the WebMCP result names `open_diagnostic_mission` with exact input and `assessmentComplete: false`.
-9. Agent opens and contributes diagnosis through existing services.
-10. Re-derived state becomes complete for Assess when required supported diagnosis has been contributed.
+8. The re-derived state becomes final and unlocks the assessment receipt without requesting repository information.
+9. If the person explicitly selects a repair, WebMCP records the frozen package and only then names any required `open_diagnostic_mission` input.
+10. Agent-contributed diagnosis advances repair readiness without changing the already-final audit ranking.
 
 ### Repair preparation lifecycle
 
@@ -501,7 +501,7 @@ Mission signature participates in the admission key. Do not reuse and overwrite 
 
 ### Diagnosis unavailable
 
-Retain measured evidence and show assessment incomplete/action unavailable only when a real blocked state is recorded. Do not fabricate a blocker or mark diagnosis complete.
+Retain the final measured assessment and show only the selected repair as blocked when a real diagnosis blocker is recorded. Do not fabricate a blocker, regress the audit receipt, or mark diagnosis complete.
 
 ### Stale UI or agent action
 
@@ -591,14 +591,14 @@ Use a fresh session with the live app and an accessible target repository/deploy
 2. Poll the actual job and read persisted focus using an empty result call where possible.
 3. Open the required browser review and perform each exact task with real browser controls.
 4. Attach only direct pass/issue observations or one allowed blocker, then re-read combined priorities.
-5. Continue into a supported read-only repository diagnostic mission when one exists.
-6. Finish the assessment or persist a real blocker without staging a repair.
+5. Finish the assessment and export its final receipt without requesting repository data.
+6. Only after explicit repair intent, continue into the selected repository diagnosis or persist a real repair blocker.
 
 ### Chrome
 
 With the supported WebMCP flag enabled in Chrome 149+—and Chrome 150.0.7861.0+ for the current Inspector extension—confirm the same contextual discovery, ordered browser-review transitions, and visible mission state. Record exact version, flag, tool subsets, audit ID, browser-review/diagnostic IDs, UI state, and console output.
 
-The eval fails if the agent stops after provider measurement, skips or fabricates the browser review, loses evidence provenance, or ignores a valid diagnostic continuation while `assessmentComplete` is false.
+The eval fails if the agent stops after provider measurement, skips or fabricates the required browser review, loses evidence provenance, requests repository diagnosis before repair intent, or crosses a person-owned repair boundary.
 
 ## Demo And Submission Flow
 

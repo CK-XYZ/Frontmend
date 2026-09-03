@@ -14,7 +14,13 @@ function missionActionLabel(state) {
   if (!state.nextAction) {
     if (state.status === "blocked") {
       if (state.siteScope?.blockedReason) return state.siteScope.blockedReason;
-      return "Evidence retained · resume when browser and repository access match";
+      if (state.assessmentComplete && state.repairReadiness?.status === "blocked") {
+        return "Final report retained · repair preparation can resume when access matches";
+      }
+      return "Evidence retained · resume when the required browser access matches";
+    }
+    if (state.assessmentComplete && state.repairReadiness?.status === "not-started") {
+      return "Final report ready · choose a priority only if you want to prepare a fix";
     }
     return state.assessmentComplete
       ? "No required continuation"
@@ -141,16 +147,24 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
   const focusLabel = missionFocusLabel(state.requestedFocusAreas);
   const statusLabel = !measurementComplete
     ? "Measurement in progress"
-    : state.status === "blocked"
+    : !state.assessmentComplete && state.status === "blocked"
       ? "Assessment blocked · evidence retained"
+      : state.assessmentComplete && state.repairReadiness?.status === "not-started"
+        ? "Audit complete · repair diagnosis not started"
+      : state.assessmentComplete && state.repairReadiness?.status === "blocked"
+        ? "Audit complete · repair diagnosis blocked"
+      : state.assessmentComplete && ["diagnosis-required", "diagnosis-in-progress"].includes(state.repairReadiness?.status)
+        ? "Audit complete · repair diagnosis active"
       : state.assessmentComplete
-        ? "Assessment complete"
+        ? "Audit complete"
         : state.rankingStatus === "provisional"
           ? "Measurement complete · ranking provisional"
         : state.browserReview?.required && state.browserReview.status !== "complete"
           ? "Measurement complete · browser review active"
           : "Measurement complete · diagnosis active";
-  const tone = state.assessmentComplete ? "complete" : measurementComplete ? "attention" : "running";
+  const tone = state.assessmentComplete && state.repairReadiness?.status !== "blocked"
+    ? "complete"
+    : measurementComplete ? "attention" : "running";
 
   return (
     <section className={`audit-mission-summary ${tone}`} aria-labelledby={titleId}>
@@ -170,7 +184,7 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
       </div>
       <div className="audit-mission-status">
         <span className="audit-mission-status-icon" aria-hidden="true">
-          {state.assessmentComplete
+          {state.assessmentComplete && state.repairReadiness?.status !== "blocked"
             ? <CheckCircle size={18} weight="fill" />
             : state.status === "blocked"
               ? <Warning size={18} weight="fill" />
@@ -187,8 +201,8 @@ export function AuditMissionSummary({ audit, diagnosticMissions = [], repairs = 
         <ShieldCheck size={17} weight="duotone" aria-hidden="true" />
         <span>
           <strong>Shared authority</strong>
-          Agent investigates browser and repository evidence. You control repair intent, approval,
-          deployment, and deployment attestation.
+          Agent completes public evidence first. Repository diagnosis starts only after you select a
+          repair; you still control approval, deployment, and deployment attestation.
         </span>
       </p>
     </section>

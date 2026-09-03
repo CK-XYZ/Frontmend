@@ -13,14 +13,14 @@
 
 ## Wow Moment
 
-A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextual WebMCP tools create a visible read-only mission, preserve the requested focus, and refuse to call the job complete while a supported browser/repository diagnosis remains. The contributed diagnosis appears in the same human workspace. Repair tooling only appears after an explicit repair-preparation transition, proving that the person and agent share one durable protocol without giving the agent silent deployment authority.
+A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextual WebMCP tools create a visible read-only mission, preserve the requested focus, complete the required public browser evidence, and return a final ranking and receipt without asking for repository data. A later explicit repair-preparation transition unlocks diagnosis only for the selected scope, proving that the person and agent share one durable protocol without giving the agent silent repository or deployment authority.
 
 ## Checklist
 
 - [x] **1. Build the pure audit-mission contract**
   Spec ref: `spec.md > Audit Mission Contract`; `spec.md > Derived Mission State`
   What to build: Add `src/audit-mission-contract.js` with strict intent/focus/max validation, bounded snapshots and signatures, focused cross-viewport priority projection, diagnostic evidence states, derived assessment completion, and idempotent/conflicting repair-intent transitions. Add exhaustive native contract tests.
-  Acceptance: Assess is the default; raw prompts are never retained; priorities are bounded/deduplicated; a supported undiagnosed symptom keeps assessment incomplete with an exact next action; contributed diagnosis completes its read-only obligation; repair intent freezes one finding and cannot be silently replaced.
+  Acceptance: Assess is the default; raw prompts are never retained; priorities are bounded/deduplicated; required browser and route evidence control assessment completion; an undiagnosed symptom remains a final audit priority without opening repository work; repair intent freezes one finding package, then unlocks only its required diagnosis, and cannot be silently replaced.
   Verify: `bun test tests/audit-mission-contract.test.mjs`
 
 - [x] **2. Persist structured mission goals through audit start and retry**
@@ -38,13 +38,13 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
 - [x] **4. Make WebMCP start and results mission-aware**
   Spec ref: `spec.md > WebMCP Tools > start_site_audit changes`; `spec.md > WebMCP Tools > get_site_audit_results changes`
   What to build: Add optional intent/focus/max fields to `start_site_audit`, persist them through the service, and make `get_site_audit_results` use persisted focus by default. Return typed mission state, per-priority evidence state, assessment completion, exact next actor/tool/input, and a clearly labelled read-only projection override.
-  Acceptance: The natural accessibility/SEO call needs no repeated focus on the result call; audit-job completion is distinct from assessment completion; zero matches finish honestly; diagnostic priorities point to exact existing tools; no result claims manual completeness or repair permission.
+  Acceptance: The natural accessibility/SEO call needs no repeated focus on the result call; audit-job completion is distinct from public-evidence completion; zero matches finish honestly; diagnostic priorities remain informative without exposing repository tools before repair intent; no result claims manual completeness or repair permission.
   Verify: `bun test tests/webmcp.test.mjs tests/audit-mission-contract.test.mjs tests/audit-service.test.mjs`
 
 - [x] **5. Gate repair tools behind the semantic transition**
   Spec ref: `spec.md > WebMCP Tools > New prepare_site_repair tool`; `spec.md > WebMCP Tools > Contextual registration changes`
-  What to build: Add `prepare_site_repair` as the seventeenth narrow WebMCP tool and update contextual registration so Assess exposes evidence/diagnosis plus the intent transition, while `stage_site_repair` appears only after Prepare fix and existing diagnostic readiness. Preserve all later repair/verification registrations.
-  Acceptance: The transition tool accepts only audit/finding IDs; it cannot accept plan/code/policy/deployment data; `stage_site_repair` is absent before and present after a valid transition; verification audits retain receipt access; unsupported WebMCP still leaves the human UI complete.
+  What to build: Add `prepare_site_repair` as the seventeenth narrow WebMCP tool and update contextual registration so Assess exposes final evidence plus the intent transition, while repository briefs, diagnosis, and `stage_site_repair` appear only after Prepare fix and according to diagnostic readiness. Preserve all later repair/verification registrations.
+  Acceptance: The transition tool accepts only audit/finding IDs; it cannot accept plan/code/policy/deployment data; repository diagnosis and `stage_site_repair` are absent before a valid transition; verification audits retain receipt access; unsupported WebMCP still leaves the human UI complete.
   Verify: `bun test tests/webmcp.test.mjs tests/diagnostic-contract.test.mjs tests/repair-contract.test.mjs`
 
 - [x] **6. Add a judge-legible mission summary to progress and results**
@@ -242,7 +242,7 @@ A judge writes one ordinary accessibility/SEO audit prompt. Frontmend's contextu
   Verify: `bun test tests/audit-mission-contract.test.mjs tests/repair-contract.test.mjs tests/verification-impact-contract.test.mjs tests/audit-service.test.mjs tests/webmcp.test.mjs tests/sites-worker.test.mjs`; `bun run build`; `git diff --check`.
 
 - [x] **42. Add executable full-mission protocol evaluations**
-  What was built: Added one deterministic offline protocol runner over the real shared service, registered contextual tools, local middleware adapter, public Worker adapter, and in-memory instances of the real audit Durable Object. It covers bounded-site assessment, evidence-led review, two repository diagnoses, an immutable two-finding repair, explicit person approval, repository implementation metadata, site-owner deployment attestation, two-route/four-row verification, stale-session rejection/restoration, and a separate provider/browser conflict that remains blocked when repository evidence is unavailable.
+  What was built: Added one deterministic offline protocol runner over the real shared service, registered contextual tools, local middleware adapter, public Worker adapter, and in-memory instances of the real audit Durable Object. It covers bounded-site assessment, evidence-led review, a final pre-repair receipt, explicit package selection, two repository diagnoses, an immutable two-finding repair, explicit person approval, repository implementation metadata, site-owner deployment attestation, two-route/four-row verification, stale-session rejection/restoration, and a separate provider/browser conflict whose repair remains blocked when repository evidence is unavailable while its audit receipt stays final.
   Acceptance: Evaluations invoke the registered contextual tools and real transport contracts rather than reimplementing mission logic; each scenario proves one coherent checkpoint/tool sequence, source attribution, and authority boundary; Worker/local response shapes agree; failures identify the first invalid transition; the normal suite and a dedicated package command run without a server, API cost, deployment, or tool-count increase.
   Verify: `bun run eval:mission`; `bun test`; `bun run build`; `bunx wrangler deploy --dry-run --strict --config wrangler.jsonc`; `git diff --check`; `git status --short`.
 

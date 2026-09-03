@@ -581,6 +581,19 @@ export function createAuditService(options = {}) {
     return auditMissionRevision(audit);
   };
 
+  const assertRepairDiagnosisIntent = (auditId, findingId = null) => {
+    const audit = jobs.get(auditId);
+    const preparedFindingId = audit?.mission?.repairPreparation?.findingId ?? null;
+    const preparedFindingIds = audit?.mission?.repairPreparation?.findingIds
+      ?? (preparedFindingId ? [preparedFindingId] : []);
+    if (!preparedFindingIds.length || (findingId && !preparedFindingIds.includes(findingId))) {
+      throw new AuditError(
+        "REPAIR_INTENT_REQUIRED",
+        "Select this retained finding with prepare_site_repair before using repository diagnosis.",
+      );
+    }
+  };
+
   const checkpointFor = (auditId) => {
     const audit = jobs.get(auditId);
     if (!audit) return null;
@@ -1550,6 +1563,7 @@ export function createAuditService(options = {}) {
       ) {
         throw new AuditError("INVALID_INPUT", "auditId must be non-empty and findingId must contain 1 to 160 characters.");
       }
+      assertRepairDiagnosisIntent(auditId, findingId);
       const expectedGeneration = generation;
       const mission = assertAuditScopedResponse(
         await transport.openDiagnosticMission(auditId, findingId, revisionFor(auditId, expectedMissionRevision)),
@@ -1729,6 +1743,8 @@ export function createAuditService(options = {}) {
       if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
         throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
       }
+      const retainedMission = (diagnosticMissions.get(auditId) ?? []).find((item) => item.id === missionId);
+      assertRepairDiagnosisIntent(auditId, retainedMission?.findingId ?? null);
       const expectedGeneration = generation;
       return rememberDiagnosticMission(
         assertAuditScopedResponse(
@@ -1750,6 +1766,8 @@ export function createAuditService(options = {}) {
       if (typeof auditId !== "string" || !auditId || typeof missionId !== "string" || !missionId) {
         throw new AuditError("INVALID_INPUT", "auditId and missionId must be non-empty strings.");
       }
+      const retainedMission = (diagnosticMissions.get(auditId) ?? []).find((item) => item.id === missionId);
+      assertRepairDiagnosisIntent(auditId, retainedMission?.findingId ?? null);
       const expectedGeneration = generation;
       return rememberDiagnosticMission(
         assertAuditScopedResponse(

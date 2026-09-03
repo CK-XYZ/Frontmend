@@ -23,7 +23,7 @@ Has limited attention. Needs to see a coherent product, meaningful WebMCP usage,
 ## Product Principles
 
 1. **Natural intent first.** People express a goal; they do not recite Frontmend's tool sequence.
-2. **Assessment is not repair.** “Audit” permits measurement and read-only diagnosis, not repository mutation or repair staging.
+2. **Assessment is not repair.** “Audit” permits public measurement and bounded browser evidence, not repository diagnosis, mutation, or repair staging.
 3. **Shared state, separate authority.** Human UI and WebMCP expose the same mission, while actor permissions remain explicit.
 4. **Evidence keeps its source.** Lighthouse, document inspection, agent observations, repository ownership, implementation receipts, deployment attestation, and verification never collapse into one unsupported claim.
 5. **Contextual tools are product behaviour.** Agents see only actions valid for the visible mission state.
@@ -34,8 +34,8 @@ Has limited attention. Needs to see a coherent product, meaningful WebMCP usage,
 
 Every agent-started mission has an explicit intent:
 
-- **Assess** — the default for prompts such as “audit my site,” “find accessibility issues,” or “tell me what to fix first.” It permits public measurement, focused prioritisation, diagnostic mission creation, browser reproduction, and read-only repository ownership evidence. It does not permit repair staging or implementation reporting.
-- **Prepare fix** — used only when the person explicitly asks to fix, prepare a fix, or continue an assessed finding into remediation. It permits a bounded proposal to enter the existing review or delegated-auto policy.
+- **Assess** — the default for prompts such as “audit my site,” “find accessibility issues,” or “tell me what to fix first.” It permits public measurement, focused prioritisation, and bounded browser evidence. It finalises a report without requesting repository data and does not permit diagnosis, repair staging, or implementation reporting.
+- **Prepare fix** — used only when the person explicitly asks to fix, prepare a fix, or continue an assessed finding into remediation. It permits repository diagnosis for the frozen finding package, then a bounded proposal to enter the existing review or delegated-auto policy.
 
 Changing from Assess to Prepare fix must be visible in the human workspace and attributable to the person's request. A previously enabled delegated-auto policy must not perform that change.
 
@@ -115,16 +115,16 @@ Acceptance criteria:
 - Each retained priority has one clear evidence state: sufficient measured evidence, diagnosis recommended, diagnosis in progress, diagnosis contributed, blocked, or no supported continuation.
 - The response identifies the next actor and one valid next action when continuation exists.
 - Continuation guidance contains the stable identifiers required for that action and never asks the agent to guess from display text.
-- For an agent-started accessibility or SEO mission, provider evidence alone never completes the assessment; the ordered browser review must complete first. A repository diagnostic mission is still conditional on the resulting priorities.
+- For an agent-started accessibility or SEO mission, provider evidence alone never completes the assessment; the ordered browser review must complete first. Repository diagnosis is excluded from audit completion and becomes available only after explicit repair intent.
 
 #### Story 3.2 — Supported diagnosis continues naturally
 
-As a repository-aware coding agent, I want Frontmend to direct me into browser and repository investigation for diagnostic symptoms so that my answer is more useful than automated Lighthouse output.
+As a repository-aware coding agent, I want Frontmend to direct me into repository investigation only after a person selects a repair so that the final audit stays useful without silently expanding into source work.
 
 Acceptance criteria:
 
 - Console-error, contrast, and main-thread-blocking evidence can recommend the existing diagnostic mission path.
-- Opening a diagnostic mission is visible in the human workspace and does not imply repair permission.
+- Opening a diagnostic mission is impossible before `prepare_site_repair`, visible in the human workspace afterward, and does not imply approval or implementation permission.
 - The diagnostic mission names the browser observation, repository ownership, and verification questions that remain.
 - Once bounded diagnosis is contributed, the priority and mission show its separate agent/person attribution.
 - The agent can finish an Assess mission with diagnosis and repository ownership without creating a repair proposal.
@@ -265,7 +265,7 @@ Acceptance criteria:
 
 - In a fresh ChatGPT session, the natural accessibility/SEO prompt discovers Frontmend, starts a real assessment, waits for provider completion, and opens the required rendered-browser review.
 - The agent performs each exact check with real browser controls, records direct observations or an honest blocker, and re-reads the combined priorities.
-- When a supported diagnostic priority is present and repository access is available, the agent continues into read-only diagnosis before declaring the assessment complete.
+- The agent declares the assessment complete and can return its final receipt without repository access; only a later explicit repair request permits diagnosis of the selected priority.
 - In supported Chrome WebMCP, the same contextual tools and visible mission state are discoverable.
 - The verification script records exact prompts, tool lifecycle, visible state, result identifiers, and any limitations.
 - A run that stops after provider measurement is recorded as a failed mission-continuity eval, even if the audit job itself succeeded.
@@ -346,4 +346,4 @@ Acceptance criteria:
 
 ## Product Acceptance Gate
 
-The product slice is accepted only when automated contracts pass and at least one fresh supported-browser run proves the natural prompt continues from provider measurement through the ordered browser review and any required repository diagnosis. If that fresh-session behaviour fails, Frontmend may still be a functioning audit tool, but this submission's central product claim is not ready.
+The product slice is accepted only when automated contracts pass and at least one fresh supported-browser run proves the natural prompt continues from provider measurement through the ordered browser review to a final ranking and receipt without requesting repository data. A separate explicit repair request must then prove that only the selected scope unlocks repository diagnosis. If that fresh-session behaviour fails, Frontmend may still be a functioning audit tool, but this submission's central product claim is not ready.

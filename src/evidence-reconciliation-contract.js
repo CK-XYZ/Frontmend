@@ -223,7 +223,7 @@ function relationshipFor({ provider, browser, repository, verification }) {
         tool: repository ? "submit_runtime_diagnosis" : "open_diagnostic_mission",
         reason: repository
           ? "Contribute the browser and repository diagnosis already requested for this measured symptom."
-          : "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
+          : "This measured symptom needs browser reproduction and repository ownership before a selected repair can be staged.",
       },
     };
   }

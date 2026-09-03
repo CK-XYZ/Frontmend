@@ -121,7 +121,11 @@ test("repository fix brief gives a coding agent bounded evidence without claimin
     },
   };
   const service = {
-    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getActiveAudit: () => ({
+      id: auditId,
+      status: "complete",
+      mission: { repairPreparation: { findingId: finding.id, findingIds: [finding.id] } },
+    }),
     getResults: async () => ({
       auditId,
       url: "https://removemyexif.com/",
@@ -154,12 +158,48 @@ test("repository fix brief gives a coding agent bounded evidence without claimin
   assert.equal("absolutePath" in result.data.repositoryHandoff, false);
 });
 
+test("repository fix brief is unavailable before exact repair selection", async () => {
+  const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
+  const findingId = "document-content-security-policy";
+  const report = {
+    auditId,
+    url: "https://example.com/",
+    findings: [{
+      id: findingId,
+      title: "CSP is missing",
+      severity: "low",
+      category: "Security",
+      source: { provider: "Frontmend document audit", auditId: "csp", strategy: "document" },
+    }],
+  };
+  let preparation = null;
+  const service = {
+    getActiveAudit: () => ({ id: auditId, status: "complete", mission: { repairPreparation: preparation } }),
+    getResults: async () => report,
+    getVerificationCandidates: async () => ({ auditId, findingId, candidates: [] }),
+  };
+  const tool = findTool(createFrontmendTools(service), "get_repository_fix_brief");
+
+  const beforeSelection = await tool.execute({ findingId });
+  assert.equal(beforeSelection.ok, false);
+  assert.equal(beforeSelection.error.code, "REPAIR_INTENT_REQUIRED");
+
+  preparation = { findingId: "different-finding", findingIds: ["different-finding"] };
+  const differentSelection = await tool.execute({ findingId });
+  assert.equal(differentSelection.ok, false);
+  assert.equal(differentSelection.error.code, "REPAIR_INTENT_REQUIRED");
+});
+
 test("repository fix brief fails closed when its report and route scope cross revisions", async () => {
   const auditId = "b8b16bf0-913c-40ea-a741-bb4bf76d326b";
   const findingId = "document-content-security-policy";
   const currentCheckpoint = { auditId, missionRevision: 4 };
   const result = await findTool(createFrontmendTools({
-    getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getActiveAudit: () => ({
+      id: auditId,
+      status: "complete",
+      mission: { repairPreparation: { findingId, findingIds: [findingId] } },
+    }),
     getMissionCheckpoint: () => currentCheckpoint,
     getResults: async () => ({
       auditId,
@@ -876,16 +916,12 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   browserReview = completedBrowserReview({ auditId, mission });
   const browserContributed = await tool.execute({});
   assert.equal(browserContributed.data.browserReview.state.status, "complete");
-  assert.deepEqual(browserContributed.data.recommendedNextAction, {
-    tool: "open_diagnostic_mission",
-    input: {
-      findingId: "mobile-color-contrast",
-      auditId,
-      expectedMissionRevision: 1,
-    },
-    reason: "This measured symptom needs browser reproduction and repository ownership before the assessment is complete.",
-  });
-  assert.equal(contextualFrontmendToolNames(service).includes("prepare_site_repair"), false);
+  assert.equal(browserContributed.data.recommendedNextAction, null);
+  assert.equal(browserContributed.data.missionState.assessmentComplete, true);
+  assert.equal(browserContributed.data.missionState.rankingStatus, "final");
+  assert.equal(browserContributed.data.missionState.repairReadiness.status, "not-started");
+  assert.equal(contextualFrontmendToolNames(service).includes("open_diagnostic_mission"), false);
+  assert.equal(contextualFrontmendToolNames(service).includes("prepare_site_repair"), true);
 
   diagnosticMissions = [{
     id: "diagnostic-1",
@@ -900,8 +936,9 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   const blocked = await tool.execute({});
   assert.equal(blocked.data.priorities[0].evidenceState, "diagnosis-blocked");
   assert.equal(blocked.data.priorities[0].diagnosticBlocker.reason, "not-reproduced");
-  assert.equal(blocked.data.missionState.status, "blocked");
-  assert.equal(blocked.data.missionState.assessmentComplete, false);
+  assert.equal(blocked.data.missionState.status, "complete");
+  assert.equal(blocked.data.missionState.assessmentComplete, true);
+  assert.equal(blocked.data.missionState.repairReadiness.status, "not-started");
   assert.equal(blocked.data.recommendedNextAction, null);
 
   diagnosticMissions = [{
@@ -1036,6 +1073,10 @@ test("result, receipt, and repository-brief tools derive from one coherent resto
   assert.equal(service.getBrowserReview(auditId).state.status, "complete");
 
   service.reset();
+  currentAudit.mission = {
+    ...mission,
+    repairPreparation: { findingId, findingIds: [findingId], requestedBy: "agent" },
+  };
   await service.startAudit({
     url: report.url,
     source: "agent",
@@ -1057,7 +1098,12 @@ test("contextual WebMCP always publishes the authoritative mission action", () =
     maxPriorities: 3,
     requestedBy: "agent",
     requestedAt: 10,
-    repairPreparation: null,
+    repairPreparation: {
+      findingId: "mobile-color-contrast",
+      findingIds: ["mobile-color-contrast"],
+      requestedBy: "agent",
+      requestedAt: 20,
+    },
   };
   const report = {
     auditId,
@@ -1685,7 +1731,6 @@ test("repair preparation updates contextual tools without exposing person-only a
     "get_active_evidence_capsule",
     "get_evidence_chain",
     "open_browser_review",
-    "get_repository_fix_brief",
     "prepare_site_repair",
   ]);
 
@@ -2269,6 +2314,12 @@ test("diagnostic tools keep measured evidence separate from agent-reported repos
   };
   const service = {
     getActiveAudit: () => ({ id: auditId, status: "complete" }),
+    getAuditMissionState: () => ({
+      assessmentComplete: true,
+      repairReadiness: {
+        status: mission.state.state === "blocked" ? "blocked" : "diagnosis-in-progress",
+      },
+    }),
     openDiagnosticMission: async (receivedAuditId, findingId) => {
       assert.equal(receivedAuditId, auditId);
       assert.equal(findingId, mission.findingId);
@@ -2315,7 +2366,8 @@ test("diagnostic tools keep measured evidence separate from agent-reported repos
     summary: "This session can reproduce the symptom but cannot access the repository that owns the deployed bundle.",
   });
   assert.equal(blocked.ok, true);
-  assert.equal(blocked.data.assessmentComplete, false);
+  assert.equal(blocked.data.assessmentComplete, true);
+  assert.equal(blocked.data.repairReadiness.status, "blocked");
   assert.equal(blocked.data.blocker.agentReported, true);
   assert.equal(blocked.data.evidenceChain.status, "blocked");
   assert.match(blocked.data.nextAction, /no repair can be staged/);
@@ -2468,7 +2520,6 @@ test("contextual tool availability follows the visible audit and human review st
     "get_mission_summary",
     "get_site_audit_results",
     "get_evidence_chain",
-    "get_repository_fix_brief",
     "prepare_site_repair",
   ]);
 
@@ -2580,8 +2631,6 @@ test("contextual tool availability follows the visible audit and human review st
     "get_mission_summary",
     "get_site_audit_results",
     "get_evidence_chain",
-    "get_repository_fix_brief",
-    "open_diagnostic_mission",
     "prepare_site_repair",
   ]);
   diagnosticMissions = [{ findingId: "console", state: { state: "awaiting-diagnosis" } }];
@@ -2589,9 +2638,6 @@ test("contextual tool availability follows the visible audit and human review st
     "get_mission_summary",
     "get_site_audit_results",
     "get_evidence_chain",
-    "get_repository_fix_brief",
-    "submit_runtime_diagnosis",
-    "record_diagnostic_blocker",
     "prepare_site_repair",
   ]);
   diagnosticMissions = [{ findingId: "console", state: { state: "blocked" } }];
@@ -2599,8 +2645,6 @@ test("contextual tool availability follows the visible audit and human review st
     "get_mission_summary",
     "get_site_audit_results",
     "get_evidence_chain",
-    "get_repository_fix_brief",
-    "submit_runtime_diagnosis",
     "prepare_site_repair",
   ]);
   diagnosticMissions = [{ findingId: "console", state: { state: "ready-for-repair" } }];
@@ -2608,7 +2652,6 @@ test("contextual tool availability follows the visible audit and human review st
     "get_mission_summary",
     "get_site_audit_results",
     "get_evidence_chain",
-    "get_repository_fix_brief",
     "prepare_site_repair",
   ]);
   audit.mission = { repairPreparation: { findingId: "console" } };

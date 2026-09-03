@@ -30,11 +30,12 @@ test("puts mission status ahead of coverage, sources, measured score, and the pr
   assert.doesNotMatch(reportSource, /score-card|>Health<|Audit complete/);
 });
 
-test("keeps repair packaging behind diagnosis readiness", () => {
+test("starts repair diagnosis only after explicit repair packaging intent", () => {
   assert.match(reportSource, /repairReadyPriorities = missionState\.priorities\.filter/);
-  assert.match(reportSource, /selectedDiagnosticReady \|\| selectedRepairPrepared/);
+  assert.match(reportSource, /selectedFinding && selectedRepairPrepared/);
+  assert.match(reportSource, /selectedFinding && missionState\.assessmentComplete/);
   assert.match(reportSource, /priorities=\{repairReadyPriorities\}/);
-  assert.match(reportSource, /Repair controls unlock only after/);
+  assert.match(reportSource, /Selecting Prepare a fix starts a separate repair phase/);
   assert.match(reportSource, /repairReadyPriorities\.length \|\| preparedFindingIds\.length \|\| repairs\.length/);
 });
 

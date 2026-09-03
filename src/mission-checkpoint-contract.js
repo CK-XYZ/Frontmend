@@ -162,7 +162,12 @@ function retainedEvidenceSummary({ audit, missionState, browserReview, diagnosti
     summary.push(`Measurement ${bounded(audit?.status ?? "not-started", 40)} at ${Math.max(0, Math.min(100, audit?.progress ?? 0))}%.`);
   }
   if (missionState) {
-    summary.push(`${missionState.priorityCount ?? 0} ranked priorities; assessment ${missionState.assessmentComplete ? "complete" : "incomplete"}.`);
+    summary.push(`${missionState.priorityCount ?? 0} ranked priorities; audit ${missionState.assessmentComplete ? "complete" : "incomplete"}.`);
+    if (missionState.assessmentComplete && missionState.repairReadiness?.status === "not-started") {
+      summary.push("Repository diagnosis not started; explicit repair selection is required.");
+    } else if (missionState.repairReadiness?.status && missionState.repairReadiness.status !== "assessment-incomplete") {
+      summary.push(`Repair preparation ${bounded(missionState.repairReadiness.status, 40)}.`);
+    }
     if (missionState.siteScope?.requested) {
       summary.push(`Bounded-site coverage ${bounded(missionState.siteScope.status, 40)}: ${missionState.siteScope.pagesComplete ?? 0}/${missionState.siteScope.pagesRequested ?? 0} retained routes complete.`);
     }
@@ -297,7 +302,7 @@ export function createMissionCheckpoint({
         "Attest that the reviewed version was deployed to the retained public target.",
         "Accept unresolved business risk or change the public target.",
       ],
-      agentMay: "Continue across consecutive agent-owned checkpoint actions, including diagnosis and authorised repository work, until a named human boundary, supported blocker, or completion.",
+      agentMay: "Continue public audit evidence autonomously. Diagnosis and authorised repository work begin only after explicit repair selection, and continue until a named human boundary, supported blocker, or completion.",
       claim: "A checkpoint resumes authority and evidence state; it does not prove implementation, deployment, or resolution.",
     },
     agentRun: agentRunContract({

@@ -1720,12 +1720,8 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     && mission.repairPreparation?.requestedBy === "agent"
     && !selectedDiagnosticReady,
   );
-  const repairReadyPriorities = missionState.priorities.filter((priority) => {
-    const finding = findings.find((item) => item.id === priority.findingId);
-    if (!finding) return false;
-    if (!findingRequiresDiagnosticMission(finding)) return true;
-    return diagnosticMissions.find((item) => item.findingId === finding.id)?.state?.state === "ready-for-repair";
-  });
+  const repairReadyPriorities = missionState.priorities.filter((priority) =>
+    findings.some((item) => item.id === priority.findingId));
   const omittedFindingCount = Math.max(
     0,
     Number.isFinite(report.findingsOmitted)
@@ -1736,7 +1732,7 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
     ? "No mission priority needs attention."
     : `${displayedFindings.length} mission ${displayedFindings.length === 1 ? "priority" : "priorities"} from ${retainedObservationCount} retained ${retainedObservationCount === 1 ? "observation" : "observations"}.`;
   const assessmentStatusLabel = missionState.assessmentComplete
-    ? "Assessment complete"
+    ? "Evidence final"
     : missionState.status === "blocked"
       ? "Assessment blocked · evidence retained"
       : "Assessment in progress";
@@ -2245,10 +2241,10 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                     <h2 id={findingDetailTitleId}>{selectedFinding.title}</h2>
                     <p>{selectedFinding.summary}</p>
                     <EvidenceCapsuleCard capsule={selectedEvidenceCapsule} />
-                    {selectedFinding && (
+                    {selectedFinding && selectedRepairPrepared && (
                       selectedDiagnosticMission
                       || findingRequiresDiagnosticMission(selectedFinding)
-                      || (selectedRepairPrepared && mission.repairPreparation?.requestedBy === "agent")
+                      || mission.repairPreparation?.requestedBy === "agent"
                     ) ? (
                       <LazyWorkspace
                         load={loadDiagnosisWorkspace}
@@ -2363,7 +2359,9 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                   ? "Finish the evidence first"
                   : agentRepositoryTracePending
                     ? "Map the repair to source"
-                    : "Prepare a fix"
+                    : selectedRepairPrepared
+                      ? "Prepare a fix"
+                      : "Choose whether to repair"
                 : "No repair action is required"}
             </h2>
             <p className="case-file-lede">
@@ -2372,12 +2370,12 @@ export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAu
                   ? `${missionState.priorityRanking?.reason ?? "The retained assessment is still collecting evidence."} Repair selection stays locked until the ranking is final.`
                   : agentRepositoryTracePending
                     ? "Repair intent is recorded, but the coding agent must now contribute the exact browser reproduction, repository-relative source locations, and checks it actually obtained. No generic patch is staged from guessed ownership."
-                    : selectedDiagnosticReady || selectedRepairPrepared
+                    : selectedRepairPrepared
                       ? "Frontmend can record a bounded repair proposal for review. Preparation is not approval, implementation, deployment, or proof that the issue is resolved."
-                      : "Repair controls unlock only after the retained symptom has supported browser and repository diagnosis. No proposal, code change, or deployment has been authorised."
+                      : "The audit and ranking are final. Selecting Prepare a fix starts a separate repair phase; only then may Frontmend ask a coding agent for repository-relative diagnosis."
                 : "The retained assessment has no ranked repair target. You can still export the evidence or continue with an optional rendered review."}
             </p>
-            {selectedFinding && missionState.assessmentComplete && (selectedDiagnosticReady || selectedRepairPrepared) ? (
+            {selectedFinding && missionState.assessmentComplete ? (
               <PrepareRepairIntent
                 auditId={report.auditId}
                 priority={selectedPriority}

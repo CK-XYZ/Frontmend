@@ -2454,6 +2454,15 @@ test("local development shares the bounded repair-intent transition without cons
     { url: `/api/audits/${auditId}/repair-policy` },
   )).body).data;
 
+  const diagnosisBeforeIntent = await callLocalRuntime(middleware, {
+    method: "POST",
+    url: `/api/audits/${auditId}/diagnostics`,
+    headers: writeHeaders,
+    body: JSON.stringify({ findingId }),
+  });
+  assert.equal(diagnosisBeforeIntent.status, 409);
+  assert.equal(JSON.parse(diagnosisBeforeIntent.body).error.code, "REPAIR_INTENT_REQUIRED");
+
   const prepare = () => callLocalRuntime(middleware, {
     method: "POST",
     url: `/api/audits/${auditId}/mission/prepare-repair`,
@@ -3391,6 +3400,12 @@ test("audit jobs persist one repair per finding and require human approval befor
     ...preparedState,
     mission: { ...preparedState.mission, intent: "assess", repairPreparation: null },
   });
+  const diagnosisBeforeIntent = await job.fetch(new Request("https://frontmend.internal/diagnostics", {
+    method: "POST",
+    body: JSON.stringify({ findingId: "document-content-security-policy" }),
+  }));
+  assert.equal(diagnosisBeforeIntent.status, 409);
+  assert.equal((await diagnosisBeforeIntent.json()).error.code, "REPAIR_INTENT_REQUIRED");
   const blockedByIntent = await stage();
   assert.equal((await blockedByIntent.json()).error.code, "REPAIR_INTENT_REQUIRED");
   values.set("state", preparedState);
@@ -3727,8 +3742,8 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
   assert.equal(opened.measuredEvidence.provenance, "measured-lighthouse");
 
   const earlyAssessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
-  assert.equal(earlyAssessment.status, 409);
-  assert.equal((await earlyAssessment.json()).error.code, "ASSESSMENT_INCOMPLETE");
+  assert.equal(earlyAssessment.status, 200);
+  assert.match(await earlyAssessment.text(), /Repair diagnosis: diagnosis-in-progress/);
 
   const earlyRepair = await post("/repairs", { findingId: finding.id, source: "agent" });
   assert.equal(earlyRepair.status, 409);
@@ -3746,8 +3761,8 @@ test("diagnostic missions gate agent repairs until runtime and repository eviden
   assert.equal(blocked.measuredEvidence.provenance, "measured-lighthouse");
 
   const blockedAssessment = await job.fetch(new Request("https://frontmend.internal/assessment"));
-  assert.equal(blockedAssessment.status, 409);
-  assert.equal((await blockedAssessment.json()).error.code, "ASSESSMENT_INCOMPLETE");
+  assert.equal(blockedAssessment.status, 200);
+  assert.match(await blockedAssessment.text(), /Repair diagnosis: blocked/);
 
   const blockedRepair = await post("/repairs", { findingId: finding.id, source: "agent" });
   assert.equal(blockedRepair.status, 409);

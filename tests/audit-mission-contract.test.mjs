@@ -452,17 +452,29 @@ test("ranks rendered-confirmed issues ahead of repeated diagnosed document confl
   assert.equal(projection.priorities[1].distinctPageCount, 3);
 });
 
-test("keeps assessment incomplete until supported diagnosis is contributed", () => {
+test("finalises the audit before repair diagnosis and opens repository work only after repair intent", () => {
   const mission = createAuditMission({ focusAreas: ["reliability"] }, "agent", 10);
-  const pending = deriveAuditMissionState({ report, mission });
-  assert.equal(pending.auditComplete, true);
-  assert.equal(pending.assessmentComplete, false);
+  const completeAudit = deriveAuditMissionState({ report, mission });
+  assert.equal(completeAudit.auditComplete, true);
+  assert.equal(completeAudit.assessmentComplete, true);
+  assert.equal(completeAudit.status, "complete");
+  assert.equal(completeAudit.rankingStatus, "final");
+  assert.equal(completeAudit.nextAction, null);
+  assert.equal(completeAudit.repairReadiness.status, "not-started");
+  assert.equal(completeAudit.authority.mayDiagnose, false);
+
+  const repairMission = prepareRepairIntent(mission, "mobile-errors-in-console", "agent", 15);
+  const pending = deriveAuditMissionState({ report, mission: repairMission });
+  assert.equal(pending.assessmentComplete, true);
   assert.equal(pending.status, "action-available");
   assert.deepEqual(pending.nextAction.input, { findingId: "mobile-errors-in-console" });
   assert.equal(pending.nextAction.tool, "open_diagnostic_mission");
+  assert.equal(pending.repairReadiness.status, "diagnosis-required");
+  assert.equal(pending.authority.mayDiagnose, true);
 
   const diagnostic = createDiagnosticMission({ auditId: "audit-1", finding: report.findings[0], now: 20 });
-  const inProgress = deriveAuditMissionState({ report, mission, diagnosticMissions: [diagnostic] });
+  const inProgress = deriveAuditMissionState({ report, mission: repairMission, diagnosticMissions: [diagnostic] });
+  assert.equal(inProgress.assessmentComplete, true);
   assert.equal(inProgress.status, "in-progress");
   assert.equal(inProgress.nextAction.tool, "submit_runtime_diagnosis");
   assert.deepEqual(inProgress.nextAction.input, { missionId: diagnostic.id });
@@ -475,15 +487,21 @@ test("keeps assessment incomplete until supported diagnosis is contributed", () 
     verificationChecks: ["bun test", "bun run build"],
     confidence: "high",
   }, "agent", 30);
-  const complete = deriveAuditMissionState({ report, mission, diagnosticMissions: [diagnosed] });
+  const complete = deriveAuditMissionState({ report, mission: repairMission, diagnosticMissions: [diagnosed] });
   assert.equal(complete.assessmentComplete, true);
-  assert.equal(complete.status, "complete");
+  assert.equal(complete.status, "action-available");
   assert.equal(complete.priorities[0].evidenceState, "diagnosis-contributed");
-  assert.equal(complete.nextAction, null);
+  assert.equal(complete.nextAction.tool, "stage_site_repair");
+  assert.equal(complete.repairReadiness.status, "ready-to-stage");
 });
 
-test("projects a diagnostic blocker as an incomplete terminal assessment state", () => {
-  const mission = createAuditMission({ focusAreas: ["reliability"] }, "agent", 10);
+test("keeps the final audit available when selected repair diagnosis is blocked", () => {
+  const mission = prepareRepairIntent(
+    createAuditMission({ focusAreas: ["reliability"] }, "agent", 10),
+    "mobile-errors-in-console",
+    "agent",
+    15,
+  );
   const diagnostic = createDiagnosticMission({ auditId: "audit-1", finding: report.findings[0], now: 20 });
   const blockedDiagnostic = recordDiagnosticBlocker(diagnostic, {
     reason: "wrong-repository",
@@ -497,9 +515,11 @@ test("projects a diagnostic blocker as an incomplete terminal assessment state",
 
   assert.equal(state.status, "blocked");
   assert.equal(state.auditComplete, true);
-  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.assessmentComplete, true);
+  assert.equal(state.assessmentReceiptAvailable, true);
   assert.equal(state.nextActor, null);
   assert.equal(state.nextAction, null);
+  assert.equal(state.repairReadiness.status, "blocked");
   assert.equal(state.priorities[0].evidenceState, "diagnosis-blocked");
   assert.equal(state.priorities[0].diagnosticBlocker.reason, "wrong-repository");
 });
@@ -586,7 +606,7 @@ test("restores a human assessment after an untouched handoff is visibly withdraw
   assert.equal(state.nextAction, null);
 });
 
-test("ranks browser-observed issues separately and requires repository diagnosis", () => {
+test("ranks browser-observed issues without starting repository diagnosis before repair intent", () => {
   const mission = createAuditMission({ focusAreas: ["seo"] }, "agent", 10);
   let browserReview = createBrowserReviewMission({
     auditId: report.auditId,
@@ -616,13 +636,19 @@ test("ranks browser-observed issues separately and requires repository diagnosis
   }, "agent", 40);
   const state = deriveAuditMissionState({ report, mission, browserReview });
   assert.equal(state.priorityCount, 1);
+  assert.equal(state.assessmentComplete, true);
   assert.equal(state.priorities[0].evidenceProvenance, "agent-reported-browser");
   assert.equal(state.priorities[0].source.provider, "Frontmend browser review");
-  assert.equal(state.nextAction.tool, "open_diagnostic_mission");
-  assert.equal(state.nextAction.input.findingId, "browser:search-discovery:01");
+  assert.equal(state.nextAction, null);
+  assert.equal(state.repairReadiness.status, "not-started");
+
+  const repairMission = prepareRepairIntent(mission, "browser:search-discovery:01", "agent", 50);
+  const repairState = deriveAuditMissionState({ report, mission: repairMission, browserReview });
+  assert.equal(repairState.nextAction.tool, "open_diagnostic_mission");
+  assert.equal(repairState.nextAction.input.findingId, "browser:search-discovery:01");
 });
 
-test("keeps a trigger-linked browser pass as a resumable provider conflict", () => {
+test("keeps a trigger-linked browser pass final while deferring conflict diagnosis to repair preparation", () => {
   const mission = createAuditMission({ focusAreas: ["accessibility"] }, "agent", 10);
   let browserReview = createBrowserReviewMission({
     auditId: report.auditId,
@@ -640,9 +666,12 @@ test("keeps a trigger-linked browser pass as a resumable provider conflict", () 
   }, "agent", 30);
 
   const state = deriveAuditMissionState({ report, mission, browserReview });
-  assert.equal(state.assessmentComplete, false);
+  assert.equal(state.assessmentComplete, true);
   assert.equal(state.priorities[0].relationship, "provider-browser-conflict");
-  assert.equal(state.nextAction.tool, "open_diagnostic_mission");
+  assert.equal(state.nextAction, null);
+  const repairMission = prepareRepairIntent(mission, state.priorities[0].findingId, "agent", 35);
+  const repairState = deriveAuditMissionState({ report, mission: repairMission, browserReview });
+  assert.equal(repairState.nextAction.tool, "open_diagnostic_mission");
   const conflictMission = createDiagnosticMission({
     auditId: report.auditId,
     finding: report.findings.find((finding) => finding.source.auditId === "color-contrast"),

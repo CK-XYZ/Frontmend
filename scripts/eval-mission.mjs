@@ -483,8 +483,24 @@ async function runMainScenario(adapter, controller) {
   const contrastPriority = confirmedResults.priorities.find((priority) => priority.findingId === "mobile-color-contrast");
   assert.equal(contrastPriority.relationship, "diagnosis-required");
   assert.equal(contrastPriority.unresolvedRequirement !== null, true);
+  assert.equal(confirmedResults.missionState.assessmentComplete, true);
+  assert.equal(confirmedResults.missionState.rankingStatus, "final");
+  assert.equal(confirmedResults.missionState.repairReadiness.status, "not-started");
 
   const packageIds = ["mobile-errors-in-console", "mobile-color-contrast"];
+  const receipt = await callContextualTool(service, "get_assessment_receipt", { auditId }, sequence);
+  assert.match(receipt.markdown, /does not prove a repair, deployment, or resolution/i);
+  await callContextualTool(service, "prepare_site_repair", {
+    auditId,
+    findingId: packageIds[0],
+    findingIds: packageIds,
+  }, sequence);
+  const brief = await callContextualTool(service, "get_repository_fix_brief", {
+    auditId,
+    findingId: packageIds[0],
+    findingIds: packageIds,
+  }, sequence);
+  assert.deepEqual(brief.repairPackage.findingIds, packageIds);
   for (const findingId of packageIds) await diagnoseFinding(service, auditId, findingId, sequence);
   const completedResults = await callContextualTool(service, "get_site_audit_results", { auditId }, sequence);
   assert.equal(
@@ -501,20 +517,7 @@ async function runMainScenario(adapter, controller) {
     })}`,
   );
   assert.equal(completedResults.missionState.siteScope.pagesComplete, 1);
-  const receipt = await callContextualTool(service, "get_assessment_receipt", { auditId }, sequence);
-  assert.match(receipt.markdown, /does not prove a repair, deployment, or resolution/i);
-
-  const brief = await callContextualTool(service, "get_repository_fix_brief", {
-    auditId,
-    findingId: packageIds[0],
-    findingIds: packageIds,
-  }, sequence);
-  assert.deepEqual(brief.repairPackage.findingIds, packageIds);
-  await callContextualTool(service, "prepare_site_repair", {
-    auditId,
-    findingId: packageIds[0],
-    findingIds: packageIds,
-  }, sequence);
+  assert.equal(completedResults.missionState.repairReadiness.status, "ready-to-stage");
   const staged = await callContextualTool(service, "stage_site_repair", {
     auditId,
     findingId: packageIds[0],
@@ -739,6 +742,12 @@ async function runBlockerScenario(adapter, controller) {
   const results = await callContextualTool(service, "get_site_audit_results", { auditId: started.id }, sequence);
   const priority = results.priorities.find((item) => item.findingId === conflictFindingId);
   assert.equal(priority.relationship, "provider-browser-conflict");
+  assert.equal(results.missionState.assessmentComplete, true);
+  assert.equal(results.missionState.repairReadiness.status, "not-started");
+  await callContextualTool(service, "prepare_site_repair", {
+    auditId: started.id,
+    findingId: conflictFindingId,
+  }, sequence);
   const diagnostic = await callContextualTool(service, "open_diagnostic_mission", {
     auditId: started.id,
     findingId: conflictFindingId,
@@ -749,16 +758,21 @@ async function runBlockerScenario(adapter, controller) {
     reason: "repository-unavailable",
     summary: "The correct repository was deliberately withheld in this protocol scenario, so ownership cannot be asserted.",
   }, sequence);
-  assert.equal(blocked.assessmentComplete, false);
+  assert.equal(blocked.assessmentComplete, true);
+  assert.equal(blocked.repairReadiness.status, "blocked");
   assert.equal(blocked.blocker.reason, "repository-unavailable");
   const available = contextualFrontmendToolNames(service);
-  assert.equal(available.includes("get_assessment_receipt"), false);
+  assert.equal(available.includes("get_assessment_receipt"), true);
   assert.equal(available.includes("stage_site_repair"), false);
+  const receipt = await callContextualTool(service, "get_assessment_receipt", {
+    auditId: started.id,
+  }, sequence);
+  assert.equal(receipt.assessment.complete, true);
   return {
     relationship: priority.relationship,
     blocker: blocked.blocker.reason,
     assessmentComplete: blocked.assessmentComplete,
-    receiptWithheld: !available.includes("get_assessment_receipt"),
+    receiptAvailable: available.includes("get_assessment_receipt"),
     repairStagingWithheld: !available.includes("stage_site_repair"),
     toolSequence: sequence,
   };
@@ -798,7 +812,7 @@ function comparableShape(result) {
     blockerRelationship: result.blocker.relationship,
     blockerReason: result.blocker.blocker,
     blockerAssessmentComplete: result.blocker.assessmentComplete,
-    receiptWithheld: result.blocker.receiptWithheld,
+    receiptAvailable: result.blocker.receiptAvailable,
     repairStagingWithheld: result.blocker.repairStagingWithheld,
   };
 }

@@ -1065,6 +1065,14 @@ export function createLocalAuditRuntime(options = {}) {
             baseline.explorations ?? [],
           ).find((item) => item.id === input?.findingId);
           if (!finding) return sendError(response, new AuditError("FINDING_NOT_FOUND", "That audit finding does not exist."), 404);
+          const preparedFindingIds = baseline.mission?.repairPreparation?.findingIds
+            ?? (baseline.mission?.repairPreparation?.findingId ? [baseline.mission.repairPreparation.findingId] : []);
+          if (!preparedFindingIds.includes(finding.id)) {
+            return sendError(response, new AuditError(
+              "REPAIR_INTENT_REQUIRED",
+              "Select this retained finding with prepare_site_repair before opening repository diagnosis.",
+            ), 409);
+          }
           const existing = baseline.diagnosticMissions.find((mission) => mission.findingId === finding.id);
           if (existing) return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, diagnosticMissionSnapshot(existing)) });
           if (baseline.diagnosticMissions.length >= 10) return sendError(response, new AuditError("DIAGNOSTIC_LIMIT", "This audit already has the maximum number of diagnostic missions."));
@@ -1101,6 +1109,14 @@ export function createLocalAuditRuntime(options = {}) {
           });
         }
         if (action === "evidence" && request.method === "POST") {
+          const preparedFindingIds = baseline.mission?.repairPreparation?.findingIds
+            ?? (baseline.mission?.repairPreparation?.findingId ? [baseline.mission.repairPreparation.findingId] : []);
+          if (!preparedFindingIds.includes(mission.findingId)) {
+            return sendError(response, new AuditError(
+              "REPAIR_INTENT_REQUIRED",
+              "Select this retained finding with prepare_site_repair before contributing repository diagnosis.",
+            ), 409);
+          }
           assertSameOrigin(request);
           const input = await readBody(request);
           const { source, expectedMissionRevision, ...evidence } = input ?? {};
@@ -1113,6 +1129,14 @@ export function createLocalAuditRuntime(options = {}) {
           return sendJson(response, 200, { ok: true, data: checkpointedLocal(baseline, mission) });
         }
         if (action === "blocker" && request.method === "POST") {
+          const preparedFindingIds = baseline.mission?.repairPreparation?.findingIds
+            ?? (baseline.mission?.repairPreparation?.findingId ? [baseline.mission.repairPreparation.findingId] : []);
+          if (!preparedFindingIds.includes(mission.findingId)) {
+            return sendError(response, new AuditError(
+              "REPAIR_INTENT_REQUIRED",
+              "Select this retained finding with prepare_site_repair before recording a repository-diagnosis blocker.",
+            ), 409);
+          }
           assertSameOrigin(request);
           const input = await readBody(request);
           const { source, expectedMissionRevision, ...blocker } = input ?? {};

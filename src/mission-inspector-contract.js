@@ -300,7 +300,7 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
             : "Choose whether to prepare a retained priority",
       summary: repair?.status === "draft"
         ? "The proposal is visible for approval or requested changes. It is not implementation or deployment proof."
-        : "Assessment evidence is complete enough for a person to choose a repair target without granting hidden authority.",
+        : "The audit and ranking are final. Repository diagnosis has not started and begins only if a person explicitly chooses a repair target.",
       why: missionState?.nextAction?.reason
         ?? "The evidence phase is complete and the next consequential transition belongs to a person.",
       mustReturn: checkpointCriteria.length ? checkpointCriteria : repair?.status === "changes-requested"

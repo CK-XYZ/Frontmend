@@ -29,8 +29,8 @@ test("executes the complete deterministic mission protocol across local and Work
     exactRows: 4,
     blockerRelationship: "provider-browser-conflict",
     blockerReason: "repository-unavailable",
-    blockerAssessmentComplete: false,
-    receiptWithheld: true,
+    blockerAssessmentComplete: true,
+    receiptAvailable: true,
     repairStagingWithheld: true,
   });
   assert.match(result.authority.claim, /not live browser, repository, deployment, or production evidence/i);

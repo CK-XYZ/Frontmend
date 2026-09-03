@@ -4,7 +4,7 @@ import {
   assessmentReceiptMarkdown,
   createAssessmentReceipt,
 } from "../src/assessment-receipt.js";
-import { createAuditMission } from "../src/audit-mission-contract.js";
+import { createAuditMission, prepareRepairIntent } from "../src/audit-mission-contract.js";
 import {
   createDiagnosticMission,
   recordDiagnosticBlocker,
@@ -93,36 +93,50 @@ function completeAccessibilityReview() {
   }, "agent", 140);
 }
 
-test("withholds an assessment receipt until required diagnosis is contributed", () => {
+test("unlocks the final assessment receipt before optional repository diagnosis starts", () => {
   assert.throws(
     () => createAssessmentReceipt({ report, mission }),
     (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /open_browser_review/.test(error.message),
   );
 
   const browserReview = completeAccessibilityReview();
-  assert.throws(
-    () => createAssessmentReceipt({ report, mission, browserReview }),
-    (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /open_diagnostic_mission/.test(error.message),
-  );
+  const receipt = createAssessmentReceipt({ report, mission, browserReview });
+  assert.equal(receipt.assessment.complete, true);
+  assert.equal(receipt.assessment.rankingStatus, "final");
+  assert.equal(receipt.assessment.repairReadiness.status, "not-started");
+  assert.equal(receipt.priorities[0].repairDiagnosisStatus, "not-started");
+  assert.equal(receipt.priorities[0].diagnosis, null);
+  assert.match(assessmentReceiptMarkdown(receipt), /Repair diagnosis: not started; explicit repair selection required/);
+
   const opened = createDiagnosticMission({ auditId: report.auditId, finding, now: 200 });
-  assert.throws(
-    () => createAssessmentReceipt({ report, mission, diagnosticMissions: [opened], browserReview }),
-    (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /submit_runtime_diagnosis/.test(error.message),
-  );
+  const receiptWithLegacyOpenMission = createAssessmentReceipt({
+    report,
+    mission,
+    diagnosticMissions: [opened],
+    browserReview,
+  });
+  assert.equal(receiptWithLegacyOpenMission.assessment.complete, true);
 });
 
-test("withholds an assessment receipt when diagnosis is explicitly blocked", () => {
+test("retains a final assessment receipt when selected repair diagnosis is explicitly blocked", () => {
   const browserReview = completeAccessibilityReview();
   const opened = createDiagnosticMission({ auditId: report.auditId, finding, now: 200 });
   const blocked = recordDiagnosticBlocker(opened, {
     reason: "browser-unavailable",
     summary: "This session cannot open the deployed route in a browser.",
   }, "agent", 250);
+  const repairMission = prepareRepairIntent(mission, finding.id, "agent", 180);
+  const receipt = createAssessmentReceipt({
+    report,
+    mission: repairMission,
+    diagnosticMissions: [blocked],
+    browserReview,
+  });
 
-  assert.throws(
-    () => createAssessmentReceipt({ report, mission, diagnosticMissions: [blocked], browserReview }),
-    (error) => error?.code === "ASSESSMENT_INCOMPLETE" && /outstanding diagnostic evidence/.test(error.message),
-  );
+  assert.equal(receipt.assessment.complete, true);
+  assert.equal(receipt.assessment.repairReadiness.status, "blocked");
+  assert.equal(receipt.priorities[0].repairDiagnosisStatus, "blocked");
+  assert.match(receipt.authority.boundary, /not required to finalise the ranking/);
 });
 
 test("withholds a receipt when bounded-site measurement has no retained routes", () => {
@@ -291,7 +305,7 @@ test("exports measured and contributed evidence with separate provenance and aut
   assert.match(markdown, /\\`window\.vendor\\`/);
   assert.match(markdown, /does not prove a repair, deployment, or resolution/);
   assert.match(markdown, /Frontmend build: unidentified/);
-  assert.match(markdown, /Protocol: v1; tool library v6; 28 contracts/);
+  assert.match(markdown, /Protocol: v1; tool library v7; 28 contracts/);
   assert.match(markdown, /## Evidence adapters/);
   assert.match(markdown, /google-pagespeed-lighthouse/);
   assert.match(markdown, /Lighthouse version: 13\.0\.1/);
