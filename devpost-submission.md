@@ -130,7 +130,7 @@ These commands prove local contracts and packaging only. They do not prove deplo
 
 - Live URL: `https://frontmend.dev/`
 - Public repository: `https://github.com/CK-XYZ/Frontmend`
-- Public YouTube demo: `TODO_PUBLIC_YOUTUBE_URL`
+- Public YouTube demo: `https://youtu.be/hCmA5rFoTr0`
 
 Before submission, verify the exact deployed build identity, unauthenticated judge access, public repository visibility and licence, current WebMCP behaviour, responsive/browser QA, and the final public video. Nothing in this document claims those checks have already passed.
 
