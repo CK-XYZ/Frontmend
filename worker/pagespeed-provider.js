@@ -4,6 +4,8 @@ import { assertPublicResolvedDestination } from "../src/public-destination-contr
 
 const ENDPOINT = "https://pagespeedonline.googleapis.com/pagespeedonline/v5/runPagespeed";
 const STRATEGIES = ["mobile", "desktop"];
+const STRATEGY_TIMEOUT_MS = 90_000;
+const STRATEGY_TIMEOUT_RETRIES = 1;
 const CATEGORY_IDS = ["performance", "accessibility", "best-practices", "seo"];
 const RESPONSE_LIMIT_BYTES = 12 * 1024 * 1024;
 const SCREENSHOT_LIMIT_CHARS = 110_000;
@@ -879,40 +881,52 @@ async function fetchStrategy({ url, strategy, fetchImpl, apiKey, signal }) {
   return result;
 }
 
-async function fetchStrategyOutcome({ url, strategy, fetchImpl, apiKey, signal }) {
-  const cancellation = cancellableSignal(signal, 90_000);
-  try {
-    const result = await fetchStrategy({
-      url,
-      strategy,
-      fetchImpl,
-      apiKey,
-      signal: cancellation.signal,
-    });
-    return { strategy, result, error: null };
-  } catch (error) {
-    if (signal?.aborted) {
-      throw providerError("AUDIT_CANCELLED", "The audit was cancelled.");
-    }
-    if (cancellation.timedOut()) {
+async function fetchStrategyOutcome({
+  url,
+  strategy,
+  fetchImpl,
+  apiKey,
+  signal,
+  timeoutMs = STRATEGY_TIMEOUT_MS,
+  timeoutRetries = STRATEGY_TIMEOUT_RETRIES,
+}) {
+  for (let attempt = 0; attempt <= timeoutRetries; attempt += 1) {
+    const cancellation = cancellableSignal(signal, timeoutMs);
+    try {
+      const result = await fetchStrategy({
+        url,
+        strategy,
+        fetchImpl,
+        apiKey,
+        signal: cancellation.signal,
+      });
+      return { strategy, result, error: null };
+    } catch (error) {
+      if (signal?.aborted) {
+        throw providerError("AUDIT_CANCELLED", "The audit was cancelled.");
+      }
+      if (cancellation.timedOut()) {
+        if (attempt < timeoutRetries) continue;
+        const attempts = timeoutRetries + 1;
+        return {
+          strategy,
+          result: null,
+          error: providerError(
+            "PROVIDER_TIMEOUT",
+            `The ${strategy} Lighthouse audit timed out after ${attempts} attempts (${Math.round(timeoutMs / 1_000)} seconds each).`,
+          ),
+        };
+      }
       return {
         strategy,
         result: null,
-        error: providerError(
-          "PROVIDER_TIMEOUT",
-          `The ${strategy} Lighthouse audit exceeded the 90 second time limit.`,
-        ),
+        error: error?.code
+          ? error
+          : providerError("PROVIDER_FAILED", `The ${strategy} Lighthouse audit failed.`),
       };
+    } finally {
+      cancellation.cleanup();
     }
-    return {
-      strategy,
-      result: null,
-      error: error?.code
-        ? error
-        : providerError("PROVIDER_FAILED", `The ${strategy} Lighthouse audit failed.`),
-    };
-  } finally {
-    cancellation.cleanup();
   }
 }
 
@@ -981,6 +995,8 @@ export async function runPageSpeedAudit({
   onProgress = async () => {},
   now = () => Date.now(),
   signal,
+  strategyTimeoutMs = STRATEGY_TIMEOUT_MS,
+  strategyTimeoutRetries = STRATEGY_TIMEOUT_RETRIES,
 }) {
   throwIfCancelled(signal);
   await onProgress({
@@ -990,7 +1006,15 @@ export async function runPageSpeedAudit({
   });
   const outcomes = await Promise.all(
     STRATEGIES.map((strategy) =>
-      fetchStrategyOutcome({ url, strategy, fetchImpl, apiKey, signal }),
+      fetchStrategyOutcome({
+        url,
+        strategy,
+        fetchImpl,
+        apiKey,
+        signal,
+        timeoutMs: strategyTimeoutMs,
+        timeoutRetries: strategyTimeoutRetries,
+      }),
     ),
   );
 

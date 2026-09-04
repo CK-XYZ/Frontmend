@@ -397,6 +397,62 @@ test("returns a recoverable provider error for quota exhaustion", async () => {
   );
 });
 
+test("retries one transient strategy timeout and retains the recovered evidence", async () => {
+  const calls = { mobile: 0, desktop: 0 };
+  const output = await runPageSpeedAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    strategyTimeoutMs: 5,
+    fetchImpl: async (url, { signal }) => {
+      const strategy = url.searchParams.get("strategy");
+      calls[strategy] += 1;
+      if (strategy === "desktop" && calls.desktop === 1) {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            { once: true },
+          );
+        });
+      }
+      return Response.json(lighthouseFixture(strategy));
+    },
+  });
+
+  assert.deepEqual(calls, { mobile: 1, desktop: 2 });
+  assert.deepEqual(output.report.viewports.map((viewport) => viewport.id), ["mobile", "desktop"]);
+  assert.deepEqual(output.report.viewportFailures, []);
+});
+
+test("reports a strategy timeout after the bounded retry is exhausted", async () => {
+  const calls = { mobile: 0, desktop: 0 };
+  const output = await runPageSpeedAudit({
+    auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+    url: "https://removemyexif.com/",
+    strategyTimeoutMs: 5,
+    fetchImpl: async (url, { signal }) => {
+      const strategy = url.searchParams.get("strategy");
+      calls[strategy] += 1;
+      if (strategy === "desktop") {
+        return new Promise((_resolve, reject) => {
+          signal.addEventListener(
+            "abort",
+            () => reject(new DOMException("The operation was aborted.", "AbortError")),
+            { once: true },
+          );
+        });
+      }
+      return Response.json(lighthouseFixture(strategy));
+    },
+  });
+
+  assert.deepEqual(calls, { mobile: 1, desktop: 2 });
+  assert.equal(output.report.viewportCount, 1);
+  assert.equal(output.report.viewportFailures[0].id, "desktop");
+  assert.equal(output.report.viewportFailures[0].code, "PROVIDER_TIMEOUT");
+  assert.match(output.report.viewportFailures[0].message, /after 2 attempts/);
+});
+
 test("propagates caller cancellation without falling back to another provider", async () => {
   const controller = new AbortController();
   let markStarted;
