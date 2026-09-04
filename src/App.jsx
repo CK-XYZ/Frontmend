@@ -39,7 +39,10 @@ import {
   auditHandoffFrontmendToolNames,
   registerFrontmendTools,
 } from "./webmcp.js";
-import { FRONTMEND_TOOL_LIBRARY_VERSION } from "./protocol-contract.js";
+import {
+  FRONTMEND_TOOL_COUNT,
+  FRONTMEND_TOOL_LIBRARY_VERSION,
+} from "./protocol-contract.js";
 
 const HERO_SPECIMENS = [
   {

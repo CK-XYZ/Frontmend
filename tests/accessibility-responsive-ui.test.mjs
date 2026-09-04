@@ -14,6 +14,14 @@ const provider = readFileSync(new URL("../worker/pagespeed-provider.js", import.
 const styles = readFileSync(new URL("../src/styles.css", import.meta.url), "utf8");
 const landingStyles = readFileSync(new URL("../src/landing.css", import.meta.url), "utf8");
 
+test("imports the protocol constants required during the first App render", () => {
+  assert.match(
+    app,
+    /import\s*\{[\s\S]*?FRONTMEND_TOOL_COUNT,[\s\S]*?FRONTMEND_TOOL_LIBRARY_VERSION[\s\S]*?\}\s*from "\.\/protocol-contract\.js";/,
+  );
+  assert.match(app, /totalTools: FRONTMEND_TOOL_COUNT/);
+});
+
 test("uses one main landmark, a keyboard skip target, and deliberate focus restoration", () => {
   assert.match(app, /<div className=\{`app-shell \$\{mode\}`\}>/);
   assert.match(app, /<a className="skip-link" href="#main-content">Skip to main content<\/a>/);
