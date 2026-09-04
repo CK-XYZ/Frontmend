@@ -2000,6 +2000,7 @@ export function App() {
       target: document,
       onStatus: setWebMcp,
       toolNames: webMcpToolNames,
+      workflowMode: "audit-handoff",
     });
     return dispose;
   }, [webMcpContextKey]);

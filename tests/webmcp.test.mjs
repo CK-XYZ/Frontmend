@@ -2476,6 +2476,106 @@ test("public registration ends at the coding-agent handoff instead of exposing r
   );
 });
 
+test("public handoff responses never advertise retired contextual workflow actions", async () => {
+  const registered = [];
+  const finding = {
+    id: "mobile-color-contrast",
+    title: "Text contrast is too low",
+    summary: "Rendered text does not meet Lighthouse contrast thresholds.",
+    severity: "medium",
+    category: "Accessibility",
+    focusAreas: ["accessibility"],
+    evidence: "The primary action measured 2.75:1.",
+    selector: ".primary-action",
+    repair: "Adjust the foreground or background colour token.",
+    source: { provider: "Lighthouse", auditId: "color-contrast", strategy: "mobile" },
+    viewport: "Mobile · Lighthouse Emulation",
+    diagnosticEvidence: { kind: "contrast-nodes" },
+  };
+  const audit = {
+    id: "audit-handoff-1",
+    status: "complete",
+    missionRevision: 2,
+    mission: {
+      schemaVersion: 2,
+      intent: "assess",
+      requestedBy: "agent",
+      requestedAt: 1_777_000_000_000,
+      focusAreas: ["accessibility"],
+      maxPriorities: 3,
+      scope: "page",
+      routeLimit: 1,
+      repairPreparation: null,
+    },
+    report: {
+      auditId: "audit-handoff-1",
+      url: "https://example.com/",
+      finalUrl: "https://example.com/",
+      hostname: "example.com",
+      engine: { mode: "live-pagespeed", provider: "Lighthouse" },
+      findings: [finding],
+    },
+  };
+  const checkpoint = {
+    auditId: audit.id,
+    missionRevision: 2,
+    action: {
+      tool: "declare_agent_capabilities",
+      input: { auditId: audit.id, expectedMissionRevision: 2 },
+      reason: "Legacy contextual workflow action.",
+    },
+  };
+  const service = {
+    getActiveAudit: () => audit,
+    getResults: async () => audit.report,
+    getMissionCheckpoint: () => checkpoint,
+    getDiagnosticMissions: () => [],
+    getRepairs: () => [],
+    getBrowserReview: () => null,
+    getSiteExplorations: () => [],
+  };
+  const target = {
+    modelContext: {
+      async registerTool(definition) {
+        registered.push(definition);
+      },
+    },
+  };
+  const dispose = registerFrontmendTools({
+    service,
+    target,
+    toolNames: auditHandoffFrontmendToolNames(service),
+    workflowMode: "audit-handoff",
+  });
+  await dispose.ready;
+
+  const summaryTool = registered.find((definition) => definition.name === "get_mission_summary");
+  const resultsTool = registered.find((definition) => definition.name === "get_site_audit_results");
+  const evidenceTool = registered.find((definition) => definition.name === "get_evidence_chain");
+  const summary = await summaryTool.execute({ auditId: audit.id });
+  const results = await resultsTool.execute({ auditId: audit.id, detailLevel: "full" });
+  const evidence = await evidenceTool.execute({
+    auditId: audit.id,
+    findingId: results.data.codingAgentBrief.recommendations[0].findingId,
+  });
+
+  assert.equal(summary.data.missionCheckpoint, null);
+  assert.equal(summary.data.nextAction.tool, "get_site_audit_results");
+  assert.equal("missionState" in results.data, false);
+  assert.equal("missionCheckpoint" in results.data, false);
+  assert.equal(results.data.recommendedNextAction, null);
+  assert.equal(evidence.data.missionCheckpoint, null);
+  assert.equal(evidence.data.nextAction, null);
+  assert.equal(evidence.data.evidenceChain.status, "handoff-ready");
+  assert.equal(evidence.data.finding.evidenceState, "coding-agent-handoff");
+  assert.equal(evidence.data.workflow.owner, "coding-agent");
+  assert.doesNotMatch(
+    JSON.stringify([summary.data, results.data, evidence.data]),
+    /declare_agent_capabilities|open_diagnostic_mission|submit_runtime_diagnosis/,
+  );
+  dispose();
+});
+
 test("contextual tool availability follows the visible audit and human review state", () => {
   let audit = null;
   let repairs = [];

@@ -348,6 +348,21 @@ function compactSummaryPriority(priority) {
   };
 }
 
+function compactHandoffPriority(priority) {
+  return {
+    rank: priority.rank,
+    findingId: priority.findingId,
+    title: typeof priority.title === "string" ? priority.title.slice(0, 140) : "Untitled finding",
+    severity: priority.severity,
+    category: priority.category,
+    evidenceState: "retained-public-evidence",
+    occurrenceCount: priority.occurrenceCount,
+    distinctPageCount: priority.distinctPageCount,
+    affectedStrategies: [...(priority.affectedStrategies ?? [])],
+    source: priority.source,
+  };
+}
+
 function compactBrowserReview(review) {
   if (!review) return null;
   return {
@@ -562,7 +577,10 @@ function tool(definition) {
     annotations: definition.annotations,
     execute: (input, options = {}) => safely(async () => {
       assertNotAborted(options?.signal);
-      const operation = definition.run(input, { signal: options?.signal });
+      const operation = definition.run(input, {
+        signal: options?.signal,
+        workflowMode: options?.frontmendRegistration?.workflowMode ?? "contextual",
+      });
       return definition.annotations?.readOnlyHint === true
         ? await awaitAbortableRead(operation, options?.signal)
         : await operation;
@@ -819,7 +837,7 @@ export function createFrontmendTools(service) {
       name: "start_site_audit",
       title: "Start site audit",
       description:
-        "Start a durable audit of a public HTTP(S) site. Preserve the person's requested focus, priority limit, and page or bounded-site scope. Default to assess; use prepare-fix only after an explicit repair request. Poll the returned audit, then follow its contextual next action until assessmentComplete or a named blocker. Repository diagnosis belongs only to a later selected-repair phase.",
+        "Start a durable audit of a public HTTP(S) site. Preserve the person's requested focus, priority limit, and page or bounded-site scope. Default to assess; use prepare-fix only after an explicit repair request. Poll the returned audit, then read its structured recommendations and coding-agent brief. Repository investigation and implementation continue through the coding agent's normal tools.",
       inputSchema: {
         type: "object",
         properties: {
@@ -973,7 +991,7 @@ export function createFrontmendTools(service) {
         },
       },
       annotations: { readOnlyHint: true, untrustedContentHint: false },
-      async run(input) {
+      async run(input, { workflowMode } = {}) {
         const value = objectInput(input);
         noExtra(value, ["auditId"]);
         const projection = await missionProjectionForTool(service, value.auditId);
@@ -1057,7 +1075,9 @@ export function createFrontmendTools(service) {
           checkpointStatus: "complete",
           explorationStatus: missionState.explorationStatus,
           workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
-          missionCheckpoint: compactCheckpoint(checkpoint),
+          missionCheckpoint: workflowMode === "audit-handoff"
+            ? null
+            : compactCheckpoint(checkpoint),
           mission: {
             intent: projection.mission.intent,
             requestedBy: projection.mission.requestedBy,
@@ -1077,7 +1097,9 @@ export function createFrontmendTools(service) {
               pagesRequested: missionState.siteScope?.pagesRequested ?? 0,
             },
           },
-          topPriorities: missionState.priorities.slice(0, 3).map(compactSummaryPriority),
+          topPriorities: missionState.priorities
+            .slice(0, 3)
+            .map(workflowMode === "audit-handoff" ? compactHandoffPriority : compactSummaryPriority),
           recommendationCount: codingAgentBrief.recommendations.length,
           completionCriteria: ["Read the coding-agent brief, then continue in the repository with normal coding tools."],
           requiredCapability: "full-evidence-reading",
@@ -1162,7 +1184,7 @@ export function createFrontmendTools(service) {
         },
       },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      async run(input) {
+      async run(input, { workflowMode } = {}) {
         const value = objectInput(input);
         noExtra(value, ["auditId", "focusAreas", "maxPriorities", "detailLevel"]);
         if (value.focusAreas !== undefined && (!Array.isArray(value.focusAreas) || value.focusAreas.length < 1)) {
@@ -1191,16 +1213,24 @@ export function createFrontmendTools(service) {
         const overridden = value.focusAreas !== undefined || value.maxPriorities !== undefined;
         const detailLevel = value.detailLevel === "full" ? "full" : "summary";
         const checkpoint = service?.getMissionCheckpoint?.(auditId) ?? report.missionCheckpoint ?? null;
-        const projectedPriorities = detailLevel === "full"
-          ? missionState.priorities
-          : missionState.priorities.map(compactSummaryPriority);
+        const publicHandoff = workflowMode === "audit-handoff";
+        const projectedPriorities = publicHandoff
+          ? missionState.priorities.map(compactHandoffPriority)
+          : detailLevel === "full"
+            ? missionState.priorities
+            : missionState.priorities.map(compactSummaryPriority);
+        const fullReport = publicHandoff
+          ? Object.fromEntries(
+              Object.entries(report).filter(([key]) => !["missionCheckpoint", "missionState"].includes(key)),
+            )
+          : report;
         const codingAgentBrief = createCodingAgentBrief({
           report,
           priorities: missionState.priorities,
           mission: projectionMission,
         });
         return {
-          ...(detailLevel === "full" ? report : compactAuditReport(report)),
+          ...(detailLevel === "full" ? fullReport : compactAuditReport(report)),
           measurementStatus: "complete",
           assessmentStatus: "complete",
           checkpointStatus: "complete",
@@ -1226,8 +1256,10 @@ export function createFrontmendTools(service) {
           codingAgentBrief,
           ...(detailLevel === "full" ? {
             browserReview,
-            missionState,
-            missionCheckpoint: checkpoint,
+            ...(publicHandoff ? {} : {
+              missionState,
+              missionCheckpoint: checkpoint,
+            }),
           } : {}),
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
@@ -1282,7 +1314,7 @@ export function createFrontmendTools(service) {
         additionalProperties: false,
       },
       annotations: { readOnlyHint: true, untrustedContentHint: true },
-      async run(input) {
+      async run(input, { workflowMode } = {}) {
         const value = objectInput(input);
         noExtra(value, ["auditId", "findingId"]);
         const findingId = requiredString(value.findingId, "findingId", 160);
@@ -1339,16 +1371,65 @@ export function createFrontmendTools(service) {
                 },
               ],
             };
+        const publicHandoff = workflowMode === "audit-handoff";
+        const finding = {
+          ...compactPriority(priority),
+          focusAreas: [...(priority.focusAreas ?? [])],
+          evidence: priority.evidence,
+          relationshipReason: priority.relationshipReason,
+          unresolvedRequirement: priority.unresolvedRequirement ?? null,
+        };
+        if (publicHandoff) {
+          finding.nextAction = null;
+          finding.diagnosticMissionRequired = false;
+          finding.diagnosticMissionId = null;
+          finding.diagnosticBlocker = null;
+          finding.evidenceState = "coding-agent-handoff";
+          finding.relationship = "repository-investigation-external";
+          finding.whyPrioritized = `${finding.severity ?? "retained"} severity · retained public evidence`;
+          finding.relationshipReason = "Frontmend retained the public evidence; repository ownership is established by the coding agent in its normal workflow.";
+          finding.unresolvedRequirement = "Inspect the current repository and verify the implementation against this retained public evidence.";
+        }
+        const evidenceChain = publicHandoff && !retainedDiagnostic
+          ? {
+              schemaVersion: 1,
+              status: "handoff-ready",
+              stages: [
+                {
+                  id: "measurement",
+                  label: "Measured symptom",
+                  state: provider ? "retained" : "not-observed",
+                  provenance: provider ? "measured-provider" : null,
+                  itemCount: provider?.findings?.length ?? 0,
+                },
+                {
+                  id: "browser",
+                  label: "Rendered observation",
+                  state: browser ? "retained" : "not-observed",
+                  provenance: browser?.provenance ?? null,
+                  itemCount: browser?.findings?.length ?? 0,
+                },
+                {
+                  id: "repository",
+                  label: "Repository investigation",
+                  state: "coding-agent-owned",
+                  provenance: null,
+                  itemCount: 0,
+                },
+                {
+                  id: "verification",
+                  label: "Fresh public re-audit",
+                  state: "available-after-deployment",
+                  provenance: null,
+                  itemCount: 0,
+                },
+              ],
+            }
+          : chain;
         return {
           auditId: projection.audit.id,
-          finding: {
-            ...compactPriority(priority),
-            focusAreas: [...(priority.focusAreas ?? [])],
-            evidence: priority.evidence,
-            relationshipReason: priority.relationshipReason,
-            unresolvedRequirement: priority.unresolvedRequirement ?? null,
-          },
-          evidenceChain: chain,
+          finding,
+          evidenceChain,
           evidenceSources: {
             provider: provider
               ? {
@@ -1381,8 +1462,17 @@ export function createFrontmendTools(service) {
                 }
               : null,
           },
-          missionCheckpoint: projection.checkpoint,
-          nextAction: priority.nextAction ?? projection.missionState.nextAction ?? null,
+          missionCheckpoint: publicHandoff ? null : projection.checkpoint,
+          nextAction: publicHandoff
+            ? null
+            : priority.nextAction ?? projection.missionState.nextAction ?? null,
+          ...(publicHandoff ? {
+            workflow: {
+              owner: "coding-agent",
+              instruction: "Inspect the current repository using this retained evidence, make only authorised changes, and run the repository's real checks.",
+              afterDeployment: "Run a fresh Frontmend audit of the public URL to measure the deployed result.",
+            },
+          } : {}),
           authority: {
             sourceContentsReceived: false,
             repairApprovalProved: false,
@@ -2731,7 +2821,13 @@ export function getModelContext(target = globalThis.document) {
   return typeof candidate?.registerTool === "function" ? candidate : null;
 }
 
-export function registerFrontmendTools({ service, target, onStatus, toolNames }) {
+export function registerFrontmendTools({
+  service,
+  target,
+  onStatus,
+  toolNames,
+  workflowMode = "contextual",
+}) {
   const modelContext = getModelContext(target);
   const allTools = createFrontmendTools(service);
   const requestedNames = toolNames ? new Set(toolNames) : null;
@@ -2757,6 +2853,7 @@ export function registerFrontmendTools({ service, target, onStatus, toolNames })
   const registration = Object.freeze({
     enforceContextualAvailability: true,
     toolsetRevision: statusBase.toolsetRevision,
+    workflowMode: workflowMode === "audit-handoff" ? "audit-handoff" : "contextual",
   });
   onStatus?.({ ...statusBase, status: "registering", toolNames: [], errors: [] });
 
