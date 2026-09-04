@@ -238,6 +238,22 @@ test("ignores unknown Lighthouse audits and additive response fields", async () 
   assert.equal(output.report.engine.adapterId, "google-pagespeed-lighthouse");
 });
 
+test("rejects a query-bearing provider final URL before retaining the result", async () => {
+  await assert.rejects(
+    runPageSpeedAudit({
+      auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",
+      url: "https://example.com/",
+      fetchImpl: async (url) => {
+        const fixture = lighthouseFixture(url.searchParams.get("strategy"));
+        fixture.lighthouseResult.finalUrl = "https://example.com/account?token=private";
+        return Response.json(fixture);
+      },
+    }),
+    (error) => error.code === "PROVIDER_FINAL_URL_UNSAFE"
+      && !error.message.includes("token=private"),
+  );
+});
+
 test("accepts a replaceable viewport provider through the normalized adapter seam", async () => {
   const output = await runFrontmendAudit({
     auditId: "b8b16bf0-913c-40ea-a741-bb4bf76d326b",

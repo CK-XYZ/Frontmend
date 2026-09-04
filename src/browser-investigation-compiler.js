@@ -175,7 +175,7 @@ function boundedText(value, maximum = 600) {
 function targetPath(target) {
   try {
     const url = new URL(target);
-    return `${url.pathname || "/"}${url.search}`.slice(0, 256);
+    return (url.pathname || "/").slice(0, 256);
   } catch {
     return "/";
   }

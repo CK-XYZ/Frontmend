@@ -223,10 +223,10 @@ summary:focus-visible,
 /*
  * Ground for a live audit.
  *
- * DESIGN.md section 1 left this surface flat warm white and noted the restore
- * ground was one selector away from covering it. The error field is the wrong
- * borrowing - that art is for a dead address - but the observation held: a card
- * floating on an unbroken white page had nothing to sit on.
+ * This surface was previously flat warm white, while the restore ground was one
+ * selector away from covering it. The error field is the wrong borrowing - that
+ * art is for a dead address - but the observation held: a card floating on an
+ * unbroken white page had nothing to sit on.
  *
  * So this is measurement paper rather than a picture: a hairline grid at a
  * quarter strength, in the workspace's own line token, behind the card and
@@ -767,12 +767,11 @@ summary:focus-visible,
 
 /* ------------------------------------------------- the live audit card
  *
- * One object, two grounds (DESIGN.md section 1). The cobalt hero carries
- * everything that moves - orb, phase, thread, stage marks - on the evidence
- * field the landing uses for its own loop band. The warm half below carries the
- * standing facts of the assessment. Before this they were one flat warm card,
- * with the part that changes every few seconds set in the same key as the part
- * that never changes.
+ * One object, two grounds. The cobalt hero carries everything that moves - orb,
+ * phase, thread, stage marks - on the evidence field the landing uses for its
+ * own loop band. The warm half below carries the standing facts of the
+ * assessment. Before this they were one flat warm card, with the part that
+ * changes every few seconds set in the same key as the part that never changes.
  */
 .app-shell.progress .progress-card {
   padding: 0;
@@ -2605,11 +2604,11 @@ summary:focus-visible,
 
 /* ------------------------------------------------- the report masthead
  *
- * Same move as the live audit card (DESIGN.md section 1): the identity of the
- * run - who was measured, what state the record is in, and every action that
- * leaves this page - sits on cobalt, and the evidence below it stays warm
- * white. Before this the domain was ink on cream with a hairline under it, and
- * a report of forty sections opened with nothing to anchor it.
+ * Same move as the live audit card: the identity of the run - who was measured,
+ * what state the record is in, and every action that leaves this page - sits on
+ * cobalt, and the evidence below it stays warm white. Before this the domain
+ * was ink on cream with a hairline under it, and a report of forty sections
+ * opened with nothing to anchor it.
  */
 .app-shell.report .report-heading {
   align-items: flex-end;
@@ -8458,7 +8457,7 @@ summary:focus-visible,
 .agent-activity-boundary svg {
   flex: 0 0 auto;
   margin-top: 1px;
-  /* Lime on paper has to be the deep value — see the palette note in DESIGN.md. */
+  /* Use the deep lime value on paper so the icon retains sufficient contrast. */
   color: var(--lime-dark);
 }
 

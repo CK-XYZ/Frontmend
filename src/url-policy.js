@@ -56,6 +56,13 @@ export function normalizePublicUrl(value) {
     throw new AuditError("UNSUPPORTED_URL", "Use a public HTTP or HTTPS URL without credentials.");
   }
 
+  if (url.search) {
+    throw new AuditError(
+      "UNSUPPORTED_URL",
+      "Use a public page URL without a query string. Query parameters can contain private tokens.",
+    );
+  }
+
   const hostname = url.hostname.toLowerCase().replace(/\.$/, "");
   const privateName =
     hostname === "localhost" ||

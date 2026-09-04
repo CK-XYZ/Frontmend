@@ -10,7 +10,7 @@ Frontmend turns a public website audit into a useful human recommendation list a
 
 Frontend audit tools and coding agents are individually useful, but the handoff between them is poor. Audit output is usually a score dashboard or a long report written for people. The coding agent then has to scrape that interface, interpret screenshots, or work from a copied summary that has lost the exact rule, route, viewport, target, and evidence.
 
-Putting an entire repair lifecycle inside the audit tool creates a different problem: more approval states, checklists, and deployment theatre than useful frontend work. Coding agents already know how to inspect repositories, edit files, run tests, and work within the person's existing permissions.
+Duplicating the coding agent's repository workflow inside the audit tool creates a different problem: extra approval states, checklists, and simulated deployment steps without improving the actual fix. Coding agents already know how to inspect repositories, edit files, run tests, and work within the person's existing permissions.
 
 ## What Frontmend does
 
@@ -20,13 +20,13 @@ Each recommendation keeps the useful context together:
 
 - what was observed and why it matters;
 - severity, category, provider, and exact rule ID;
-- affected routes, viewports, selectors, and occurrence count;
+- affected routes and viewports, plus selectors when available and the occurrence count;
 - a concise recommended change;
 - repository search hints derived only from public evidence;
 - concrete acceptance criteria;
 - an explicit statement of what Frontmend did not inspect or prove.
 
-The human result is a readable editorial document, not a workflow dashboard. Frontmend then offers one clean handoff to the coding agent. The agent continues in the repository with its normal tools; Frontmend does not mirror the patch, ask for approval checkboxes, or pretend to deploy the site. After a real deployment, the public URL can be audited again for fresh evidence.
+The human result is a readable editorial document, not a workflow dashboard. Frontmend then offers one clean handoff to the coding agent. The current public workflow ends there: the agent continues in the repository with its normal tools, while Frontmend does not mirror the patch, request approval checkboxes, or pretend to deploy the site. After a real deployment, the public URL can be audited again for fresh evidence.
 
 ## How WebMCP is used
 
@@ -34,7 +34,7 @@ WebMCP makes the webpage an active, structured participant in the coding workflo
 
 From a natural request, a compatible agent can discover the actions available in the current page state, start the same audit as the human interface, poll truthful progress, read the results, and receive a bounded `codingAgentBrief`. The agent does not need to scrape the DOM or infer the workflow from buttons.
 
-The key result tool returns ranked recommendations with retained evidence, exact source rules, routes, viewports, selectors, search hints, acceptance criteria, and a clear repository boundary. That is the final Frontmend action. Repository inspection and implementation continue through Codex's ordinary file, browser, and terminal capabilities.
+The `get_site_audit_results` tool returns ranked recommendations with retained evidence, exact audit rule IDs and provider provenance, routes, viewports, available selectors, search hints, acceptance criteria, and a clear repository boundary. That is the final Frontmend action. Repository inspection and implementation continue through Codex's ordinary file, browser, and terminal capabilities.
 
 The live page advertises only the contextual audit and handoff actions that are useful now:
 
@@ -50,7 +50,7 @@ Human and WebMCP actions call the same application service and validation logic.
 
 Frontmend uses WebMCP where it has genuine leverage: converting a human-facing web product into a reliable tool surface for an agent without turning the web product into an agent-only API.
 
-The person gets a better audit result. The coding agent gets better context. Neither has to learn a second repair product, and Frontmend does not ask for repository source or credentials.
+The person gets a clearer, prioritised audit result. The coding agent gets better context. Neither has to learn a second repair product, and Frontmend does not ask for repository source or credentials.
 
 ## How it was built
 
@@ -74,7 +74,7 @@ Codex was the primary development collaborator and the intended repository-aware
 - Contextual WebMCP registration rather than a permanent wall of tools.
 - Server-side public-target validation, redirect revalidation, and resource/rate limits.
 - Complete human fallback when `document.modelContext` is unavailable.
-- Fresh re-audit as the only path to new public-site evidence after deployment.
+- In the public workflow, a fresh re-audit is the only path to new public-site evidence after deployment.
 
 ## Architecture
 
@@ -100,7 +100,7 @@ codingAgentBrief ──> coding agent's existing repo/browser/terminal workflow
 2. Start an audit through natural language or the URL field. Confirm the same stable job and truthful progress are visible to both interfaces.
 3. Open the completed audit and inspect the ranked recommendation list, including one expanded exact-evidence section.
 4. Read the result through WebMCP and inspect `codingAgentBrief`. Confirm it carries the same recommendations plus structured evidence and acceptance criteria, without invented repository ownership.
-5. Continue in a controlled target repository with normal coding tools. Confirm Frontmend does not expose approval, candidate-review, deployment, or source-upload controls in the live path.
+5. In the recorded demo, continue in a controlled target repository with normal coding tools. Confirm the public Frontmend workflow does not expose approval, candidate-review, deployment, or source-upload controls.
 
 Detailed timing and narration are in `DEMO_SCRIPT.md`.
 

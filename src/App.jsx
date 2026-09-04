@@ -1287,7 +1287,7 @@ function LandingFaq() {
  *
  * The sweep never starts under reduced motion, and it pauses while the pointer
  * or keyboard focus is anywhere in the closing card. There is deliberately no
- * pause control — see DESIGN.md for the tradeoff that carries.
+ * separate pause control because focus and pointer interaction already halt it.
  */
 const FAN_SPAN = 2;
 /*
@@ -1767,10 +1767,10 @@ function AuditProgress({
       <div className="progress-card">
         <div className="progress-hero">
           {/*
-           * The orb, not the old pulsing tile. Its loop is the sanctioned one
-           * (DESIGN.md section 6): work is genuinely in flight here, and it
-           * stops when the audit does. It also moves the animation inside the
-           * reduced-motion opt-in, which `audit-pulse` never was.
+           * The orb, not the old pulsing tile. Its loop communicates that work
+           * is genuinely in flight here, and it stops when the audit does. It
+           * also moves the animation inside the reduced-motion opt-in, which
+           * `audit-pulse` never was.
            */}
           <ThinkingOrb />
           <p className="kicker" role="status" aria-live="polite" aria-atomic="true">

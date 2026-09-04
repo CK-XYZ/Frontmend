@@ -19,7 +19,7 @@ test("normalizes public hostnames and removes fragments", () => {
   assert.equal(normalizePublicUrl("http://example.com"), "http://example.com/");
 });
 
-test("rejects local, private, credentialed, and non-web targets", () => {
+test("rejects local, private, credentialed, query-bearing, and non-web targets", () => {
   for (const value of [
     "localhost:5173",
     "http://127.0.0.1",
@@ -27,6 +27,8 @@ test("rejects local, private, credentialed, and non-web targets", () => {
     "http://[::1]",
     "https://metadata.google.internal/latest",
     "https://user:pass@example.com",
+    "https://example.com/preview?token=private",
+    "https://example.com/?key=value",
     "file:///tmp/page.html",
   ]) {
     assert.throws(() => normalizePublicUrl(value), AuditError, value);

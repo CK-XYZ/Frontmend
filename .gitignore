@@ -13,3 +13,5 @@ dist/
 /design
 DESIGN.md
 /docs/assessments
+worker-configuration.d.ts
+.devpost-hackathon-state.json

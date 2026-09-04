@@ -1,10 +1,10 @@
 # Frontmend project instructions
 
-These instructions extend the repository-root `AGENTS.md` for work inside `Ideas/Frontmend/`.
+These instructions are the working contract for contributors and coding agents in this repository.
 
 ## Product contract
 
-Frontmend is a URL-first frontend audit and repair tool for humans and browser agents.
+Frontmend is a URL-first frontend audit and coding-agent handoff tool for humans and browser agents.
 
 The primary journey is:
 
@@ -12,9 +12,10 @@ The primary journey is:
 2. Start an asynchronous audit.
 3. Watch truthful progress.
 4. Inspect findings with visible evidence.
-5. Stage and preview a repair.
-6. Verify the repair across relevant conditions.
-7. Export a patch or evidence report after human review.
+5. Read a concise, ranked recommendation list.
+6. Hand the same evidence-rich brief to a coding agent through WebMCP.
+7. Let the coding agent investigate and work in the repository with its existing tools.
+8. Re-audit the deployed public site for fresh evidence when appropriate.
 
 The public judging path must require only the deployed web application. Extensions, native programs, accounts, private repositories, and local MCP servers must never be mandatory.
 
@@ -22,13 +23,14 @@ The public judging path must require only the deployed web application. Extensio
 
 - The audit service uses PageSpeed Insights/Lighthouse when available and a bounded live-document fallback when the provider is unavailable.
 - Keep evidence mode, provenance, fallback status, and measured viewport count visible and truthful.
-- Repair drafts are proposals only. Never imply Frontmend changed an unrelated public site; only claim resolution after a comparable fresh audit no longer observes the original rule.
+- The current public workflow ends at the recommendation and coding-agent handoff. Never imply Frontmend inspected a repository, implemented a change, deployed a site, or proved resolution.
+- Older repair contracts remain compatibility and research code; do not expose them in the live public workflow without an explicit product decision.
 - Keep providers, persistence, and verification comparison behind the existing service and job boundaries rather than moving them into React or WebMCP handlers.
 
 ## Architecture
 
 - Human UI actions and WebMCP tools must call the same application service.
-- WebMCP starts jobs, checks progress, reads results, and later operates the visible review workflow. It does not perform the audit itself.
+- WebMCP starts jobs, checks progress, reads results, and returns the coding-agent brief. It does not perform the audit or replace the coding agent's repository tools.
 - Keep audit IDs stable and duplicate starts safe.
 - Keep results JSON-serialisable, versioned, bounded, and attributable to their source.
 - Treat tool schemas as routing assistance; application validation remains authoritative.
@@ -45,9 +47,8 @@ The public judging path must require only the deployed web application. Extensio
 
 ## Visual direction
 
-`DESIGN.md` is the design-system reference: tokens, typography, motion, layering,
-component patterns, and the accessibility invariants that tests lock. Read it
-before any visual work. `design-qa.md` is the separate verification log.
+The rules below are the public design contract. Local design references may add
+working context, but they are not part of the submission source of truth.
 
 - Frontmend runs two deliberate visual systems. Do not merge them.
   - The landing (`mode === "landing"`) uses the approved mineral-cobalt field with

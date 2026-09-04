@@ -33,11 +33,11 @@ test("compiles a selector- and viewport-specific contrast investigation", () => 
   const [task] = compileBrowserInvestigations({
     report: { findings: [finding({ id: "mobile-color-contrast", rule: "color-contrast", severity: "high", selector: ".hero-cta" })] },
     mission: { focusAreas: ["accessibility"] },
-    target: "https://example.com/products?mode=public",
+    target: "https://example.com/products?token=private",
   });
 
   assert.equal(task.kind, "provider-confirmation");
-  assert.equal(task.target.path, "/products?mode=public");
+  assert.equal(task.target.path, "/products");
   assert.equal(task.target.viewport, "mobile");
   assert.equal(task.trigger.ruleId, "color-contrast");
   assert.equal(task.trigger.selector, ".hero-cta");

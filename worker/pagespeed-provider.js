@@ -1022,7 +1022,15 @@ export async function runPageSpeedAudit({
     ? Math.round(scoreValues.reduce((total, value) => total + value, 0) / scoreValues.length)
     : 0;
   const completedAt = now();
-  const finalUrl = bounded(results[0].lighthouseResult.finalUrl, 2048) || url;
+  let finalUrl;
+  try {
+    finalUrl = normalizePublicUrl(bounded(results[0].lighthouseResult.finalUrl, 2048) || url);
+  } catch {
+    throw providerError(
+      "PROVIDER_FINAL_URL_UNSAFE",
+      "Lighthouse returned an unsupported final public URL.",
+    );
+  }
   const screenshots = Object.fromEntries(
     successful.flatMap(({ strategy, result }) => {
       const screenshot = screenshotFrom(result);

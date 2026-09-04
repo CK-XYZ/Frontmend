@@ -10,7 +10,7 @@ Frontmend does not try to become a code editor, approval system, deployment dash
 
 1. Enter a public URL and choose an optional audit focus.
 2. Frontmend runs an asynchronous PageSpeed Insights/Lighthouse audit plus a bounded live-document analysis.
-3. The result becomes a readable, prioritised recommendation list with evidence, affected routes and viewports, target selectors or landmarks, a suggested change, and concrete acceptance criteria.
+3. The result becomes a readable, prioritised recommendation list with evidence, affected routes and viewports, target selectors or landmarks when available, a suggested change, and concrete acceptance criteria.
 4. WebMCP returns the same information as a bounded coding-agent brief. The agent investigates and fixes the repository with the tools and permissions it already has.
 5. After deployment, run the public URL through Frontmend again for fresh evidence.
 
@@ -22,14 +22,14 @@ Open the target repository in Codex, then ask:
 
 > Hey Codex, audit the deployed frontend for this repository using Frontmend. Start a public-site audit, wait for it to finish, then read the structured recommendations. Investigate the strongest evidence in this codebase, implement the fixes that are justified, and run the repository's real checks. Do not invent source locations from the audit, and do not deploy unless I explicitly ask.
 
-The useful WebMCP moment is the handoff: Codex receives rule IDs, retained evidence, routes, viewports, selectors, search hints, and acceptance criteria directly from Frontmend rather than scraping a visual report or receiving a giant prose dump.
+The useful WebMCP moment is the handoff: Codex receives rule IDs, retained evidence, routes and viewports, selectors when available, search hints, and acceptance criteria directly from Frontmend rather than scraping a visual report or receiving a giant prose dump.
 
 ## What a recommendation contains
 
 - severity and category;
 - measured or observed symptom;
 - provider and exact rule ID;
-- affected routes, viewports, selectors, and occurrence count;
+- affected routes and viewports, plus selectors when available and occurrence count;
 - a concise recommended change;
 - repository search hints based only on public evidence;
 - acceptance criteria the coding agent can verify;
@@ -89,7 +89,8 @@ The client is React 19 and Vite. The production runtime is a Cloudflare Worker w
 
 - Public crawling rejects credentials, private and loopback networks, metadata endpoints, unsafe schemes, and redirects into blocked targets.
 - Every destination is revalidated on the server.
-- Time, byte, redirect, concurrency, and rate limits apply before arbitrary URLs are accepted.
+- Request, response-byte, redirect, timeout, retention, and audit-start budgets bound work on arbitrary public URLs.
+- Query-bearing target URLs are rejected so capability tokens and other URL parameters are not sent to audit providers or retained in shareable records.
 - Target HTML, metadata, screenshots, tool results, and errors are treated as untrusted input.
 - Audit traces exclude raw prompts, URLs, source contents, patches, credentials, cookies, and secrets.
 - PageSpeed receives the public target URL and provider options only; it never receives repository data.
