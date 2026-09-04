@@ -8,6 +8,7 @@ import {
   createFrontmendTools,
 } from "../src/webmcp.js";
 import { FRONTMEND_TOOL_COUNT } from "../src/protocol-contract.js";
+import { candidateCorrectionPacket } from "../src/candidate-review-contract.js";
 
 const BASE_URL = "https://frontmend.eval";
 const TARGET_URL = "https://example.com/";
@@ -394,7 +395,7 @@ async function runMainScenario(adapter, controller) {
   await service.restoreAuditWorkspace(auditId);
   checkpointRevisions.push(service.getMissionCheckpoint(auditId).missionRevision);
 
-  const initialResults = await callContextualTool(service, "get_site_audit_results", { auditId }, sequence);
+  const initialResults = await callContextualTool(service, "get_site_audit_results", { auditId, detailLevel: "full" }, sequence);
   assert.equal(initialResults.missionState.assessmentComplete, false);
   assert.equal(initialResults.mission.scope, "bounded-site");
   assert.equal(initialResults.missionState.siteScope.routeCandidates.length, 1);
@@ -464,7 +465,7 @@ async function runMainScenario(adapter, controller) {
       : null;
   }
 
-  let confirmedResults = await callContextualTool(service, "get_site_audit_results", { auditId }, sequence);
+  let confirmedResults = await callContextualTool(service, "get_site_audit_results", { auditId, detailLevel: "full" }, sequence);
   while (confirmedResults.missionState.nextAction?.tool === "open_browser_review") {
     const extendedReview = await callContextualTool(
       service,
@@ -476,7 +477,7 @@ async function runMainScenario(adapter, controller) {
     confirmedResults = await callContextualTool(
       service,
       "get_site_audit_results",
-      { auditId },
+      { auditId, detailLevel: "full" },
       sequence,
     );
   }
@@ -502,7 +503,7 @@ async function runMainScenario(adapter, controller) {
   }, sequence);
   assert.deepEqual(brief.repairPackage.findingIds, packageIds);
   for (const findingId of packageIds) await diagnoseFinding(service, auditId, findingId, sequence);
-  const completedResults = await callContextualTool(service, "get_site_audit_results", { auditId }, sequence);
+  const completedResults = await callContextualTool(service, "get_site_audit_results", { auditId, detailLevel: "full" }, sequence);
   assert.equal(
     completedResults.missionState.assessmentComplete,
     true,
@@ -546,14 +547,14 @@ async function runMainScenario(adapter, controller) {
   );
   assert.equal(approved.approval.mode, "explicit-review");
   await service.restoreAuditWorkspace(auditId);
-  const implementationSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
-  assert.equal(implementationSummary.agentRun.mode, "continue");
-  assert.deepEqual(implementationSummary.nextAction.input, {
+  const implementationCheckpoint = service.getMissionCheckpoint(auditId);
+  assert.equal(implementationCheckpoint.agentRun.mode, "continue");
+  assert.deepEqual(implementationCheckpoint.action.input, {
     repairId,
     auditId,
-    expectedMissionRevision: implementationSummary.missionCheckpoint.missionRevision,
+    expectedMissionRevision: implementationCheckpoint.missionRevision,
   });
-  assert.equal(implementationSummary.nextAction.tool, "record_repository_implementation");
+  assert.equal(implementationCheckpoint.action.tool, "record_repository_implementation");
   await callContextualTool(service, "record_repository_implementation", {
     auditId,
     repairId,
@@ -588,10 +589,12 @@ async function runMainScenario(adapter, controller) {
     "src/styles.css",
   ]);
 
-  const correctionSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
-  assert.equal(correctionSummary.nextAction.tool, "record_repository_implementation");
-  assert.equal(correctionSummary.agentRun.mode, "continue");
-  assert.equal(correctionSummary.candidateCorrectionPacket.revisionBinding.candidateReviewId, firstCandidate.reviewId);
+  const correctionCheckpoint = service.getMissionCheckpoint(auditId);
+  const correctionRepair = service.getRepairs(auditId).find((repair) => repair.id === repairId);
+  const correctionPacket = candidateCorrectionPacket(correctionRepair);
+  assert.equal(correctionCheckpoint.action.tool, "record_repository_implementation");
+  assert.equal(correctionCheckpoint.agentRun.mode, "continue");
+  assert.equal(correctionPacket.revisionBinding.candidateReviewId, firstCandidate.reviewId);
   await callContextualTool(service, "record_repository_implementation", {
     auditId,
     repairId,
@@ -632,9 +635,9 @@ async function runMainScenario(adapter, controller) {
   }, sequence);
   assert.equal(candidateRead.status, "checks-passed");
   assert.equal(candidateRead.historySummary[0].status, "issues-found");
-  const deploymentSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
-  assert.equal(deploymentSummary.agentRun.mode, "human-required");
-  assert.equal(deploymentSummary.nextAction, null);
+  const deploymentCheckpoint = service.getMissionCheckpoint(auditId);
+  assert.equal(deploymentCheckpoint.agentRun.mode, "human-required");
+  assert.equal(deploymentCheckpoint.action, null);
   revision = service.getMissionCheckpoint(auditId).missionRevision;
   const deployed = await humanMutation(
     adapter,
@@ -643,12 +646,12 @@ async function runMainScenario(adapter, controller) {
   );
   assert.equal(Number.isFinite(deployed.deploymentAttestedAt), true);
   await service.restoreAuditWorkspace(auditId);
-  const verificationSummary = await callContextualTool(service, "get_mission_summary", { auditId }, sequence);
-  assert.equal(verificationSummary.agentRun.mode, "continue");
-  assert.equal(verificationSummary.nextAction.tool, "start_repair_verification");
+  const verificationCheckpoint = service.getMissionCheckpoint(auditId);
+  assert.equal(verificationCheckpoint.agentRun.mode, "continue");
+  assert.equal(verificationCheckpoint.action.tool, "start_repair_verification");
   assert.equal(
-    verificationSummary.nextAction.input.expectedMissionRevision,
-    verificationSummary.missionCheckpoint.missionRevision,
+    verificationCheckpoint.action.input.expectedMissionRevision,
+    verificationCheckpoint.missionRevision,
   );
 
   controller.setFixed(true);
@@ -739,7 +742,7 @@ async function runBlockerScenario(adapter, controller) {
       : null;
   }
   assert.ok(conflictFindingId, "The blocker scenario did not retain its evidence-led contrast trigger.");
-  const results = await callContextualTool(service, "get_site_audit_results", { auditId: started.id }, sequence);
+  const results = await callContextualTool(service, "get_site_audit_results", { auditId: started.id, detailLevel: "full" }, sequence);
   const priority = results.priorities.find((item) => item.findingId === conflictFindingId);
   assert.equal(priority.relationship, "provider-browser-conflict");
   assert.equal(results.missionState.assessmentComplete, true);

@@ -36,6 +36,7 @@ import { AuditMissionSummary, retainedAuditMission } from "../ui/AuditMissionSum
 import { EvidenceOverview } from "../ui/EvidenceOverview.jsx";
 import { humanMissionMutationFailure } from "../ui/human-mission-recovery.js";
 import { LazyWorkspace } from "../ui/LazyWorkspace.jsx";
+import AuditRecommendationsWorkspace from "./AuditRecommendationsWorkspace.jsx";
 
 const loadDiagnosisWorkspace = () => import("./DiagnosisWorkspace.jsx");
 const loadRepairPolicyWorkspace = () => import("./RepairPolicyWorkspace.jsx");
@@ -1600,7 +1601,19 @@ function CaseFileIndex({ report, mission }) {
   );
 }
 
-export default function ReportWorkspace({ audit, webMcp, onReset, onVerify, onAuditRoute }) {
+export default function ReportWorkspace(props) {
+  return <AuditRecommendationsWorkspace {...props} />;
+}
+
+/**
+ * Retained temporarily for stored repair workspaces created by the earlier
+ * competition prototype. New audit results deliberately use the concise
+ * recommendations workspace above; this legacy implementation is not mounted.
+ */
+// Retained as an unmounted compatibility reference while the underlying
+// contracts remain covered. Keeping it non-exported lets production builds
+// remove the abandoned approval workflow and its lazy chunks.
+function LegacyReportWorkspace({ audit, webMcp, onReset, onVerify, onAuditRoute }) {
   const report = audit.report;
   const isDocumentAudit = report.engine.mode === "live-document";
   const isHybridAudit = report.engine.mode === "hybrid-lighthouse-document";

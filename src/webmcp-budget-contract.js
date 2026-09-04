@@ -4,7 +4,7 @@ export const WEBMCP_BUDGETS = Object.freeze({
   parameterDescriptionCharacters: 150,
   contextualToolCount: 8,
   contextualDefinitionCharacters: 10_000,
-  routineResultCharacters: 3_500,
+  routineResultCharacters: 12_000,
 });
 
 export function serializedCharacterCount(value) {

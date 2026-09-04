@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { AuditError, createAuditService } from "../src/audit-service.js";
 import {
+  auditHandoffFrontmendToolNames,
   contextualFrontmendToolNames,
   createFrontmendTools,
   registerFrontmendTools,
@@ -579,8 +580,10 @@ test("agent tools use the same audit service as the human interface", async () =
   const results = await findTool(tools, "get_site_audit_results").execute({});
   assert.equal(results.ok, true);
   assert.equal(results.data.auditId, started.data.id);
-  assert.equal(results.data.missionState.assessmentComplete, false);
-  assert.equal(results.data.recommendedNextAction.tool, "open_browser_review");
+  assert.equal(results.data.assessmentStatus, "complete");
+  assert.equal(results.data.codingAgentBrief.kind, "frontmend-coding-agent-brief");
+  assert.equal(Array.isArray(results.data.codingAgentBrief.recommendations), true);
+  assert.equal(results.data.recommendedNextAction, null);
   assert.equal(results.data.resultProjection.mode, "persisted-mission");
   const activities = service.getAgentActivities();
   assert.deepEqual(
@@ -595,7 +598,7 @@ test("agent tools use the same audit service as the human interface", async () =
   assert.equal(activities.every((activity) => ["read", "mutation"].includes(activity.operationKind)), true);
   assert.equal(activities.every((activity) => activity.outputCharacters > 0), true);
   assert.equal(activities.every((activity) => Number.isInteger(activity.activeToolCountAfter)), true);
-  assert.equal(activities[0].nextTool, "open_browser_review");
+  assert.equal(activities[0].nextTool, null);
 });
 
 test("assessment receipt tool returns one portable completion artifact without broadening authority", async () => {
@@ -896,20 +899,16 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.equal(result.data.priorities[0].occurrenceCount, 2);
   assert.deepEqual(result.data.priorities[0].affectedStrategies, ["mobile", "desktop"]);
   assert.equal(result.data.priorities[0].diagnosticMissionRequired, true);
-  assert.deepEqual(result.data.recommendedNextAction, {
-    tool: "open_browser_review",
-    input: { auditId, expectedMissionRevision: 1 },
-    reason: "The agent-started accessibility or SEO assessment requires structured rendered-browser evidence beyond provider measurement.",
-  });
+  assert.equal(result.data.recommendedNextAction, null);
   assert.deepEqual(result.data.focusSummary.categoryScores, { accessibility: 94, seo: 94 });
-  assert.equal(result.data.missionState.auditComplete, true);
-  assert.equal(result.data.missionState.assessmentComplete, false);
-  assert.deepEqual(result.data.missionState.nextAction.input, {});
+  assert.equal(result.data.codingAgentBrief.recommendations.length, 2);
+  assert.deepEqual(result.data.codingAgentBrief.recommendations[0].affected.viewports, ["mobile", "desktop"]);
+  assert.equal(result.data.codingAgentBrief.evidenceBoundary.repositoryInspected, false);
   assert.equal(result.data.resultProjection.mode, "persisted-mission");
   assert.equal(result.data.resultProjection.detailLevel, "summary");
   assert.equal(result.data.measurementStatus, "complete");
-  assert.equal(result.data.assessmentStatus, "incomplete");
-  assert.equal(result.data.checkpointStatus, "action-available");
+  assert.equal(result.data.assessmentStatus, "complete");
+  assert.equal(result.data.checkpointStatus, "complete");
   assert.equal("findings" in result.data, false);
 
   const fullResult = await tool.execute({ detailLevel: "full" });
@@ -918,7 +917,7 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
   assert.ok(JSON.stringify(result.data).length < JSON.stringify(fullResult.data).length);
 
   browserReview = completedBrowserReview({ auditId, mission });
-  const browserContributed = await tool.execute({});
+  const browserContributed = await tool.execute({ detailLevel: "full" });
   assert.equal(browserContributed.data.browserReview.state.status, "complete");
   assert.equal(browserContributed.data.recommendedNextAction, null);
   assert.equal(browserContributed.data.missionState.assessmentComplete, true);
@@ -937,7 +936,7 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
     },
     state: { state: "blocked" },
   }];
-  const blocked = await tool.execute({});
+  const blocked = await tool.execute({ detailLevel: "full" });
   assert.equal(blocked.data.priorities[0].evidenceState, "diagnosis-blocked");
   assert.equal(blocked.data.priorities[0].diagnosticBlocker.reason, "not-reproduced");
   assert.equal(blocked.data.missionState.status, "complete");
@@ -950,7 +949,7 @@ test("natural accessibility and SEO requests return three deduplicated prioritie
     findingId: "mobile-color-contrast",
     state: { state: "ready-for-repair" },
   }];
-  const contributed = await tool.execute({});
+  const contributed = await tool.execute({ detailLevel: "full" });
   const contributedContrast = contributed.data.priorities.find(
     (priority) => priority.source.auditId === "color-contrast",
   );
@@ -1051,7 +1050,7 @@ test("result, receipt, and repository-brief tools derive from one coherent resto
     mission: { intent: "assess", focusAreas: ["accessibility"], maxPriorities: 3 },
   });
 
-  const result = await findTool(createFrontmendTools(service), "get_site_audit_results").execute({});
+  const result = await findTool(createFrontmendTools(service), "get_site_audit_results").execute({ detailLevel: "full" });
 
   assert.equal(result.ok, true);
   assert.equal(result.data.missionCheckpoint.missionRevision, 3);
@@ -2422,6 +2421,59 @@ test("registration gracefully preserves human mode when WebMCP is unavailable", 
   assert.equal(snapshots.at(-1).status, "unsupported");
   assert.deepEqual(snapshots.at(-1).toolNames, []);
   dispose();
+});
+
+test("public registration ends at the coding-agent handoff instead of exposing repair workflow tools", () => {
+  let audit = null;
+  let explorations = [];
+  const service = {
+    getActiveAudit: () => audit,
+    getBrowserReview: () => null,
+    getSiteExplorations: () => explorations,
+  };
+
+  assert.deepEqual(auditHandoffFrontmendToolNames(service), [
+    "start_site_audit",
+    "get_mission_summary",
+  ]);
+
+  audit = { id: "audit-1", status: "running", report: null };
+  assert.deepEqual(auditHandoffFrontmendToolNames(service), [
+    "check_site_audit_progress",
+    "cancel_site_audit",
+    "get_mission_summary",
+  ]);
+
+  audit = {
+    id: "audit-1",
+    status: "complete",
+    report: {
+      findings: [{ id: "contrast" }],
+      documentProfile: { routes: ["/about"] },
+    },
+  };
+  assert.deepEqual(auditHandoffFrontmendToolNames(service), [
+    "get_mission_summary",
+    "get_site_audit_results",
+    "get_evidence_chain",
+    "start_related_page_audit",
+    "start_site_exploration",
+  ]);
+
+  explorations = [{ id: "exploration-1" }];
+  const publicTools = auditHandoffFrontmendToolNames(service);
+  assert.deepEqual(publicTools, [
+    "get_mission_summary",
+    "get_site_audit_results",
+    "get_evidence_chain",
+    "start_related_page_audit",
+    "start_site_exploration",
+    "get_site_exploration",
+  ]);
+  assert.equal(
+    publicTools.some((name) => /repair|candidate|diagnos|implementation|verification/.test(name)),
+    false,
+  );
 });
 
 test("contextual tool availability follows the visible audit and human review state", () => {

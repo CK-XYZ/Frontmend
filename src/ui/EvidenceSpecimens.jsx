@@ -1,12 +1,12 @@
-import { Check, LockSimple, Warning } from "@phosphor-icons/react";
+import { ArrowRight, Check, Warning } from "@phosphor-icons/react";
 
 /**
  * Illustrative evidence specimens for the marketing surfaces.
  *
  * These render an example frontend, not a measured page. Every specimen is
  * decorative: the meaningful stage copy lives in the surrounding list, and the
- * "Request changes" / "Approve repair" affordances are inert spans so the
- * landing page never implies that Frontmend can approve or deploy anything.
+ * They show the evidence-to-agent handoff without implying that Frontmend has
+ * inspected a repository, changed source, approved work, or deployed a site.
  */
 
 const SPECIMEN_TITLE = "We design thoughtful digital experiences";
@@ -14,12 +14,11 @@ const SPECIMEN_COPY = "We help teams turn complex problems into clear, human-cen
 const SPECIMEN_COPY_ALT = "Craft simple & ethical software experiences.";
 
 const DIAGNOSIS_LINES = [
-  { number: "40", code: "" },
-  { number: "41", code: ".hero__title {" },
-  { number: "42", code: "  color: #6b7280;", active: true },
-  { number: "43", code: "  font-size: 28px;" },
-  { number: "44", code: "  line-height: 1.2;" },
-  { number: "", code: "}" },
+  { number: "01", code: "rule  color-contrast" },
+  { number: "02", code: "target  .hero__title", active: true },
+  { number: "03", code: "route  /" },
+  { number: "04", code: "viewport  mobile + desktop" },
+  { number: "05", code: "ratio  2.75:1" },
 ];
 
 function SpecimenChrome() {
@@ -85,22 +84,22 @@ export function ReviewSpecimen() {
   return (
     <span className="specimen-review">
       <span className="specimen-review-diff">
-        <span className="specimen-review-title">Proposed repair</span>
-        <span className="specimen-code-text">.hero__title {"{"}</span>
-        <span className="specimen-code-text is-removed">- color: #6b7280;</span>
-        <span className="specimen-code-text is-added">+ color: #111827;</span>
-        <span className="specimen-code-text">{"}"}</span>
+        <span className="specimen-review-title">Coding-agent brief</span>
+        <span className="specimen-code-text">01 · Fix text contrast</span>
+        <span className="specimen-code-text">rule · color-contrast</span>
+        <span className="specimen-code-text is-added">target · .hero__title</span>
+        <span className="specimen-code-text">route · / · mobile</span>
       </span>
       <span className="specimen-review-rationale">
-        <span className="specimen-review-title">Rationale:</span>
-        <span>Meets WCAG AA for body text on this background.</span>
+        <span className="specimen-review-title">Done when</span>
+        <span>Foreground and background reach at least 4.5:1.</span>
         <span className="specimen-review-actions">
-          <span className="specimen-pill">Request changes</span>
-          <span className="specimen-pill is-primary">Approve repair</span>
+          <span className="specimen-pill">Evidence attached</span>
+          <span className="specimen-pill is-primary">Ready for Codex</span>
         </span>
       </span>
       <span className="specimen-review-seal">
-        <LockSimple size={12} weight="fill" />
+        <ArrowRight size={12} weight="bold" />
       </span>
     </span>
   );

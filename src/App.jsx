@@ -36,13 +36,10 @@ import { LazyWorkspace } from "./ui/LazyWorkspace.jsx";
 import { useDialogFocus } from "./ui/use-dialog-focus.js";
 import { useRevealOnScroll } from "./ui/use-reveal-on-scroll.js";
 import {
-  contextualFrontmendToolNames,
+  auditHandoffFrontmendToolNames,
   registerFrontmendTools,
 } from "./webmcp.js";
-import {
-  FRONTMEND_TOOL_COUNT,
-  FRONTMEND_TOOL_LIBRARY_VERSION,
-} from "./protocol-contract.js";
+import { FRONTMEND_TOOL_LIBRARY_VERSION } from "./protocol-contract.js";
 
 const HERO_SPECIMENS = [
   {
@@ -54,26 +51,26 @@ const HERO_SPECIMENS = [
   {
     id: "investigation",
     index: "02",
-    label: "Browser investigation",
-    facts: [{ text: ".hero__title", mono: true }, { text: "390 × 844", mono: true }],
+    label: "Prioritised",
+    facts: [{ text: "One ranked recommendation" }, { text: "Mobile + desktop" }],
   },
   {
     id: "diagnosis",
     index: "03",
-    label: "Repository diagnosis",
-    facts: [{ text: "src/styles.css:42", mono: true }, { text: "No source upload" }],
+    label: "Explained",
+    facts: [{ text: "Rule + target + evidence" }, { text: "No source upload" }],
   },
   {
     id: "review",
     index: "04",
-    label: "Human review",
-    facts: [{ text: "Awaiting explicit approval" }],
+    label: "Agent brief",
+    facts: [{ text: "Ready for the codebase" }],
   },
   {
     id: "verification",
     index: "05",
-    label: "Fresh verification",
-    facts: [{ text: "Root + retained route" }, { text: "Regression guardrails passed" }],
+    label: "Re-audit",
+    facts: [{ text: "Measure the deployed result" }, { text: "Same public URL" }],
   },
 ];
 const EVIDENCE_LOOP_STAGES = [
@@ -83,7 +80,7 @@ const EVIDENCE_LOOP_STAGES = [
     label: "Measured",
     Icon: Gauge,
     summary:
-      "A public measurement opens the mission. The rule that failed is named, with the viewports it was observed at and the provider that observed it.",
+      "A public measurement opens the audit. The rule that failed is named, with the viewports it was observed at and the provider that observed it.",
     record: [
       { term: "Finding", value: "Insufficient text contrast" },
       { term: "Observed at", value: "Mobile + desktop" },
@@ -93,53 +90,53 @@ const EVIDENCE_LOOP_STAGES = [
   {
     id: "investigation",
     index: "02",
-    label: "Browser investigation",
+    label: "Prioritised",
     Icon: Crosshair,
     summary:
-      "A rendered browser check finds what static analysis cannot: the exact element, at the exact viewport, as a visitor actually sees it.",
+      "Frontmend turns raw audit output into a short ranked list, keeping the affected route, viewport, rule, and target together.",
     record: [
       { term: "Target", value: ".hero__title" },
       { term: "Viewport", value: "390 × 844" },
-      { term: "Method", value: "Rendered observation" },
+      { term: "Priority", value: "01 of 03" },
     ],
   },
   {
     id: "diagnosis",
     index: "03",
-    label: "Repository diagnosis",
+    label: "Explained",
     Icon: FileCode,
     summary:
-      "The finding is mapped to the declaration that causes it. Ownership stays bounded to what the public page and a connected agent can account for.",
+      "Each recommendation carries the measured symptom, source rule, suggested correction, and concrete acceptance criteria without pretending Frontmend inspected the repository.",
     record: [
-      { term: "Location", value: "src/styles.css:42" },
-      { term: "Input", value: "No source upload" },
-      { term: "Scope", value: "Bounded ownership" },
+      { term: "Rule", value: "color-contrast" },
+      { term: "Evidence", value: "2.75:1 measured" },
+      { term: "Boundary", value: "No source access" },
     ],
   },
   {
     id: "review",
     index: "04",
-    label: "Human review",
+    label: "Agent brief",
     Icon: Signature,
     summary:
-      "The repair is a proposal with its rationale attached. It waits here until a person decides — an agent cannot move it forward.",
+      "WebMCP gives the coding agent a structured brief. The agent then inspects, edits, and tests the repository through its normal tools—without another Frontmend workflow.",
     record: [
-      { term: "State", value: "Awaiting explicit approval" },
-      { term: "Authority", value: "Agent cannot approve" },
-      { term: "Rationale", value: "Meets WCAG AA on this background" },
+      { term: "Includes", value: "Routes + selectors" },
+      { term: "Includes", value: "Acceptance criteria" },
+      { term: "Owner", value: "Coding agent" },
     ],
   },
   {
     id: "verification",
     index: "05",
-    label: "Fresh verification",
+    label: "Re-audit",
     Icon: SealCheck,
     summary:
-      "Only a fresh measurement closes the loop. The exact rule that failed is rerun, and the receipt links the audit IDs to the outcome.",
+      "After the site owner deploys, the same public URL can be audited again. The fresh result—not a checkbox—shows whether the measured issue remains.",
     record: [
       { term: "Rechecked", value: "Root + retained route" },
-      { term: "Outcome", value: "Exact rule resolved" },
-      { term: "Guardrails", value: "Regression guardrails passed" },
+      { term: "Outcome", value: "Fresh public evidence" },
+      { term: "Claim", value: "No inferred resolution" },
     ],
   },
 ];
@@ -147,40 +144,39 @@ const EVIDENCE_LOOP_MOVES = [
   {
     index: "01",
     title: "Measure the live URL",
-    lede: "Public evidence starts the mission.",
+    lede: "Public evidence starts the audit.",
     detail:
-      "Frontmend retains mobile, desktop, and document evidence with its provider and limits attached, so every later step can say where a claim came from.",
+      "Frontmend retains mobile, desktop, and document evidence with its provider and limits attached, so every recommendation says where it came from.",
     marks: ["Public pages only", "Provider and fallback stay visible", "No account for the first audit"],
   },
   {
     index: "02",
-    title: "Investigate what automation misses",
-    lede: "Rendered context and bounded diagnosis stay attached.",
+    title: "Turn signals into useful advice",
+    lede: "The report explains what matters and why.",
     detail:
-      "A browser agent takes one exact rendered check at a time through WebMCP, then maps a real issue to repository ownership. The same bounded task is available in Human mode.",
-    marks: ["One check at a time", "Rendered, not inferred", "No source upload"],
+      "Raw rules become a ranked, readable list with affected routes, viewports, selectors, evidence, recommendations, and acceptance criteria.",
+    marks: ["Evidence before advice", "Exact source rules", "No invented repository mapping"],
   },
   {
     index: "03",
-    title: "Review the fix, then prove it",
-    lede: "A human approves. Fresh measurement closes the loop.",
+    title: "Hand it to the coding agent",
+    lede: "Frontmend stops where the repository begins.",
     detail:
-      "The site owner controls approval and deployment. Frontmend reruns the exact rule that failed and exports the receipt linking audit IDs, rule outcome, and metric deltas.",
-    marks: ["Explicit approval", "Exact-rule recheck", "Exportable receipt"],
+      "WebMCP returns the structured brief; the coding agent uses its normal repository and terminal tools to implement and test the fix. Re-audit the public URL after deployment.",
+    marks: ["Normal coding workflow", "No extra workflow", "Fresh public re-audit"],
   },
 ];
 const AGENT_CAPABILITIES = [
   "Start an audit from a public URL",
-  "Take one bounded rendered-browser check at a time",
-  "Map a finding to repository ownership",
-  "Draft a repair and the rationale behind it",
-  "Request a fresh measurement after a deployment",
+  "Read ranked evidence and recommendations",
+  "Use exact rule IDs, routes, viewports, and selectors",
+  "Inspect, edit, and test the repository with its normal tools",
+  "Run a fresh public audit after deployment",
 ];
 const HUMAN_ONLY_AUTHORITY = [
-  "Decide what the repair should be",
-  "Approve a proposed repair",
-  "Deploy it to the live site",
-  "Attest that it actually shipped",
+  "Choose the site and audit focus",
+  "Decide which recommendations to act on",
+  "Authorise repository changes and deployment",
 ];
 /*
  * One illustrative receipt per audit focus area. Every rule id is a real
@@ -239,12 +235,12 @@ const LANDING_FAQ = [
   {
     question: "Does Frontmend change my website?",
     answer:
-      "No. It measures public pages and drafts a repair for you to review. A person approves, deploys, and attests the deployment — Frontmend never edits or ships the site it audited.",
+      "No. Frontmend audits a public page and produces a useful recommendation brief. Your coding agent handles repository inspection, edits, tests, commits, and deployment through its normal workflow.",
   },
   {
     question: "Do I need to upload my source code?",
     answer:
-      "No. Diagnosis is bounded to what the public page reveals plus the repository ownership a connected agent reports. There is no source upload step and no repository access.",
+      "No. Frontmend never receives repository source. It provides public-site evidence and search hints; a coding agent that already has repository access investigates the implementation locally.",
   },
   {
     question: "What does it actually measure?",
@@ -259,12 +255,12 @@ const LANDING_FAQ = [
   {
     question: "What is WebMCP doing here?",
     answer:
-      "A browser agent can drive the same audit through structured tools that call the same validated services the human interface uses. WebMCP is a control surface, not the engine — and the complete workflow stays usable when document.modelContext is unavailable.",
+      "It lets a browser agent start the same audit, poll its progress, and receive structured recommendations without scraping the interface. The audit service does the measurement; WebMCP is the clean bridge into the coding agent's existing workflow.",
   },
   {
     question: "How do I know the fix held?",
     answer:
-      "Verification reruns the exact rule that failed against a fresh measurement, across the root and any retained route. Frontmend only reports a finding as resolved when a comparable fresh audit no longer observes that rule.",
+      "Deploy through your normal workflow, then run Frontmend again against the public URL. A fresh measurement can show that the rule no longer fails; a recommendation or local code change alone cannot.",
   },
 ];
 /*
@@ -282,23 +278,23 @@ const HOW_IT_WORKS_STEPS = [
   },
   {
     label: "02",
-    title: "Inspect what automation misses",
+    title: "Explain the useful work",
     Icon: Crosshair,
-    detail: "WebMCP gives the agent one exact rendered-browser check at a time, then maps real issues to repository ownership.",
-    marks: ["One bounded check at a time", "Rendered, not inferred", "No source upload"],
+    detail: "Frontmend ranks the findings and keeps each rule, route, viewport, target, recommendation, and acceptance criterion together.",
+    marks: ["Readable shortlist", "Exact evidence", "No source upload"],
   },
   {
     label: "03",
-    title: "Review the fix, then prove it",
+    title: "Continue in the codebase",
     Icon: SealCheck,
-    detail: "The site owner controls approval and deployment; Frontmend reruns the exact rule and exports the fresh receipt.",
-    marks: ["Explicit human approval", "Exact-rule recheck", "Exportable receipt"],
+    detail: "WebMCP hands the brief to the coding agent, which implements and tests with its normal tools. Re-audit the public URL after deployment.",
+    marks: ["Normal agent workflow", "Repository stays local", "Fresh re-audit"],
   },
 ];
 const HOW_IT_WORKS_BOUNDS = [
   { term: "Reach", value: "Public pages" },
   { term: "Source access", value: "None" },
-  { term: "Approval", value: "Person-owned" },
+  { term: "Repository work", value: "Agent-owned" },
 ];
 const AUDIT_FOCUS_COPY = Object.freeze({
   accessibility: { label: "Accessibility", detail: "Semantics, names, contrast" },
@@ -312,7 +308,6 @@ const HUMAN_AUDIT_FOCUS_OPTIONS = AUDIT_FOCUS_AREAS.map((id) => ({
   ...AUDIT_FOCUS_COPY[id],
 }));
 const DEFAULT_HUMAN_AUDIT_FOCUS_AREAS = Object.freeze([...AUDIT_FOCUS_AREAS]);
-const WEBMCP_TOOL_COUNT = FRONTMEND_TOOL_COUNT;
 const loadReportWorkspace = () => import("./workspaces/ReportWorkspace.jsx");
 const loadWebMcpCapabilitySheet = () => import("./workspaces/WebMcpCapabilitySheet.jsx");
 
@@ -368,7 +363,6 @@ function WebMcpStatus({ status, expanded, restoring, restoreFailed, onClick, but
   const ready = status.status === "ready";
   const failed = status.status === "error";
   const activeCount = status.activeTools ?? status.toolNames.length;
-  const totalCount = status.totalTools ?? WEBMCP_TOOL_COUNT;
   const label = restoring
     ? restoreFailed
       ? "WebMCP · paused"
@@ -396,7 +390,7 @@ function WebMcpStatus({ status, expanded, restoring, restoreFailed, onClick, but
       ? "WebMCP tools stay paused until an audit workspace is restored or a new audit starts"
       : "WebMCP tools paused while Frontmend restores authoritative audit state"
     : ready
-      ? `WebMCP ready with ${status.toolNames.length} contextual tools active from a library of ${totalCount}`
+      ? `WebMCP ready with ${status.toolNames.length} contextual tools available for this audit state`
       : failed
         ? `WebMCP registration incomplete: ${status.toolNames.length} of ${activeCount} contextual tools available`
         : status.status === "registering"
@@ -727,11 +721,11 @@ function HowItWorks({ onClose }) {
         <header className="loop-dialog-head">
           <div>
             <p className="loop-dialog-kicker">The Frontmend loop</p>
-            <h2 id="how-title">Measure. Inspect. Prove it held.</h2>
+            <h2 id="how-title">Measure. Explain. Hand it over.</h2>
           </div>
           <p id="how-description">
-            Three handoffs, each keeping its evidence separate — so every step states what is
-            known, who established it, and what still needs proof.
+            Three handoffs turn public evidence into a useful human result and structured context
+            for the coding agent that already knows your repository.
           </p>
         </header>
 
@@ -835,8 +829,8 @@ function HowItWorks({ onClose }) {
         <footer className="loop-dialog-foot">
           <p className="loop-dialog-authority">
             <ShieldCheck size={20} weight="duotone" aria-hidden="true" />
-            Agents measure, investigate, and prepare reviewable work. A person keeps repair intent,
-            approval, deployment, and the attestation that it shipped.
+            Frontmend measures and explains the public site. Your coding agent takes the evidence
+            into the repository; deployment stays in your normal workflow.
           </p>
           <a className="loop-dialog-link" href="/how-it-works">
             Full walkthrough
@@ -869,11 +863,11 @@ function HowItWorksPage() {
         <div className="evidence-loop-shell">
           <p className="section-kicker">The Frontmend loop</p>
           <h1 id="how-page-title" className="guide-hero-title">
-            Measure. Inspect.<span className="editorial-break"> </span>Prove it held.
+            Measure. Explain.<span className="editorial-break"> </span>Hand it over.
           </h1>
           <p className="guide-hero-lede">
-            Frontmend keeps provider, browser, repository, and verification evidence separate, so
-            every next step says what is known, who established it, and what still needs proof.
+            Frontmend turns public-site evidence into a readable recommendation list and a
+            structured brief your coding agent can use in the repository it already knows.
           </p>
           <dl className="guide-bounds">
             {HOW_IT_WORKS_BOUNDS.map((bound) => (
@@ -929,22 +923,22 @@ function HowItWorksPage() {
         <div className="evidence-loop-shell">
           <div className="ledger-head">
             <div>
-              <p className="section-kicker">The authority boundary</p>
+              <p className="section-kicker">The clean handoff</p>
               <h2 id="guide-ledger-title" className="section-title">
-                An agent can do the work.<span className="editorial-break"> </span>
-                Only a person can approve it.
+                Frontmend finds the work.<span className="editorial-break"> </span>
+                Your coding agent carries it out.
               </h2>
             </div>
             <p className="ledger-note">
-              Frontmend exposes the same validated services to a browser agent and to you. The line
-              between preparing work and authorising it never moves.
+              WebMCP gives the agent a structured route through the audit. Repository work then
+              continues with the tools and permissions already available in your coding environment.
             </p>
           </div>
           <div className="ledger-columns">
             <div className="ledger-column" data-side="agent">
               <h3>
                 <Robot size={17} weight="bold" aria-hidden="true" />
-                An agent may
+                Coding agent receives
               </h3>
               <ul>
                 {AGENT_CAPABILITIES.map((item) => (
@@ -955,7 +949,7 @@ function HowItWorksPage() {
             <div className="ledger-column" data-side="human">
               <h3>
                 <ShieldCheck size={17} weight="bold" aria-hidden="true" />
-                Only a person may
+                You retain
               </h3>
               <ul>
                 {HUMAN_ONLY_AUTHORITY.map((item) => (
@@ -965,7 +959,7 @@ function HowItWorksPage() {
             </div>
           </div>
           <p className="ledger-fallback">
-            The complete workflow stays usable when <code>document.modelContext</code> is
+            The same audit and recommendation list stay usable when <code>document.modelContext</code> is
             unavailable.
           </p>
         </div>
@@ -980,8 +974,8 @@ function HowItWorksPage() {
                 Start with one public URL.
               </h2>
               <p>
-                No account for the first audit. Frontmend measures the public page, prepares a
-                reviewable repair, and reruns the exact rule once you have deployed it.
+                No account for the first audit. Frontmend measures the public page and prepares a
+                useful brief for you or your coding agent. Re-audit after you deploy.
               </p>
               <a className="guide-closing-cta" href="/">
                 Start a site audit
@@ -993,7 +987,7 @@ function HowItWorksPage() {
                 <VerifiedSpecimen />
               </div>
               <figcaption className="sr-only">
-                An illustration of the same example page after a verified repair. It is not a
+                An illustration of the same example page after a fresh re-audit. It is not a
                 measurement of a real website.
               </figcaption>
             </figure>
@@ -1066,8 +1060,8 @@ function EvidenceLoop() {
             One issue. Five accountable handoffs.
           </h2>
           <p className="evidence-loop-lede">
-            The finding never loses its source, owner, approval state, or proof. Step through the
-            same contrast issue as it changes hands.
+            The finding never loses its source, target, recommendation, or acceptance criteria.
+            Step through the same contrast issue from audit to coding brief.
           </p>
           <a className="evidence-loop-link" href="/how-it-works">
             Follow one contrast issue
@@ -1156,7 +1150,7 @@ function EvidenceLoop() {
           </div>
 
           <p className="evidence-loop-boundary">
-            Agents cannot approve repairs or attest deployment.
+            Frontmend supplies evidence. Your coding workflow owns the implementation.
           </p>
         </div>
       </div>
@@ -1171,7 +1165,7 @@ function EvidenceMoves() {
       <div className="evidence-loop-shell">
         <p className="section-kicker">Three moves</p>
         <h2 id="moves-title" className="section-title">
-          Measure it. Investigate it. Prove it held.
+          Measure it. Explain it. Hand it over.
         </h2>
         <ol className="moves-list">
           {EVIDENCE_LOOP_MOVES.map((move) => (
@@ -1202,22 +1196,22 @@ function AuthorityLedger() {
       <div className="evidence-loop-shell">
         <div className="ledger-head">
           <div>
-            <p className="section-kicker">The authority boundary</p>
+            <p className="section-kicker">The clean handoff</p>
             <h2 id="ledger-title" className="section-title">
-              An agent can do the work.<span className="editorial-break"> </span>
-              Only a person can approve it.
+              Frontmend finds the work.<span className="editorial-break"> </span>
+              Your coding agent carries it out.
             </h2>
           </div>
           <p className="ledger-note">
-            Frontmend exposes the same validated services to a browser agent and to you. The line
-            between preparing work and authorising it never moves.
+            WebMCP exposes the same audit service to a browser agent and to you, then hands the
+            result back to the agent's normal repository workflow.
           </p>
         </div>
         <div className="ledger-columns">
           <div className="ledger-column" data-side="agent">
             <h3>
               <Robot size={17} weight="bold" aria-hidden="true" />
-              An agent may
+              Coding agent receives
             </h3>
             <ul>
               {AGENT_CAPABILITIES.map((item) => (
@@ -1228,7 +1222,7 @@ function AuthorityLedger() {
           <div className="ledger-column" data-side="human">
             <h3>
               <ShieldCheck size={17} weight="bold" aria-hidden="true" />
-              Only a person may
+              You retain
             </h3>
             <ul>
               {HUMAN_ONLY_AUTHORITY.map((item) => (
@@ -1238,7 +1232,7 @@ function AuthorityLedger() {
           </div>
         </div>
         <p className="ledger-fallback">
-          The complete workflow stays usable when <code>document.modelContext</code> is unavailable.
+          The same audit and recommendation list stay usable when <code>document.modelContext</code> is unavailable.
         </p>
       </div>
     </section>
@@ -1389,7 +1383,7 @@ function ClosingProofs({ held }) {
       </div>
       <p className="sr-only">
         Illustrative verification receipts, one for each area Frontmend audits: accessibility, SEO,
-        performance, security, and reliability. They are examples of the record a closed repair loop
+        performance, security, and reliability. They are examples of the evidence a fresh re-audit
         produces, not measurements of a real website.
       </p>
     </>
@@ -1513,12 +1507,12 @@ function Landing({
         <div className="hero-inner">
           <div className="hero-copy">
             <h1 id="landing-title" className="hero-title">
-              From audit finding<span className="editorial-break"> </span>to verified fix.
+              Find the frontend work<span className="editorial-break"> </span>worth doing.
             </h1>
             <p className="hero-lede">
-              Measure the public site. Investigate what automation misses.
+              Audit the public site. Get a clear, evidence-backed shortlist.
               <span className="editorial-break"> </span>
-              Review the repair. Prove the deployed outcome.
+              Hand it straight to your coding agent.
             </p>
 
             <form className="site-search" onSubmit={onSubmit} noValidate>
@@ -1554,11 +1548,11 @@ function Landing({
                 (isSubmitting ? "Starting the live audit…" : "No account needed for the first audit.")}
             </p>
 
-            <p className="hero-trust">Agents automate the evidence loop. You choose what ships.</p>
+            <p className="hero-trust">Useful for people. Structured for coding agents.</p>
 
             <p className="hero-agent-prompt" aria-label="Example coding-agent request">
               <span>Ask your coding agent</span>
-              <code>Use Frontmend to audit my deployed site for accessibility and SEO, then investigate the top issue in this repository.</code>
+              <code>Use Frontmend to audit my deployed site, then fix the strongest recommendations in this repository.</code>
             </p>
 
             <details className="audit-composer">
@@ -1632,7 +1626,7 @@ function Landing({
 
             <div className="hero-actions">
               <a className="hero-loop-link" href="#evidence-loop">
-                See how the evidence loop works
+                See how the audit handoff works
                 <ArrowRight size={17} weight="bold" aria-hidden="true" />
               </a>
               <button
@@ -1993,7 +1987,7 @@ export function App() {
   const inputRef = useRef(null);
   const mainContentRef = useRef(null);
   const webMcpTriggerRef = useRef(null);
-  const webMcpToolNames = restorationAuditId ? [] : contextualFrontmendToolNames(auditService);
+  const webMcpToolNames = restorationAuditId ? [] : auditHandoffFrontmendToolNames(auditService);
   const webMcpContextKey = webMcpToolNames.join("|");
 
 
@@ -2134,7 +2128,7 @@ export function App() {
 
   useEffect(() => {
     document.title = mode === "landing"
-      ? "Frontmend — Find what broke. Prove the fix."
+      ? "Frontmend — Audit the site. Fix the right things."
       : mode === "guide"
         ? "How Frontmend works — Frontmend"
         : mode === "restore"
@@ -2426,7 +2420,7 @@ export function App() {
         <LandingFooter onHome={reset} onLanding={mode === "landing"} />
       ) : mode === "restore" ? null : (
         <footer className="site-footer">
-          <span>Find what broke. Prove the fix.</span>
+          <span>Audit the site. Fix the right things.</span>
           <span>Frontmend · Live audit engine</span>
         </footer>
       )}

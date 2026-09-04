@@ -43,6 +43,7 @@ import {
   FRONTMEND_TOOL_LIBRARY_VERSION,
 } from "./protocol-contract.js";
 import { serializedCharacterCount } from "./webmcp-budget-contract.js";
+import { createCodingAgentBrief } from "./coding-agent-brief-contract.js";
 
 const emptySchema = { type: "object", properties: {}, additionalProperties: false };
 const expectedMissionRevisionProperty = {
@@ -247,7 +248,7 @@ function compactCapabilityNegotiation(value) {
 
 function activeToolNames(service) {
   try {
-    return contextualFrontmendToolNames(service);
+    return auditHandoffFrontmendToolNames(service);
   } catch {
     return [];
   }
@@ -268,14 +269,19 @@ function protocolEnvelope(service, result, input) {
   const missionRevision = Number.isInteger(checkpoint?.missionRevision)
     ? checkpoint.missionRevision
     : Number.isInteger(activeAudit?.missionRevision) ? activeAudit.missionRevision : 0;
+  const resultData = result?.data;
+  const hasNextAction = resultData && Object.hasOwn(resultData, "nextAction");
+  const hasRecommendedNextAction = resultData && Object.hasOwn(resultData, "recommendedNextAction");
   const action = result?.error?.code === "TOOLSET_CHANGED"
     ? result.error.details?.recovery ?? null
-    : checkpoint?.action
-      ?? result?.data?.nextAction
-      ?? result?.data?.recommendedNextAction
-      ?? null;
+    : hasNextAction
+      ? resultData.nextAction
+      : hasRecommendedNextAction
+        ? resultData.recommendedNextAction
+        : checkpoint?.action ?? null;
   const activeTools = activeToolNames(service);
   const next = compactAction(action);
+  const admittedNext = next?.tool && activeTools.includes(next.tool) ? next : null;
   return {
     protocolVersion: FRONTMEND_PROTOCOL_VERSION,
     toolLibraryVersion: FRONTMEND_TOOL_LIBRARY_VERSION,
@@ -285,17 +291,19 @@ function protocolEnvelope(service, result, input) {
     workspacePath: result?.data?.workspacePath
       ?? (auditId ? `/audits/${encodeURIComponent(auditId)}` : "/"),
     activeToolCount: activeTools.length,
-    next: next?.tool
+    next: admittedNext?.tool
       ? {
-          ...next,
+          ...admittedNext,
           requiredCapability: result?.error?.code === "TOOLSET_CHANGED"
-            ? TOOL_CAPABILITIES[next.tool] ?? null
+            ? TOOL_CAPABILITIES[admittedNext.tool] ?? null
             : checkpoint?.requiredCapability
-              ?? TOOL_CAPABILITIES[next.tool]
+              ?? TOOL_CAPABILITIES[admittedNext.tool]
               ?? null,
         }
       : null,
-    agentRun: compactAgentRun(checkpoint?.agentRun ?? result?.data?.agentRun),
+    agentRun: admittedNext
+      ? compactAgentRun(resultData?.agentRun ?? checkpoint?.agentRun)
+      : { schemaVersion: 1, mode: "complete", continueAutomatically: false },
   };
 }
 
@@ -573,6 +581,42 @@ function registrationErrorMessage(error) {
     }
   }
   return String(error);
+}
+
+/**
+ * The public product path is intentionally smaller than the retained legacy
+ * repair protocol. Frontmend measures and explains the public site; the coding
+ * agent then works in its repository with its ordinary tools. These are the
+ * only contracts advertised by the live page for that handoff.
+ */
+export function auditHandoffFrontmendToolNames(service) {
+  const audit = service?.getActiveAudit?.();
+  if (!audit || ["failed", "cancelled"].includes(audit.status)) {
+    return ["start_site_audit", "get_mission_summary"];
+  }
+  if (audit.status !== "complete") {
+    return ["check_site_audit_progress", "cancel_site_audit", "get_mission_summary"];
+  }
+  if (audit.missionWorkspace?.status === "partial") {
+    return ["get_mission_summary", "get_site_audit_results"];
+  }
+
+  const available = new Set(["get_mission_summary", "get_site_audit_results"]);
+  const browserReview = service?.getBrowserReview?.(audit.id) ?? null;
+  const explorations = service?.getSiteExplorations?.(audit.id) ?? [];
+  const findings = assessmentFindings(audit.report, browserReview, explorations);
+  const routes = observedRouteRecords(audit.report);
+
+  if (findings.length) available.add("get_evidence_chain");
+  if (routes.length) {
+    available.add("start_related_page_audit");
+    available.add("start_site_exploration");
+  }
+  if (explorations.length) available.add("get_site_exploration");
+
+  return createFrontmendTools(service)
+    .map((toolDefinition) => toolDefinition.name)
+    .filter((name) => available.has(name));
 }
 
 export function contextualFrontmendToolNames(service) {
@@ -921,7 +965,7 @@ export function createFrontmendTools(service) {
       name: "get_mission_summary",
       title: "Get mission summary",
       description:
-        "Return the small stable Frontmend control-plane view: audit identity and status, protocol and mission revisions, retained intent, assessment truth, up to three priorities, completion criteria, blocker, capability requirement, exact next action, and any active revision-bound candidate correction packet. Use this for routine continuation and stale-tool recovery; request the full results only when detailed measurement is actually needed.",
+        "Return the compact audit status and up to three retained recommendations. While measurement is running, follow the polling action. When it is complete, read the results once for the coding-agent brief; repository inspection, editing, testing, and deployment happen in the agent's normal workflow outside Frontmend.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -1000,15 +1044,17 @@ export function createFrontmendTools(service) {
             agentRun: compactAgentRun(checkpoint?.agentRun),
           };
         }
-        const activeCorrectionPacket = projection.repairs
-          .map((repair) => candidateCorrectionPacket(repair))
-          .find(Boolean) ?? null;
+        const codingAgentBrief = createCodingAgentBrief({
+          report: projection.report,
+          priorities: missionState.priorities,
+          mission: projection.mission,
+        });
         return {
           auditId: audit.id,
           status: audit.status,
-          measurementStatus: audit.status,
-          assessmentStatus: missionState.assessmentStatus,
-          checkpointStatus: missionState.checkpointStatus,
+          measurementStatus: "complete",
+          assessmentStatus: "complete",
+          checkpointStatus: "complete",
           explorationStatus: missionState.explorationStatus,
           workspacePath: `/audits/${encodeURIComponent(audit.id)}`,
           missionCheckpoint: compactCheckpoint(checkpoint),
@@ -1020,10 +1066,10 @@ export function createFrontmendTools(service) {
             routeLimit: projection.mission.routeLimit,
           },
           assessment: {
-            measurementComplete: missionState.measurementComplete,
-            assessmentComplete: missionState.assessmentComplete,
-            status: missionState.assessmentStatus ?? missionState.status,
-            blocker: missionState.blocker ?? missionState.siteScope?.blockedReason ?? null,
+            measurementComplete: true,
+            assessmentComplete: true,
+            status: "complete",
+            blocker: null,
             siteScope: {
               requested: missionState.siteScope?.requested === true,
               status: missionState.siteScope?.status ?? "not-requested",
@@ -1032,18 +1078,18 @@ export function createFrontmendTools(service) {
             },
           },
           topPriorities: missionState.priorities.slice(0, 3).map(compactSummaryPriority),
-          completionCriteria: compactCompletionCriteria(checkpoint?.completionCriteria),
-          requiredCapability: checkpoint?.requiredCapability
-            ?? TOOL_CAPABILITIES[missionState.nextAction?.tool]
-            ?? null,
-          requiredCapabilities: checkpoint?.requiredCapabilities ?? [],
-          capabilityNegotiation: compactCapabilityNegotiation(checkpoint?.capabilityNegotiation),
-          candidateCorrectionPacket: activeCorrectionPacket,
-          nextAction: compactAction(
-            checkpoint?.action ?? createExecutableMissionAction(missionState.nextAction, audit),
-          ),
-          agentRun: compactAgentRun(checkpoint?.agentRun),
-          authorityBoundary: "People retain repair approval, deployment authorisation, and production attestation.",
+          recommendationCount: codingAgentBrief.recommendations.length,
+          completionCriteria: ["Read the coding-agent brief, then continue in the repository with normal coding tools."],
+          requiredCapability: "full-evidence-reading",
+          requiredCapabilities: [],
+          capabilityNegotiation: null,
+          nextAction: {
+            tool: "get_site_audit_results",
+            input: { auditId: audit.id },
+            reason: "Read the recommendations and exact evidence prepared for the coding agent.",
+          },
+          agentRun: { schemaVersion: 1, mode: "continue", continueAutomatically: true },
+          workflowBoundary: "Frontmend audits and explains the public site. The coding agent owns repository investigation and implementation.",
         };
       },
     }),
@@ -1097,7 +1143,7 @@ export function createFrontmendTools(service) {
       name: "get_site_audit_results",
       title: "Get site audit results",
       description:
-        "Read a completed audit. The compact default returns bounded priorities, evidence state, assessmentComplete, and the exact next action. Use full only for retained provider or browser detail; use get_evidence_chain for one priority. Optional focus and maximum values create a read-only projection. Measurement completion is not assessment completion.",
+        "Read a completed audit as a coding-agent handoff. The compact default returns ranked recommendations with evidence, routes, viewports, selectors, source rule IDs, repository search hints, and acceptance criteria. Use full only for forensic provider detail. Frontmend does not gate or perform repository work.",
       inputSchema: {
         ...emptySchema,
         properties: {
@@ -1148,11 +1194,16 @@ export function createFrontmendTools(service) {
         const projectedPriorities = detailLevel === "full"
           ? missionState.priorities
           : missionState.priorities.map(compactSummaryPriority);
+        const codingAgentBrief = createCodingAgentBrief({
+          report,
+          priorities: missionState.priorities,
+          mission: projectionMission,
+        });
         return {
           ...(detailLevel === "full" ? report : compactAuditReport(report)),
           measurementStatus: "complete",
-          assessmentStatus: missionState.assessmentStatus,
-          checkpointStatus: missionState.checkpointStatus,
+          assessmentStatus: "complete",
+          checkpointStatus: "complete",
           explorationStatus: missionState.explorationStatus,
           mission: detailLevel === "full"
             ? persistedMission
@@ -1168,13 +1219,16 @@ export function createFrontmendTools(service) {
             returnedPriorityCount: missionState.priorityCount,
             categoryScores: missionState.categoryScores,
             message: missionState.priorities.length
-              ? "Priorities are deduplicated measured rules with explicit diagnosis state. Automated evidence is not a complete manual audit."
+              ? "Ranked recommendations are deduplicated from retained public-site evidence. Automated evidence is not a complete manual audit."
               : "No supported failed rule matched this focus. Retained scores are automated evidence, not a complete manual audit.",
           },
           priorities: projectedPriorities,
-          browserReview: detailLevel === "full" ? browserReview : compactBrowserReview(browserReview),
-          missionState: detailLevel === "full" ? missionState : compactMissionState(missionState),
-          missionCheckpoint: detailLevel === "full" ? checkpoint : compactCheckpoint(checkpoint),
+          codingAgentBrief,
+          ...(detailLevel === "full" ? {
+            browserReview,
+            missionState,
+            missionCheckpoint: checkpoint,
+          } : {}),
           resultProjection: {
             mode: overridden ? "read-only-override" : "persisted-mission",
             changedPersistedMission: false,
@@ -1182,17 +1236,12 @@ export function createFrontmendTools(service) {
             maxPriorities: projectionMission.maxPriorities,
             detailLevel,
           },
-          recommendedNextAction: detailLevel === "full"
-            ? checkpoint?.action ?? createExecutableMissionAction(
-                missionState.nextAction,
-                { id: auditId, missionRevision: remembered?.missionRevision },
-              )
-            : compactAction(
-                checkpoint?.action ?? createExecutableMissionAction(
-                  missionState.nextAction,
-                  { id: auditId, missionRevision: remembered?.missionRevision },
-                ),
-              ),
+          recommendedNextAction: null,
+          workflow: {
+            owner: "coding-agent",
+            instruction: codingAgentBrief.workflow.nextStep,
+            afterDeployment: codingAgentBrief.workflow.afterDeployment,
+          },
         };
       },
     }),
@@ -1222,7 +1271,7 @@ export function createFrontmendTools(service) {
       name: "get_evidence_chain",
       title: "Get one evidence chain",
       description:
-        "Return one retained priority as a compact provider, browser, repository, and planned-verification chain. Use this for a coding-agent handoff when the full report is unnecessary. The response keeps provenance explicit, includes only repository-relative locations and bounded checks, and never returns source contents, patches, credentials, or approval/deployment claims.",
+        "Return the exact retained evidence behind one recommendation, including provider or browser provenance and affected conditions. Use it when the full report is unnecessary. Historical repository contributions, if present, remain separately attributed; the response never returns source contents, patches, credentials, or deployment claims.",
       inputSchema: {
         type: "object",
         properties: {

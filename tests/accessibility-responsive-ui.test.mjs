@@ -50,11 +50,11 @@ test("keeps modal focus, descriptions, scroll containment, and restoration bound
   assert.match(inspector, /id="webmcp-mission-inspector"/);
   assert.match(inspector, /aria-describedby="webmcp-sheet-description"/);
   assert.match(inspector, /Use Frontmend with an agent/);
-  assert.match(inspector, /WebMCP lets an AI agent use Frontmend from a plain-language prompt/);
+  assert.match(inspector, /WebMCP lets an AI agent start the same audit and read a structured coding brief/);
   assert.match(inspector, />Try</);
   assert.match(inspector, /Technical details/);
-  assert.match(inspector, /Agent returns/);
-  assert.match(inspector, /You decide/);
+  assert.match(inspector, /Agent gets/);
+  assert.match(inspector, /You stay in control of/);
   assert.doesNotMatch(inspector, /\{activeTools\.length\} of \{inspector\.registration\.totalToolCount\} contracts/);
   assert.doesNotMatch(inspector, /Ready to begin|Available now|on this screen/);
   assert.doesNotMatch(inspector, />Mission inspector</);
@@ -72,8 +72,8 @@ test("describes the Agent log as durable audit metadata without a misleading loc
 test("keeps the agent path legible on the compact landing header", () => {
   assert.match(app, /const compactLabel = [\s\S]*?"Agent ready"/);
   assert.match(app, /className="webmcp-status-compact" aria-hidden="true"/);
-  assert.match(app, /Agents automate the evidence loop\. You choose what ships\./);
-  assert.match(app, /Use Frontmend to audit my deployed site for accessibility and SEO/);
+  assert.match(app, /Useful for people\. Structured for coding agents\./);
+  assert.match(app, /Use Frontmend to audit my deployed site, then fix the strongest recommendations/);
   assert.match(landingStyles, /\.app-shell\.landing \.webmcp-status-compact\s*\{[^}]*display: inline;/s);
   assert.match(landingStyles, /\.hero-agent-prompt\s*\{[^}]*grid-template-columns:/s);
 });

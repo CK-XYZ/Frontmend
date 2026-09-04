@@ -14,8 +14,8 @@
   },
   "project": {
     "name": "Frontmend",
-    "summary": "Frontmend turns live site evidence into an agent-guided browser and repository repair loop with human authority and exact fresh verification.",
-    "ai_usage": "Twenty-one contextual WebMCP tools let a compatible coding agent carry a bounded mission through public measurement, exact rendered-browser checks, repository-aware diagnosis, authorised repair, and post-deployment replay while the page preserves evidence and human authority.",
+    "summary": "Frontmend turns a public website audit into a useful recommendation list and an evidence-rich brief a coding agent can act on.",
+    "ai_usage": "WebMCP lets a compatible coding agent start and monitor the same audit as the human interface, then receive structured recommendations, exact evidence, repository search hints, and acceptance criteria without scraping the page.",
     "codex_usage": "Codex helped scope, implement, test, release-harden, and document the product, and is the repository-aware agent used in the primary workflow."
   },
   "current_stage": "prepare-submission",

@@ -23,6 +23,12 @@ const HUMAN_ONLY = Object.freeze([
   "Deploy the reviewed change and accept any remaining risk.",
 ]);
 
+const AUDIT_HANDOFF_HUMAN_ONLY = Object.freeze([
+  "Choose the website and audit focus.",
+  "Decide which recommendations are worth acting on.",
+  "Authorise repository changes and deployment in the coding environment.",
+]);
+
 const TOOL_DISPLAY_COPY = Object.freeze({
   start_site_audit: "Starts a saved audit for the public website and focus areas you choose.",
   check_site_audit_progress: "Checks the current audit phase, progress, and any blocker.",
@@ -54,11 +60,21 @@ const TOOL_DISPLAY_COPY = Object.freeze({
   start_repair_verification: "Starts fresh public verification after deployment is confirmed.",
 });
 
+const AUDIT_HANDOFF_TOOL_DISPLAY_COPY = Object.freeze({
+  ...TOOL_DISPLAY_COPY,
+  get_mission_summary: "Reads audit progress and the ranked recommendation summary.",
+  get_site_audit_results: "Reads the recommendations and evidence-rich coding-agent brief.",
+  get_evidence_chain: "Reads the exact retained evidence for one recommendation.",
+  start_related_page_audit: "Runs the same audit against one retained same-site route.",
+  start_site_exploration: "Audits a small set of retained same-site routes.",
+  get_site_exploration: "Reads the current bounded route-audit results.",
+});
+
 function bounded(value, maximum = 600) {
   return String(value ?? "").replace(/\r\n/g, "\n").trim().slice(0, maximum);
 }
 
-function activeToolDetails(toolDetails, names) {
+function activeToolDetails(toolDetails, names, displayCopy = TOOL_DISPLAY_COPY) {
   const byName = new Map((Array.isArray(toolDetails) ? toolDetails : []).map((tool) => [tool?.name, tool]));
   return names.slice(0, FRONTMEND_TOOL_COUNT).map((name) => {
     const tool = byName.get(name) ?? {};
@@ -66,7 +82,7 @@ function activeToolDetails(toolDetails, names) {
       name: bounded(name, 80),
       title: bounded(tool.title ?? name, 120),
       description: bounded(
-        TOOL_DISPLAY_COPY[name] ?? tool.description ?? "Available at this point in the audit.",
+        displayCopy[name] ?? tool.description ?? "Available at this point in the audit.",
         240,
       ),
       inputSchema: tool.inputSchema && typeof tool.inputSchema === "object"
@@ -81,7 +97,7 @@ function currentRepair(repairs) {
     .sort((left, right) => (right?.updatedAt ?? right?.createdAt ?? 0) - (left?.updatedAt ?? left?.createdAt ?? 0))[0] ?? null;
 }
 
-function stageProjection({ audit, missionState, repairs, browserReview, checkpoint }) {
+function stageProjection({ audit, missionState, repairs, browserReview, checkpoint, experience }) {
   const repair = currentRepair(repairs);
   const checkpointAction = checkpoint?.action ?? null;
   const checkpointCriteria = Array.isArray(checkpoint?.completionCriteria)
@@ -117,6 +133,23 @@ function stageProjection({ audit, missionState, repairs, browserReview, checkpoi
       unlocks: ["Evidence-led browser investigation or focused result review"],
       requiredCapability: "Progress polling",
       action: checkpointAction ?? { tool: "check_site_audit_progress", input: {} },
+    };
+  }
+
+  if (experience === "audit-handoff" && audit.status === "complete") {
+    return {
+      stage: "complete",
+      actor: "Coding agent",
+      title: "Recommendations are ready",
+      summary: "Frontmend has finished its job: the public-site evidence is ranked and packaged for the coding agent to use in its normal repository workflow.",
+      why: "The audit found and explained the frontend work. Source inspection, editing, tests, commits, and deployment belong to the coding environment—not another Frontmend approval flow.",
+      mustReturn: [
+        "Exact evidence and acceptance criteria for each recommendation",
+        "Repository changes and test results in the coding-agent conversation",
+      ],
+      unlocks: ["A normal inspect, edit, and test workflow", "A fresh public audit after deployment"],
+      requiredCapability: "Repository access",
+      action: { tool: "get_site_audit_results", input: { auditId: audit.id } },
     };
   }
 
@@ -334,16 +367,20 @@ export function createMissionInspector({
   toolDetails = [],
   checkpoint = null,
   webMcp = {},
+  experience = "legacy-mission",
 } = {}) {
   const supported = webMcp.supported === true;
   const names = Array.isArray(contextualToolNames)
     ? [...new Set(contextualToolNames.filter((name) => typeof name === "string"))].slice(0, FRONTMEND_TOOL_COUNT)
     : [];
-  const projection = stageProjection({ audit, missionState, repairs, browserReview, checkpoint });
+  const projection = stageProjection({ audit, missionState, repairs, browserReview, checkpoint, experience });
   const preferOptionalAdoption = missionState?.browserReview?.adoptionAvailable === true;
-  const humanOnly = checkpoint?.authorityBoundary?.humanOnly
-    ? checkpoint.authorityBoundary.humanOnly.slice(0, 6).map((item) => bounded(item, 240))
-    : [...HUMAN_ONLY];
+  const auditHandoff = experience === "audit-handoff";
+  const humanOnly = auditHandoff
+    ? [...AUDIT_HANDOFF_HUMAN_ONLY]
+    : checkpoint?.authorityBoundary?.humanOnly
+      ? checkpoint.authorityBoundary.humanOnly.slice(0, 6).map((item) => bounded(item, 240))
+      : [...HUMAN_ONLY];
   const build = createBuildDescriptor();
   return {
     schemaVersion: 1,
@@ -361,10 +398,10 @@ export function createMissionInspector({
         title: projection.title,
         actor: projection.actor,
         summary: projection.summary,
-        requiredCapability: preferOptionalAdoption
+        requiredCapability: auditHandoff || preferOptionalAdoption
           ? projection.requiredCapability
           : checkpoint?.requiredCapability ?? projection.requiredCapability,
-        action: preferOptionalAdoption
+        action: auditHandoff || preferOptionalAdoption
           ? projection.action ?? null
           : checkpoint?.action ?? projection.action ?? null,
       },
@@ -373,7 +410,11 @@ export function createMissionInspector({
       whatItUnlocks: projection.unlocks,
       whatRemainsHumanOnly: humanOnly,
     },
-    activeTools: activeToolDetails(toolDetails, names),
+    activeTools: activeToolDetails(
+      toolDetails,
+      names,
+      auditHandoff ? AUDIT_HANDOFF_TOOL_DISPLAY_COPY : TOOL_DISPLAY_COPY,
+    ),
     registration: {
       status: bounded(webMcp.status ?? (supported ? "ready" : "unsupported"), 40),
       activeToolCount: names.length,

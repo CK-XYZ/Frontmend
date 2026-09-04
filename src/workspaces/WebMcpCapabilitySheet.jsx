@@ -48,6 +48,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
     contextualToolNames: webMcp.toolNames,
     toolDetails: createFrontmendTools(auditService),
     webMcp,
+    experience: "audit-handoff",
   });
   const dialogRef = useDialogFocus(onClose, restoreFocusRef);
   const supported = status.supported;
@@ -55,8 +56,8 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
   const activeTools = inspector.activeTools;
   const syncing = inspector.registration.status === "registering";
   const explainer = supported
-    ? "WebMCP lets an AI agent use Frontmend from a plain-language prompt, while the audit and evidence stay visible here."
-    : "WebMCP lets an AI agent use Frontmend from a plain-language prompt. It is not available here, but every workflow still works on this page.";
+    ? "WebMCP lets an AI agent start the same audit and read a structured coding brief from a plain-language prompt."
+    : "WebMCP is not available here, but the same audit and recommendation list remain fully usable on this page.";
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
@@ -118,16 +119,10 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
           ) : null}
         </section>
 
-        {/*
-          The authority split is the product's whole thesis, so it is the shape
-          of the sheet rather than one more labelled band. It mirrors the
-          landing page's ledger: agent on the left, person on the right, and
-          lime marks the side only a person owns.
-        */}
         <div className="inspector-authority">
           <section aria-labelledby="mission-inspector-agent-title">
             <h3 className="inspector-authority-title" id="mission-inspector-agent-title">
-              Agent returns
+              Agent gets
             </h3>
             <RecordList
               items={questions.whatMustReturn}
@@ -136,7 +131,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
           </section>
           <section className="is-human" aria-labelledby="mission-inspector-human-title">
             <h3 className="inspector-authority-title" id="mission-inspector-human-title">
-              You decide
+              You stay in control of
             </h3>
             <RecordList
               items={questions.whatRemainsHumanOnly}
@@ -159,7 +154,7 @@ export default function WebMcpCapabilitySheet({ audit, webMcp, onClose, restoreF
               list changes as the audit moves forward.
             </p>
             <p className="inspector-technical-meta">
-              {inspector.registration.totalToolCount} total actions · protocol v{inspector.protocol.protocolVersion} · build {inspector.protocol.displayCommit}
+              Tool library v{inspector.protocol.toolLibraryVersion} · protocol v{inspector.protocol.protocolVersion} · build {inspector.protocol.displayCommit}
             </p>
           </div>
           {activeTools.length ? (

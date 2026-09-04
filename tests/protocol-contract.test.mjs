@@ -137,15 +137,20 @@ test("returns compact mission and one-finding evidence queries with a protocol e
     activeToolCount: summary.protocol.activeToolCount,
     next: {
       tool: "get_site_audit_results",
-      input: {},
+      input: { auditId },
+      reason: "Read the recommendations and exact evidence prepared for the coding agent.",
       requiredCapability: "full-evidence-reading",
     },
-    agentRun: checkpoint.agentRun,
+    agentRun: { schemaVersion: 1, mode: "continue", continueAutomatically: true },
   });
   assert.ok(summary.protocol.activeToolCount < FRONTMEND_TOOL_COUNT);
 
   const results = await findTool(tools, "get_site_audit_results").execute({});
   assert.equal(results.ok, true);
+  assert.equal(results.data.codingAgentBrief.kind, "frontmend-coding-agent-brief");
+  assert.equal(results.data.codingAgentBrief.recommendations.length, 1);
+  assert.equal(results.data.recommendedNextAction, null);
+  assert.equal(results.protocol.next, null);
   assert.ok(
     serializedCharacterCount(results) <= WEBMCP_BUDGETS.routineResultCharacters,
     `compact results used ${serializedCharacterCount(results)} characters`,

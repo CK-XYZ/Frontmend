@@ -49,7 +49,7 @@ test("withdraws the retry when the audit itself is gone", () => {
 test("keeps restoration failure distinct from a cached audit until the person leaves", () => {
   assert.match(app, /if \(restorationAuditId\) return "restore"/);
   assert.match(app, /if \(restorationAuditId \|\| !audit/);
-  assert.match(app, /const webMcpToolNames = restorationAuditId \? \[\] : contextualFrontmendToolNames/);
+  assert.match(app, /const webMcpToolNames = restorationAuditId \? \[\] : auditHandoffFrontmendToolNames/);
   assert.match(app, /WebMcpStatus[\s\S]*restoring=\{Boolean\(restorationAuditId\)\}/);
   assert.match(app, /disabled=\{restoring\}/);
   assert.match(app, /Reading authoritative job and mission state/);

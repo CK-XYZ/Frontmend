@@ -1,215 +1,125 @@
 # Frontmend
 
-**Paste a URL. Mend the frontend.**
+**Audit the site. Fix the right things.**
 
-Frontmend is a URL-first frontend engineering service for people and browser agents. A person can start from the floating URL field; a compatible coding agent can autonomously carry the same durable mission from public evidence into rendered investigation, repository-aware diagnosis, implementation, and fresh verification. Both adapters use one application service, persisted jobs, and one visible authority state.
+Frontmend turns a public URL into a short, evidence-backed frontend improvement brief. People get a clear ranked list; a compatible coding agent receives the same findings as structured WebMCP data, then uses its normal repository, browser, and terminal tools to implement the work.
 
-## Try the real workflow
+Frontmend does not try to become a code editor, approval system, deployment dashboard, or substitute for the coding agent. Its job is to measure the public site, explain the most useful work, and hand over cleanly.
 
-From a fresh Codex task with the target repository open, use this assessment-only prompt:
+## The product loop
 
-> Hey Codex, debug the public frontend for this repository using Frontmend. Resolve its public deployment, or ask me if you cannot identify it. Declare only the capabilities you actually have, then run a bounded-site accessibility, SEO and responsive assessment. Follow Frontmend's exact WebMCP next actions until `rankingStatus` is `final`; treat measurement-complete or provisional rankings as unfinished. Record only browser observations you directly verify, then return no more than three deduplicated priorities with their exact routes and evidence. Stop there: do not prepare or stage a repair, edit files, commit, push or deploy.
+1. Enter a public URL and choose an optional audit focus.
+2. Frontmend runs an asynchronous PageSpeed Insights/Lighthouse audit plus a bounded live-document analysis.
+3. The result becomes a readable, prioritised recommendation list with evidence, affected routes and viewports, target selectors or landmarks, a suggested change, and concrete acceptance criteria.
+4. WebMCP returns the same information as a bounded coding-agent brief. The agent investigates and fixes the repository with the tools and permissions it already has.
+5. After deployment, run the public URL through Frontmend again for fresh evidence.
 
-Codex should resolve the repository's public deployment, start Frontmend in **Assess** mode, retain the requested focus, and continue through the bounded rendered-browser and route evidence that Frontmend requests. Every checkpoint includes an executable audit ID and, for writes, the exact mission revision; its `agentRun` policy tells Codex to continue across consecutive agent-owned actions and stop only at a real person boundary, supported blocker, or completion. Browser findings stay separately attributed, and route occurrences converge into stable root priorities instead of orphaned child reports.
+The complete audit and recommendation experience remains usable when `document.modelContext` is unavailable.
 
-After reviewing the final evidence, explicitly request the proposal phase:
+## A real Codex prompt
 
-> Prepare priority 1 for repair. Trace it to repository-relative source locations, propose the smallest coherent patch and exact checks, stage that proposal in Frontmend, and stop for owner review. Do not edit the repository or deploy anything.
+Open the target repository in Codex, then ask:
 
-This second prompt records **Prepare a fix** intent and requires a bounded repository trace before an agent-authored proposal can be staged. A person or agent may freeze one to three findings that belong to one coherent repository change; that transition is not approval, does not consume delegated-auto allowance, does not edit the repository, and cannot deploy or attest deployment. Implementation begins only after the owner approves the visible proposal. Candidate-browser checks remain pre-production evidence, and only a fresh public audit after owner deployment can support a resolution claim.
+> Hey Codex, audit the deployed frontend for this repository using Frontmend. Start a public-site audit, wait for it to finish, then read the structured recommendations. Investigate the strongest evidence in this codebase, implement the fixes that are justified, and run the repository's real checks. Do not invent source locations from the audit, and do not deploy unless I explicitly ask.
 
-## Working product slice
+The useful WebMCP moment is the handoff: Codex receives rule IDs, retained evidence, routes, viewports, selectors, search hints, and acceptance criteria directly from Frontmend rather than scraping a visual report or receiving a giant prose dump.
 
-- Warm-white URL-first landing adapted from the selected OpenUp visual direction.
-- Validated public-URL intake with local/private target rejection in the shared client and Worker boundaries.
-- Durable, asynchronous audit jobs with stable IDs, persisted progress, per-client and service-wide budgets, same-URL deduplication, and 24-hour retention.
-- Real audit cancellation shared by the human control and WebMCP: the active provider request is aborted, `cancelled` is persisted as a terminal state, repeated cancellation is safe, and the same stable audit can be restarted as a numbered attempt.
-- Fresh retry semantics for failed jobs: a repeated human or agent start keeps the stable workspace ID, consumes the normal rate budget, increments the visible attempt, clears stale failure state, and actually runs the provider again.
-- Concurrent independent PageSpeed Insights/Lighthouse and live-document evidence for every audit. Both run through a normalized evidence-adapter seam; mobile and desktop measurements, bounded screenshots, public HTML, response headers, metadata, and observed same-site routes are merged deterministically. One unavailable source never discards the other, and alternate viewport providers can return the same bounded contract without changing the mission workflow.
-- Natural intent handoff for requests such as “audit my site for accessibility and SEO”: the result tool accepts the requested focus areas, retains category scores, and returns up to three severity-ranked priorities deduplicated across mobile and desktop instead of making the person restate Frontmend's workflow.
-- A progressive human mission composer offers the same bounded focus and one-to-five priority shortlist at URL intake. Leaving it untouched preserves the full frontend audit, while a focused selection survives cancellation, retry, reload, and the stable workspace without hiding the complete evidence record.
-- Audit mission schema v2 makes the assessment claim explicit: **This page** preserves the existing single-target workflow, while **Bounded site** waits for up to three deterministic server-issued same-site route candidates. Legacy v1 missions project as page scope, and both Human and WebMCP intake share the same scope and route-limit contract.
-- A revision-bound **agent capability handshake** asks a compatible agent to explicitly declare true or false for visual browser access, responsive emulation, runtime diagnostics, repository access, and terminal execution (deployment is deliberately not declarable: it stays human-owned). The workspace visibly labels every value **agent-declared · not verified**. Frontmend compiles only agent actions whose requirements match, otherwise it keeps the next action with the person; the declaration grants no credentials, approval, or deployment authority.
-- Every ranked priority has a compact **Evidence Capsule** binding the retained Lighthouse screenshot when available, measured viewport, route, selector or document landmark, observation and source, exact browser task, evidence timestamp, and audit revision. Selecting a finding updates the in-page active capsule, so `get_active_evidence_capsule` returns the same focus without copied audit or finding IDs. A capsule is retained context, not a fresh capture or resolution claim.
-- A completed person-started **Assess** mission can be handed to a browser-capable agent without creating a second audit. Frontmend retains the original audit ID, person attribution, provider evidence, attempt, and authority boundary; opening the existing browser review advances the mission revision and makes its first exact rendered task the resumable checkpoint. Broad human audits may adopt bounded accessibility and SEO coverage, while focused audits retain their selected rendered-review scope.
-- The same exact rendered task is fully completable in Human mode with passed, issue, or blocked outcomes, conditional structured finding fields, person provenance, and stale-session refresh. An untouched optional handoff can be visibly withdrawn before evidence; after any result exists, it must be completed or retain an honest blocker.
-- A supported repository-diagnosis mission is also fully completable in Human mode. A person can contribute the same bounded browser observations, repository-relative ownership, planned checks, and confidence as a capable coding agent, or preserve an honest blocker when the matching browser or repository is unavailable. Stale writes refresh the authoritative mission and require review before resubmission.
-- Every person-owned mission mutation now shares that safe stale-session behaviour. A rejected repair, policy, approval, deployment, exploration, route, cancellation, or verification write refreshes the bounded checkpoint and available authoritative workspace snapshots, clears unsafe local confirmations or selections, and never automatically replays the action.
-- A persisted **Assess** mission distinguishes provider measurement from the complete public-evidence audit. Once required browser and bounded-route evidence is retained, the priority ranking and assessment receipt are final; repository diagnosis remains dormant until explicit repair intent. The mission survives polling, retry, reload, and an empty result call without retaining the user's raw prompt.
-- A persisted **Agent browser review** prevents agent-started accessibility and SEO audits from stopping at provider scores. Frontmend exposes one exact check at a time—rendered structure, a primary journey, responsive reflow, and search discovery as applicable—and retains pass, issue, or bounded blocker outcomes without pretending this is a complete manual or screen-reader audit.
-- Browser-observed issues carry their own provenance, become ranked assessment priorities, and continue through the same repository fix-brief, diagnosis, repair, and fresh-verification contracts as provider findings. After deployment, Frontmend preserves the original rendered observation and delegates one exact like-for-like browser replay before it will issue a verification receipt.
-- A ranked mission-priority surface links directly to the complete evidence queue, preserves cross-viewport occurrences, and shows whether each priority is measured, awaiting diagnosis, or backed by contributed diagnosis.
-- An explicit **Prepare a fix** transition freezes one to three ordered findings, then—and only then—unlocks any repository diagnosis required before repair staging. It is idempotent only for that exact package, rejects replacement or reordering, creates no repair by itself, and cannot silently consume delegated policy. Multi-finding packages always require explicit person review.
-- A categorical evidence-coverage projection names completed and unavailable adapters, provider and evidence-engine versions, measured conditions, bounded route candidates, and source-specific claim boundaries without inventing a confidence score. Duplicate document rules are omitted when the viewport adapter already evaluated the exact rule, while source provenance remains separate. Portable assessment receipts carry the same adapter receipts and explicit Lighthouse version.
-- Bounded same-site route discovery from fetched anchor paths, with explicit unvisited-route caveats and a shared human/WebMCP action whose server-authoritative parent job starts a real follow-up audit only for an observed path.
-- Durable route journeys with bounded root, parent, depth, and ancestor provenance in job snapshots, reports, Markdown exports, WebMCP results, and a visible back-to-parent trail.
-- Durable site-exploration missions accept only server-issued candidate IDs for bounded-site continuations, atomically start one to three retained observed routes, preserve a separate audit per page, and converge completed recurrence into stable root findings with source audit, route, viewport, selector, and evidence IDs. Supported route issues add exact checks to the root browser review before its ranking becomes final; child audits never create orphaned repair workflows. The mission survives reload and exports bounded evidence without claiming a full crawl, while failed or unavailable route coverage remains an explicit terminal limitation.
-- Site-aware CSP repair evidence that inventories bounded external resource origins and inline script/style usage from the fetched document, then produces a conservative Report-Only candidate without claiming runtime coverage.
-- Responsive findings workspace with evidence provenance and source-specific scoring.
-- Truthful high-volume Lighthouse results: the summary reports the full measured failure total, while the bounded ten-detail queue exposes its omitted count and retains every explicit rule outcome for agents and exports.
-- Actionable diagnostic evidence for console errors, low-contrast nodes, and main-thread blocking: Frontmend retains bounded runtime details from Lighthouse, then opens a persisted mission requiring browser reproduction, repository ownership, and planned checks before an agent can propose a repair for that symptom.
-- Separately attributed diagnosis provenance: measured Lighthouse evidence remains provider evidence, while contributed browser observations and repository locations remain explicitly agent- or person-reported through repair exports and fresh verification receipts.
-- A shared four-stage diagnostic evidence chain—measured symptom, browser reproduction, repository ownership, and planned checks—appears in both WebMCP results and the human workspace, with missing contributions and the separate repair/deployment authority boundary left visible.
-- An honest diagnostic-blocker outcome lets a person or agent record a bounded unavailable-browser, unavailable/wrong-repository, non-reproduction, or conflicting-runtime reason instead of fabricating ownership or leaving repair preparation silently hanging. The final audit and assessment receipt remain available; only the selected repair stays blocked. Later bounded diagnosis can replace the blocker while its history and contributor provenance are retained.
-- A portable assessment receipt appears as soon as the public-evidence audit is genuinely complete. Its structured WebMCP result and Markdown download freeze the final ranked provider and browser evidence, label repository diagnosis as a later optional repair contribution, and explicitly prove no repair, implementation, deployment, or resolution.
-- Portable completed-audit Markdown export backed by the persisted report, with bounded escaped findings, every recorded rule outcome, provider provenance, and evidence-mode limits.
-- Bounded repository repair missions that may be proposed by a person or agent and appear in the same visible workspace used by the site owner.
-- An audit-scoped operating policy chosen only in the human UI: **Review each plan** keeps explicit approval per proposal, while **Delegated auto mode** records a prior human grant for at most three agent-authored low-risk HTML or CSS plans that include bounded repository-relative files and planned checks. JavaScript, headers, configuration, medium/high risk, deployment, and deployment attestation remain gated.
-- A bounded human-agent revision loop: people request specific changes in the visible UI, agents submit a new complete proposal through WebMCP, and the previous versions plus feedback remain attributable.
-- A source-safe repository fix brief that translates one stable root finding into exact route occurrences, search hints, acceptance criteria, and authority boundaries for a coding agent that already has repository access—without uploading or exposing source to Frontmend. Agent-prepared repairs must first contribute bounded repository-relative source locations and exact checks; that attributed trace is preserved in the brief instead of Frontmend guessing filenames.
-- A human staging path can inspect and select the same server-issued optional verification routes as the coding agent. Only completed retained audits where the exact rule was evaluated are offered; required failed routes remain automatic, selected routes enter the draft before approval, and the visible impact panel records included versus omitted candidates. Candidate responses identify the exact audit and finding; transient reads clear stale choices, retry only the bounded GET, and keep staging disabled until the current scope is authoritative.
-- An agent-authored repository plan inside the repair proposal: up to eight repository-relative target files and eight planned checks become visible before explicit approval or delegated authorisation, survive revision history, and are frozen beside the eventual implementation receipt and verification proof. Absolute paths, source contents, credentials, and human-authored repository metadata remain outside the contract.
-- An optional repository implementation receipt after explicit approval or eligible delegated authorisation: the coding agent may report only repository-relative filenames, check outcomes, a short summary, and an optional Git object ID. Passed checks complete the implementation step; failed or not-run checks remain an explicit attention state and prompt the agent to record a corrective receipt. Repeated reports retain a bounded five-receipt history, so a later pass cannot silently erase an earlier failure; the latest receipt is frozen into subsequent verification proof, while remaining explicitly agent-reported rather than source, check, deployment, or resolution evidence.
-- An optional **Candidate Browser Review** after a passing implementation receipt. Frontmend accepts only an exact loopback HTTP/HTTPS origin or public HTTPS origin, maps retained server-issued paths onto it, and compiles at most five sequential replays and guardrails. A coding agent or person operates the browser and returns bounded attributed observations through the same application service. The first issue ends that candidate iteration and produces an exact correction packet linking the retained baseline, route, viewport, selector, attributed observation, frozen repository scope, and reviewed checks. A newer implementation receipt archives the failed attempt and unlocks another exact replay. Passing means only **candidate checks passed—production unverified**; issues, blockers, or unfinished checks remain visible beside deployment but never become a deployment gate or production proof.
-- A shared repair-mission state machine that assigns measure, draft, review/delegation, implement, optional candidate preflight, deploy, and verify steps to Frontmend, the coding agent/person, or the external site owner. Approved work advances directly to repository implementation, can replay the candidate build after passing checks, pauses for deployment authorisation and attestation, then resumes fresh verification; it no longer sends an agent around a repeated workspace-read loop.
-- A human-only deployment-handoff gate: explicit approval or eligible delegation unlocks implementation and export, but a site-owner attestation is required before human or WebMCP verification can start.
-- Approval-gated Markdown export with an explicit proposal-only honesty notice.
-- Portable verification-receipt export with a bounded rule-scope outcome table, metric deltas, repository implementation provenance when recorded, audit lineage, and explicit source/check/deployment boundaries.
-- Fresh repair verification that reports `resolved`, `still-present`, `regression`, or `inconclusive`; every finding in a cohesive package keeps separately identified exact rows, provider repairs freeze every measured strategy sharing each failed rule plus bounded previously passing provider and rendered-browser guardrails, and every browser-observed finding freezes its original evidence, element, check, and viewport for its own exact post-deployment replay. Newly introduced high/medium findings in the reviewed focus remain separate regression rows.
-- Browser-finding verification reuses `open_browser_review` and `record_browser_review_check` contextually: the receipt stays absent while the replay is unopened, active, or blocked; `passed` resolves only the retained rendered issue, `issue` keeps it present, and a blocker leaves the same comparison resumable.
-- Rule proof and summary-metric proof are deliberately separate: partial/hybrid verification requires the same Lighthouse version for an exact Lighthouse rule, while score/check/finding deltas appear only when the engine, measured strategies, score basis, and document-supplement coverage all match.
-- A before/after proof receipt with baseline and fresh audit IDs plus server-derived score, passed-check, and finding deltas; the same structure is returned through WebMCP.
-- A bounded audit-lineage trail that carries the exact rule across repeated repair attempts, preserves the root audit, stores each attempt's evidence signature, labels whether its summary metrics are comparable to the baseline, and compacts older history after eight receipts.
-- A versioned library of twenty-eight contextual WebMCP tools covering audit start/progress/cancellation/results, capability negotiation, active Evidence Capsules, a stable compact mission summary, one-priority evidence chains, ordered assessment and candidate browser review, completion receipts, diagnostic missions and honest blockers, repository handoff, single-route and multi-page exploration, verification receipts, explicit repair preparation, repair staging/revision/implementation/workspace, and verification. Tool-library v6 added candidate preflight; v7 separated final public assessment from selected repair diagnosis; v8 adds checked context budgets, host cancellation, and stale-tool recovery. Only state-valid tools whose work matches the declaration are registered, while every result carries compact protocol, toolset, mission revision, and continuation metadata.
-- A phase-split frontend shell keeps URL intake, stable-audit restoration, active progress, and contextual WebMCP registration available immediately, then loads the completed report, diagnosis, repair, verification, and mission inspector only when their retained state needs them. Accessible retry boundaries preserve the audit and never replay a mutation; failed stable-workspace reads retain their URL and pause cached polling and contextual tools until authoritative state returns. Completed workspaces stay gated until job, checkpoint, repair/policy, diagnosis, browser-review, and exploration records share one revision and audit identity. Mounted reports and compound agent reads use the same complete-only publication boundary, retain their last coherent view when one record is unavailable, and never derive priorities or receipts from mixed revisions. Interrupted audit or cross-page exploration reads remain separately announced connection problems, automatically retry only the retained job or mission, preserve the last authoritative state, and cannot manufacture a terminal failure or fresh-start action. Direct reads and state-changing responses must match the requested audit, checkpoint, retained record, route parent, verification lineage, finding, rendered-review scope/check, and repair-policy mode before entering the shared cache; every continuation also carries the authoritative non-regressive mission checkpoint. Newer direct workspace reads adopt that checkpoint atomically with their state, and repository briefs and repair workspaces hand the same revision to the next WebMCP action.
-- Audit-scoped tools infer the visible audit when `auditId` is omitted, while retaining explicit IDs for durable or background workflows.
-- A durable audit-scoped WebMCP trace that retains the last twenty completed semantic actions, read/mutation class, status, related workflow IDs, mission revision, contextual tool counts, bounded result size, duration, and next semantic tool. It deliberately rejects and omits tool inputs, URLs, patches, prompts, source contents, credentials, and secrets; the same bounded trace is visible in the UI and assessment receipt.
-- An inspectable WebMCP status panel that shows the active contextual subset, explains why it changed, and keeps human-only authority visible.
-- Stable audit sharing plus a bounded **Copy agent handoff** action. The handoff names the reloadable workspace and orientation at copy time, but deliberately omits action inputs and tells a fresh session to re-read the current checkpoint and contextual tools before acting. Clipboard failure exposes the same prompt for manual copy without granting repair, approval, or deployment authority.
-- Keyboard-safe dialogs that move focus inside, contain Tab navigation, close on Escape, and restore the invoking control.
-- A focused accessibility and responsive shell pass adds a skip target and single main landmark, deliberate focus and page-title changes between audit phases, announced URL/progress state, complete keyboard viewport tabs, dialog descriptions and scroll containment, visible radio-card focus, and 44 px narrow-screen controls without changing Human/WebMCP authority.
-- Human and agent actions share the same audit service.
-- Graceful full human experience when `document.modelContext` is unavailable.
-- Cloudflare Worker, Durable Object, and static-assets packaging with native Bun tests.
+## What a recommendation contains
+
+- severity and category;
+- measured or observed symptom;
+- provider and exact rule ID;
+- affected routes, viewports, selectors, and occurrence count;
+- a concise recommended change;
+- repository search hints based only on public evidence;
+- acceptance criteria the coding agent can verify;
+- an explicit evidence boundary.
+
+Frontmend never fabricates filenames or line numbers. Repository ownership is established by the coding agent after the handoff.
+
+## WebMCP
+
+WebMCP is the browser-native control surface for the same application service used by the human interface. It does not perform the audit itself.
+
+The live page advertises only the small set that is useful at the current point in the audit:
+
+| State | Available actions |
+| --- | --- |
+| No active audit | `start_site_audit`, `get_mission_summary` |
+| Audit running | `check_site_audit_progress`, `cancel_site_audit`, `get_mission_summary` |
+| Audit complete | `get_site_audit_results`, `get_mission_summary` |
+| Evidence available | `get_evidence_chain` |
+| Retained routes available | `start_related_page_audit`, `start_site_exploration` |
+| Exploration exists | `get_site_exploration` |
+
+`get_site_audit_results` returns the compact human result plus `codingAgentBrief`. Its public continuation ends there: Frontmend tells the agent to continue in the repository with its ordinary tools, not to enter a second repair workflow.
+
+The codebase retains the earlier 28-tool repair protocol and its deterministic tests as a compatibility and research layer. Tool-library v9 deliberately stops advertising those repair, approval, candidate-review, deployment, and verification controls in the live product path.
 
 ## Evidence boundary
 
-Frontmend reports only evidence returned by the current run. Lighthouse and document inspection run concurrently and remain independent sources; every completed report carries a categorical coverage projection and bounded source failures. Each supported Lighthouse or document rule emits an explicit `passed`, `failed`, `not-applicable`, or `not-evaluated` outcome independently of the bounded findings display. `findingCount` records the full measured failure total, `findings` retains the ten highest-priority details, and `findingsOmitted` makes the difference explicit instead of silently shrinking the result. Provider responses are limited by bytes actually read, screenshots accept only bounded passive image formats, failures remain structured and recoverable, and a document-only report states that no screenshot or viewport measurement was made. CSP resource inventories accept only bounded HTTP(S) origins, exclude same-origin references already covered by `'self'`, and explicitly state that static HTML cannot reveal runtime requests, CSS imports, or every user journey.
+Frontmend can report only what its retained audit sources support:
 
-The current slice diagnoses a deliberately narrow set of Lighthouse and document rules. Summary check counts include only those explicit supported rules, rather than every opaque audit in the upstream payload. In hybrid runs, document rules already evaluated by the retained Lighthouse strategy are omitted from findings and totals; the fetched-document profile remains available, but it never substitutes for the unavailable viewport. Verification history does not turn unlike measurements into a trend: each attempt records its evidence signature, and scores remain visible as observations while the UI and Markdown receipt explicitly withhold deltas when coverage differs from the root baseline. A repair artifact is a reviewed proposal: Frontmend does not claim it edited a third-party site. The person deploys the change through their normal source and hosting workflow, then Frontmend performs a fresh public audit. A successful local run, build, or Wrangler dry run is not a deployment or production proof.
+- Lighthouse/PageSpeed evidence stays distinct from live-document evidence.
+- Partial or fallback runs remain visibly labelled.
+- Browser-agent observations, where retained by older records, remain separately attributed.
+- A recommendation is not proof that the repository contains a particular implementation.
+- A code change, local test, build, or dry run is not proof of deployment.
+- Only a fresh public audit can show what the deployed site now exposes.
 
-Arbitrary Browser Rendering is intentionally not exposed as an open proxy. The audit boundary rejects private, local, credentialed, and non-HTTP targets; document redirects are revalidated and capped. Production enables Cloudflare's [`global_fetch_strictly_public`](https://developers.cloudflare.com/workers/configuration/compatibility-flags/#global-fetch-strictly-public) compatibility flag, whose exact documented guarantee is that global `fetch()` routes as public-Internet traffic. Local development additionally resolves and classifies every destination and redirect before fetching; because its standard fetch API cannot pin the later connection to the checked DNS answer, this is explicitly defence in depth rather than a claim of complete rebinding proof. A future browser-capture provider should use verified-domain authorization before accepting navigations.
-
-The capability vocabulary and focused-evidence handoff are adapted with permission from the project owner's ChromeSight work and reimplemented inside Frontmend's public, revisioned application service. No Chrome extension transport or local bridge is required by the judging path. Future local or authenticated capture remains an optional integration rather than a prerequisite.
+The audit is deliberately bounded. It is not a complete manual accessibility review, screen-reader test, penetration test, expert SEO engagement, or exhaustive crawl.
 
 ## Architecture
 
-Frontmend negotiates work before delegation: it compares the next task with the agent's explicit, unverified capability declaration and compiles the agent action only when the requirements match. Otherwise, it leaves the work with the person. The selected priority is handed over as one revision-bound Evidence Capsule rather than a copied report or free-form prompt.
-
 ```text
 Human UI ────────┐                         ┌─ PageSpeed Insights / Lighthouse
-                 ├─ audit service ─ jobs ─┼─ concurrent bounded document inspection
-WebMCP tools ────┘                         └─ person/agent rendered review
-                                  │
-                                  └─ shared diagnosis + repair mission
-                                      ├─ coding agent: repository plan + implementation receipt
-                                      ├─ person: review each plan or grant bounded auto mode
-                                      ├─ site owner: deploy + attest handoff
-                                      └─ Frontmend: fresh rule-by-rule verification
+                 ├─ shared audit service ─┼─ bounded live-document analysis
+WebMCP tools ────┘                         └─ deterministic recommendation brief
+                             │
+                             ├─ FrontmendAuditGate Durable Object
+                             ├─ FrontmendAuditJob Durable Object
+                             └─ versioned, JSON-serialisable audit state
+
+codingAgentBrief ──> coding agent's existing repo/browser/terminal workflow
 ```
 
-WebMCP controls the application; it is not a hidden audit engine. Both adapters start, cancel, and poll the same job, read the same structured result, explore the same observed route set, and participate in the same persisted diagnosis and repair missions. The distinctive step is collaborative: after public measurement, the page can hand the same person-started audit to a capable external agent, or continue an agent-started mission, through one small sequential review. Frontmend supplies the exact next check and owns durable state; the agent operates the rendered site and returns only bounded observations or an honest blocker. If that observation becomes a repair, Frontmend later calls the agent back for one exact post-deployment replay instead of pretending a fresh provider score proves a rendered issue disappeared.
+The client is React 19 and Vite. The production runtime is a Cloudflare Worker with static assets and two SQLite Durable Object classes. Human actions and WebMCP tools use the same service and validation boundaries.
 
-The coding agent also keeps repository access and submits only bounded files, checks, implementation metadata, and an optional Git object; the page keeps measurement, policy, review and deployment state visible to the person. A person can require explicit review or grant a narrow, exhaustible auto policy. The agent cannot create that grant, expand its risk or patch-type scope, deploy the site, or attest deployment. Related-route starts are validated inside the completed parent job, not trusted from browser memory, then carry a bounded root/parent/depth trail into the child job and export. Multi-page missions reuse that authority boundary. Contextual registration follows shared state: landing exposes start, an active job exposes progress plus cancellation, completed provider evidence exposes browser review, and an active review exposes its one exact contribution tool alongside any independently applicable result or exploration capabilities. Later states expose only applicable diagnosis, repair, or verification actions. Each page-tool call emits a bounded, idempotent event into the durable audit-scoped WebMCP trace without raw arguments and without changing mission authority or masking the semantic tool result. The Cloudflare runtime uses one gate Durable Object per bounded client key and one job Durable Object per audit ID. Verification uses a fresh replay-safe job tied to the authorised repair and the site owner's visible deployment attestation. The Vite integration preserves that HTTP contract for local development.
+## Security and privacy
 
-## WebMCP tools
-
-| Tool | Role |
-| --- | --- |
-| `start_site_audit` | Start a real asynchronous public audit. |
-| `check_site_audit_progress` | Read authoritative job progress. |
-| `cancel_site_audit` | Stop an active job and persist its terminal cancellation state. |
-| `get_mission_summary` | Read the compact stable control-plane state, completion criteria, capability requirement, and exact next action without replaying the full report. |
-| `declare_agent_capabilities` | Self-report five explicit capabilities; Frontmend marks them unverified and uses them only to compile feasible agent work. |
-| `get_site_audit_results` | Read the bounded evidence report. |
-| `get_active_evidence_capsule` | Read the selected priority's revision-bound screenshot, viewport, target, measured source, and exact observation task without passing IDs. |
-| `get_evidence_chain` | Read one retained priority across provider, browser, repository, and planned-verification provenance without source contents. |
-| `open_browser_review` | Open the next exact rendered-browser assessment check or post-deployment replay required by the visible mission. |
-| `record_browser_review_check` | Record the current exact check as passed, issue, or honestly blocked; assessment issues create bounded findings, while verification compares only retained exact evidence and reviewed browser guardrails. |
-| `get_assessment_receipt` | Export one completed mission as bounded structured evidence plus portable Markdown without broadening repair or deployment authority. |
-| `get_repository_fix_brief` | Translate one finding into a source-safe repository implementation contract. |
-| `open_diagnostic_mission` | Turn a structured Lighthouse symptom into explicit browser, repository, and verification investigations. |
-| `submit_runtime_diagnosis` | Attach bounded, separately attributed browser observations and repository-relative ownership before agent repair staging. |
-| `record_diagnostic_blocker` | Preserve why browser/repository diagnosis cannot honestly proceed while keeping the measured finding unresolved and resumable. |
-| `start_related_page_audit` | Start a real audit for an exact same-site path observed in the visible report. |
-| `start_site_exploration` | Atomically start one to three observed page audits under one durable mission. |
-| `get_site_exploration` | Read mission progress and bounded recurring evidence across selected pages. |
-| `get_verification_receipt` | Poll the reviewed fresh-evidence matrix truthfully, then return portable Markdown and structured outcomes only when every row is terminal. |
-| `prepare_site_repair` | Record explicit intent for one to three diagnosed retained findings without approving, implementing, or deploying them. |
-| `stage_site_repair` | Submit one visible coherent repository mission, freeze every package finding and measured-rule row, and await explicit review for multi-finding work or the existing eligible scoped auto grant for a legacy single finding without changing the target site. |
-| `revise_site_repair` | Submit a complete new version only after visible human feedback. |
-| `get_repair_workspace` | Inspect drafts, frozen rule scope, mission progress, ownership boundaries, and allowed next actions. |
-| `record_repository_implementation` | Attach bounded agent-reported filenames and check outcomes after explicit review or eligible delegated authorisation. |
-| `open_candidate_review` | Open an optional candidate-build preflight and return the first exact browser task without navigating or fetching it. |
-| `record_candidate_review_check` | Record the current sequential candidate-browser observation with agent or person attribution. |
-| `get_candidate_review` | Read candidate status, bounded results, prior iterations, and the next action without mutating state. |
-| `start_repair_verification` | Re-audit an approved repair and compare every captured occurrence plus its reviewed regression guardrails. |
+- Public crawling rejects credentials, private and loopback networks, metadata endpoints, unsafe schemes, and redirects into blocked targets.
+- Every destination is revalidated on the server.
+- Time, byte, redirect, concurrency, and rate limits apply before arbitrary URLs are accepted.
+- Target HTML, metadata, screenshots, tool results, and errors are treated as untrusted input.
+- Audit traces exclude raw prompts, URLs, source contents, patches, credentials, cookies, and secrets.
+- PageSpeed receives the public target URL and provider options only; it never receives repository data.
 
 ## Development
 
 Requires Bun 1.3 or newer. Dependency installation is protected by Socket's Bun security scanner through `bunfig.toml`.
 
-`bun test` is clean-tree safe: the packaging contract always rebuilds the current Vite/Sites artifact before asserting the emitted files.
-
-`bun run eval:mission` executes a deterministic offline mission protocol over the registered twenty-eight-tool library, real shared service, local HTTP middleware, public Worker adapter, and real audit Durable Object implementation. It proves capability declaration, a complete bounded-site assessment-to-verification sequence, a failed candidate check returning an exact correction packet, a newer implementation receipt, a passing second candidate iteration, local/Worker categorical parity, stale-revision recovery, and an honest provider/browser-conflict blocker. Its browser observations, repository receipts, approval, and site-owner attestation are explicitly labelled protocol fixtures: the command does not operate a browser, inspect a repository, deploy a site, call PageSpeed Insights, or prove production behaviour.
-
-`bun run eval:webmcp-routing` runs a separate synthetic natural-language routing gate over the current contextual tool library. Its bounded summary retains each synthetic prompt, discovered set, selected sequence, invalid/stale attempts, mission outcome, authority violations, optional token/latency fields, and host/model identity. The default host is an offline deterministic contract, not a live model claim. A host-produced routing summary can be imported with `--input <summary.json> --host <host> --model <version>`; URLs, email addresses, workflow IDs, local paths, and common secret assignments are redacted before evaluation output. Imported evidence remains host-reported and does not independently prove a live agent or browser run.
-
 ```powershell
-bun install
+bun install --frozen-lockfile
 bun run check
 bun run lint
-bun run eval:mission
-bun run eval:webmcp-routing
 bun run test
+bun run eval:webmcp-routing
 bun run build
 bunx wrangler deploy dist/server/index.js --dry-run --strict --config wrangler.jsonc
 ```
 
-Do not start a development server unless the user explicitly requests it.
+Do not start a development server unless explicitly requested.
+
+The offline mission and routing evaluators use deterministic fixtures. They do not browse a site, inspect a repository, call PageSpeed Insights, deploy, or prove live WebMCP compatibility.
 
 ## Cloudflare
 
-`wrangler.jsonc` packages the Vite client, SPA fallback, audit Worker, and Durable Object migrations. Production builds embed the exact Git commit, UTC build time, protocol version, tool-library version, and tool count into both the browser inspector and Worker bundle. `GET /api/version` exposes that non-sensitive descriptor with `no-store`; assessment and verification receipts carry the same identity. Tracked uncommitted inputs are marked dirty rather than being attributed to the base commit. The explicit `bun run deploy` command refuses tracked dirty state, deploys the identified `dist/server/index.js`, and tags the Cloudflare Worker version with the commit. After a deployment, verify it with `bun run smoke:version -- https://your-frontmend-origin.example <expected-commit>`.
+`wrangler.jsonc` packages the client, SPA fallback, audit Worker, and Durable Object migrations. Production builds embed the Git commit, build time, protocol version, tool-library version, and tool count. `GET /api/version` exposes that non-sensitive descriptor with `no-store`.
 
-Set `PAGESPEED_API_KEY` as a Worker secret for reliable automated Lighthouse quota; keyless calls are supported but may be rate limited. No deployment is performed automatically.
+Set `PAGESPEED_API_KEY` as a Worker secret for reliable automated Lighthouse quota. Keyless calls remain supported but may be rate limited. No deployment is performed automatically.
 
-Cloudflare observability is enabled for the deployable Worker. Frontmend emits three bounded structured event families into [Workers Logs](https://developers.cloudflare.com/workers/observability/logs/workers-logs/):
+For an explicitly started local Wrangler session, copy `.dev.vars.example` to `.dev.vars` and set the key only in the ignored file.
 
-- `frontmend.admission` records allowed or rejected admission, rejection class, batch size, new versus semantically reused starts, remaining client/global window capacity, and the truthful direct-admission queue depth of zero. Frontmend does not maintain a hidden queue; capacity is admitted or rejected immediately.
-- `frontmend.provider` records adapter kind, complete/partial/failed outcome, latency, measured-condition count, bounded failure code, and quota-limited status.
-- `frontmend.audit` records root, exploration-child, or verification-child outcome, end-to-end latency, source availability, and whether the document source preserved evidence after the viewport provider failed. Child failure rate is derived by grouping this event on `workload` and `outcome`.
+## Public repository
 
-These events have no public endpoint and deliberately exclude target URLs, client IPs/fingerprints, URL hashes, audit/workflow IDs, prompts, findings, patches, source contents, credentials, and secrets. Cloudflare's own [Durable Object metrics](https://developers.cloudflare.com/durable-objects/observability/metrics-and-analytics/) remain the infrastructure-level source for request/error duration and object activity; Frontmend's events add product semantics without target identity.
-
-For an explicitly started local Wrangler session, copy `.dev.vars.example` to `.dev.vars` and set the key only in the ignored local file. Never put a real key in the example, source, Git history, or command output.
-
-## Verified locally
-
-The dated receipts below preserve the tool counts that were current when captured. The present contract is tool-library v8 with twenty-eight tools; these older live-browser receipts do not prove the newer handshake, Evidence Capsule, candidate-review, audit/repair phase separation, cancellation, stale-tool recovery, or run-trace flows.
-
-On 28 August 2026, the local app on port 3434 audited `https://removemyexif.com/` through genuine WebMCP. The landing page registered only `start_site_audit`; older completed audit `11cf031e` registered only the three applicable result and repair-workspace capabilities available before route discovery. The then-current bounded library had twenty-three tools; this historical browser receipt predates the browser-review, compact mission-summary, evidence-chain, repository-brief, diagnosis, diagnostic-blocker, assessment-receipt, implementation-receipt, and explicit repair-preparation additions. Earlier audit `4da1e838` proved progress-only registration before cancellation existed. After the cancellation contract landed, genuine running audit `3d5fa898` visibly exposed exactly `check_site_audit_progress` and `cancel_site_audit`, alongside the real human **Cancel audit** control, before its fast live-document run completed. Audit `b8fb882b` then proved the navigation-safe start contract: the tool returned a running job and `/audits/b8fb882b-…` while the browser remained at `/`; explicit navigation after the call restored the completed report. The bounded live-document result scored 89 and observed the missing-CSP finding after following the site's public redirect. Audit `3aa6eb20` observed `static.cloudflareinsights.com`, seven inline scripts, and fifteen inline style blocks/attributes and used those inputs in a visible Report-Only CSP candidate. Audit `f61621be`, repair `decdfde4` moved from a visible human request into agent revision 2; the corrected header placed `report-uri /csp-report` on the policy line, retained its unmet site-owner prerequisite, reopened human review, and rendered both versions plus the feedback in the revision trail. A separate sequence proved the deployment-attestation gate without falsely claiming the public site changed. This is local runtime evidence only, not a deployed-service claim.
-
-Live cancellation audit `7c70fe45` started against a unique `removemyexif.com` URL, returned HTTP 200 cancellation while running, and restored as persisted `cancelled` state. Repeating the exact start returned HTTP 202 under the same audit ID as attempt 2, then completed with score 89 using fresh live-document evidence. This proves server cancellation and retry; the separate browser observation above proves the visible human and contextual WebMCP controls without claiming the fast browser run itself was cancelled.
-
-Route-discovery audit `ad95d84f` observed eight bounded same-site paths from the real homepage and reported 33 additional paths as omitted without claiming any were visited. Its visible report exposed four contextual tools, including `start_related_page_audit`; a genuine WebMCP call selected the observed `/tools/remove-pdf-metadata` path and created audit `7bf9d065` with an attributable baseline ID and stable workspace. The human route button then selected `/tools` from that completed result and created audit `3f3972ab`, updating browser history to its stable route. All three runs completed with fresh public evidence, and the Markdown export carried the same route list, omission count, and unvisited-route caveat.
-
-The server-authoritative route-journey replay started at real homepage audit `d7239dd1`, followed `/view` through the human control as audit `2856f957`, then `/privacy` as audit `31b3edab`. From that completed page, genuine WebMCP started `/terms` as audit `8265782c` and returned root, parent, depth 3, the three-entry ancestor trail, and a stable workspace path. The visible report rendered the same route trail and parent link, and its HTTP Markdown export returned 200 with the same provenance and an explicit coverage boundary. This is local runtime evidence, not a deployment claim.
-
-Real root audit `2ed1ffcd` then proved the multi-page mission. Genuine WebMCP atomically started `/view` as audit `4dced272` and `/tools/remove-pdf-metadata` as audit `78198da6` under exploration `8bd9c892`. Both completed at score 89; the visible and agent-readable aggregate reported two pages complete, two findings, and one recurring missing-CSP rule. Reload restored the mission, its Markdown export returned HTTP 200 with both child IDs and the explicit non-crawl boundary, and the 390-pixel layout had no horizontal overflow. This remains local evidence, not a deployment claim.
-
-Fresh audit `d09c07c9` verified the human-facing **Export report** action against the real `removemyexif.com` evidence. The local HTTP route returned 200 with a stable audit-specific filename, `text/markdown`, `no-store`, and `nosniff`; the artifact recorded score 89, eight passed checks, the failed CSP rule, all nine explicit rule outcomes, and the live-document boundary. The deployable Worker and Vite adapter now share that contract, and the mobile control rendered at 390×844 without horizontal overflow or console errors.
-
-Audit `3e46d0a9` verified report schema 5 and the richer live-document fallback against the same public site. The visible and agent-readable profile recorded 273,662 bounded HTML bytes, 21 scripts, two stylesheets, nine images, 87 links, 72 headings, seven inline scripts, fifteen inline styles, one external origin, an absent CSP, and an observed `nosniff` header. The Markdown export carried the same profile and caveat. These are fetched-markup counts, not runtime DOM, network, screenshot, or viewport claims.
-
-Failure replay `4d4ccb52` used the real non-HTML `removemyexif.com/robots.txt` route. Attempt 1 failed truthfully with `DOCUMENT_NOT_HTML`; a second start returned HTTP 202 under the same stable audit ID, exposed attempt 2, and ran the provider again. The target remained non-HTML, so the second attempt failed for the same measured reason rather than being presented as a recovery.
-
-A separate dependency-free copy then proved a clean Socket-scanned `bun install --frozen-lockfile`, `bun test` with 47 passes, fresh Vite/Sites packaging, and `wrangler deploy --dry-run`. The temporary copy was removed after verification. This is reproducibility evidence, not a deployment.
-
-Playwright then rendered the human fallback at 390×844 with no horizontal overflow or console errors. Reduced-motion emulation was active and every computed animation/transition duration was at most 0.01ms. The two QA captures live under `output/playwright/`; the favicon is a small original SVG shipped with the app.
-
-A clipboard-denied replay proved the sharing fallback on audit `b8fb882b`: the exact `/audits/:id` URL appeared focused and fully selected, including at 390px. The full hostname and coverage score remained visible, the fallback did not overlap either, and the page had no horizontal overflow or console errors.
-
-Keyboard replays at 390px proved the WebMCP capability panel, WebMCP trace, and How it works sheet all focus their close control on entry, retain Tab focus inside, close on Escape, and return focus to the exact invoking button.
-
-On visible audit `b8fb882b`, the historical pre-preparation contract let genuine WebMCP calls read results and the repair workspace with empty input objects, then stage repair `5ab83c3a` using only the finding ID. The UI immediately entered `Human decision required` with the site-aware Report-Only CSP proposal; no approval, deployment attestation, or target mutation occurred. This receipt does not prove the current explicit `prepare_site_repair` transition.
+Frontmend is licensed under Apache-2.0. See `CONTRIBUTING.md`, `SECURITY.md`, and `THIRD_PARTY_NOTICES.md` before contributing or reporting a vulnerability.
